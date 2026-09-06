@@ -1,17 +1,17 @@
 # 架构与技术候选
 
-状态：建议，未最终选型。前后端分离；首期模块化单体，避免在数据规模未知时引入微服务。
+状态：技术框架已采纳，详见 [ADR-001](adr-001-continew.md)。前后端分离、模块化单体。
 
-| 部分 | 候选 | 理由与待决事项 |
-|---|---|---|
-| 后端 | Java 21 或 25 LTS + Spring Boot + Spring Security | OAuth、任务、权限和持久化生态成熟；启动时再锁定受支持版本及依赖兼容矩阵 |
-| 前端 | Vue 3 + TypeScript + Vite + Router + Pinia | 管理台、表格、筛选、权限路由；应用不直接依赖 ESI 返回结构 |
-| UI | Arco Design Vue / Element Plus 等候选 | 以表格、日期日历、树形资产、中文、维护状况做验证，尚不锁定框架 |
-| 数据库 | PostgreSQL + Flyway | 关系约束、批次快照、聚合与少量 JSON 扩展；MySQL 亦可评估 |
-| ORM | JPA 或 MyBatis | 根据批量 upsert、报表查询和维护偏好做小型验证，不同时引入两套 |
-| ESI 客户端 | 手写必要适配层 + Jackson；评估 OpenAPI Generator | 以国服契约为输入；生成 DTO 不直接暴露前端，不盲目套用国际服 SDK |
-| 调度 | 持久化任务表 + Spring 调度 | 单实例先用数据库锁防重；扩容后再决定 Quartz / Redis |
-| 部署 | 反向代理 + 前端静态资源 + Java 服务 + 数据库 | 前后端开发分离，生产可由同域代理减少跨域与 Cookie 配置复杂度 |
+| 部分 | 已选方案 |
+|---|---|
+| 后端 | ContiNew Admin v4.1.0，Java 17、Spring Boot 3.3.12 |
+| 站内认证 | Sa-Token；EVE OAuth 单独适配 |
+| 前端 | ContiNew Admin UI v4.1.0，Vue 3、Arco Design、TypeScript、Vite、Pinia |
+| 数据库 | MySQL 8.0.42 |
+| ORM / 迁移 | MyBatis-Plus / Liquibase |
+| 缓存 | Redis 7.2.8，Redisson / JetCache 沿用上游 |
+| EVE 客户端 | 国服契约驱动的独立适配层，尚未实现 |
+| 调度 | 上游调度代码保留但未启用；ESI 调度实现留待授权联调 |
 
 ## 模块和数据流
 
@@ -46,6 +46,6 @@
 
 ## 关键验收风险
 
-重点测试跨军团越权、分页中断不覆盖完整快照、重复账本不重复累计、并发刷新、撤销/离团失效、结构字段缺失。版本锁定前验证 Java/Spring/数据库驱动/UI 的实际组合；这里没有声称已构建或运行。
+重点测试跨军团越权、分页中断不覆盖完整快照、重复账本不重复累计、并发刷新、撤销/离团失效、结构字段缺失。已导入与构建的范围见 [验证记录](../VALIDATION.md)；真实登录和国服 ESI 联调仍待完成。
 
 参考：[Spring Boot 系统要求](https://docs.spring.io/spring-boot/system-requirements.html)、[Vue 3](https://vuejs.org/guide/introduction.html)、[Vue TypeScript](https://vuejs.org/guide/typescript/overview)、[官方 SSO](https://developers.eveonline.com/docs/services/sso/)。

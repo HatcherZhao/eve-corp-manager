@@ -2,6 +2,4 @@
 
 公开仓库：https://github.com/HatcherZhao/eve-corp-manager
 
-仓库由维护者创建，main 分支保存调研、接口快照、设计和验证计划。当前阶段尚未实现可运行的 Web 应用。真实军团数据与登录凭据不入库。
-
-后续以国服账号联调结果更新参考资料，并在锁定技术选型后建立应用工程。
+main 分支包含调研资料、固定版本的 ContiNew 前后端源码和 EVE 骨架。运行说明见 [DEVELOPMENT.md](DEVELOPMENT.md)，构建与运行验证边界见 [VALIDATION.md](VALIDATION.md)。尚未部署公网服务，尚未实现国服授权与军团数据同步。真实游戏数据和凭据不入库。

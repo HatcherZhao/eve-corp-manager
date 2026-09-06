@@ -10,3 +10,11 @@ target/
 dist/
 __pycache__/
 .DS_Store
+
+# Public frontend configuration; secrets belong only in ignored *.local files.
+!/frontend/.env.development
+!/frontend/.env.production
+!/frontend/.env.test
+*.local
+.flattened-pom.xml
+.idea/
