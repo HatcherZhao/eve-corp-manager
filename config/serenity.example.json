@@ -1,0 +1,15 @@
+{
+  "status": "candidate-not-authenticated",
+  "server": "serenity",
+  "esiBaseUrl": "https://ali-esi.evepc.163.com",
+  "esiPathPrefix": "/latest",
+  "datasource": "serenity",
+  "ssoMetadataUrl": "https://login.evepc.163.com/.well-known/oauth-authorization-server",
+  "expectedIssuer": "login.evepc.163.com",
+  "clientId": "",
+  "clientSecretEnvironmentVariable": "EVE_SSO_CLIENT_SECRET",
+  "redirectUri": "",
+  "compatibilityDate": null,
+  "displayTimezone": "Asia/Shanghai",
+  "note": "Use own registered application. Pin endpoint versions after validation. No game credentials belong in this file."
+}

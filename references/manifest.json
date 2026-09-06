@@ -1,0 +1,18 @@
+[
+  {
+    "path": "references/serenity-swagger-2026-09-06.json",
+    "url": "https://ali-esi.evepc.163.com/latest/swagger.json",
+    "retrieval_date": "2026-09-06",
+    "bytes": 885984,
+    "sha256": "6b30458a15305574f4c2bbcd969a4a21ff79c7662525dece64dd35663baef763",
+    "evidence": "public GET HTTP 200; no authenticated endpoint tested"
+  },
+  {
+    "path": "references/serenity-sso-2026-09-06.json",
+    "url": "https://login.evepc.163.com/.well-known/oauth-authorization-server",
+    "retrieval_date": "2026-09-06",
+    "bytes": 652,
+    "sha256": "7e0b08f0f5c40b8a1ba6bc0f9c3f04e003ef14c4e5b365e99b3d16751e37c824",
+    "evidence": "public GET HTTP 200; no authenticated endpoint tested"
+  }
+]
