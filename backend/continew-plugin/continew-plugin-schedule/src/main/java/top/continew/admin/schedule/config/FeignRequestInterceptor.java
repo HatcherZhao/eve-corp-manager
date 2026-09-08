@@ -21,6 +21,7 @@ import feign.RequestTemplate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import top.continew.admin.schedule.annotation.ConditionalOnEnabledScheduleJob;
 import top.continew.admin.schedule.api.JobClient;
 import top.continew.admin.schedule.constant.JobConstants;
 
@@ -32,6 +33,7 @@ import top.continew.admin.schedule.constant.JobConstants;
  */
 @Component
 @RequiredArgsConstructor
+@ConditionalOnEnabledScheduleJob
 public class FeignRequestInterceptor implements RequestInterceptor {
 
     private final JobClient jobClient;

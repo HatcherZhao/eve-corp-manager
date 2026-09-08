@@ -21,6 +21,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import top.continew.admin.schedule.annotation.ConditionalOnEnabledScheduleJob;
 import top.continew.admin.schedule.api.JobClient;
 import top.continew.starter.core.autoconfigure.application.ApplicationProperties;
 
@@ -32,6 +33,7 @@ import top.continew.starter.core.autoconfigure.application.ApplicationProperties
  */
 @Configuration
 @RequiredArgsConstructor
+@ConditionalOnEnabledScheduleJob
 public class FeignConfiguration {
 
     private final ApplicationProperties applicationProperties;

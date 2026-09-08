@@ -1,10 +1,9 @@
 import mitt from 'mitt'
 
-interface Events {
+type Events = Record<string | symbol, any> & {
   // 自定义事件名称
   event: void
   // 任意传递的参数
-  [parmas: string]: any
 }
 
 const mittBus = mitt<Events>()

@@ -56,8 +56,17 @@ public class UserContextHolder {
     public static void setContext(UserContext context, boolean isUpdate) {
         CONTEXT_HOLDER.set(context);
         if (isUpdate) {
-            StpUtil.getSessionByLoginId(context.getId()).set(SaSession.USER, context);
+            updateSessionContext(context);
         }
+    }
+
+    /**
+     * 仅更新指定用户的在线会话，不替换当前请求线程中的操作者上下文。
+     *
+     * @param context 待更新的用户上下文
+     */
+    public static void updateSessionContext(UserContext context) {
+        StpUtil.getSessionByLoginId(context.getId()).set(SaSession.USER, context);
     }
 
     /**

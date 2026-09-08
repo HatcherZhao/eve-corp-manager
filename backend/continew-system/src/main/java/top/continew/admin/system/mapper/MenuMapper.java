@@ -48,4 +48,10 @@ public interface MenuMapper extends BaseMapper<MenuDO> {
      * @return 菜单列表
      */
     List<MenuDO> selectListByRoleId(@Param("roleId") Long roleId);
+
+    /** 按权限码查询菜单，用于 EVE 业务角色绑定固定能力菜单。 */
+    @org.apache.ibatis.annotations.Select({"<script>", "SELECT * FROM sys_menu WHERE deleted = 0 AND permission IN",
+        "<foreach collection='permissions' item='permission' open='(' separator=',' close=')'>#{permission}</foreach>",
+        "</script>"})
+    List<MenuDO> selectByPermissions(@Param("permissions") List<String> permissions);
 }

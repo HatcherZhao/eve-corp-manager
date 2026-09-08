@@ -261,8 +261,9 @@ public class UserServiceImpl extends BaseServiceImpl<UserMapper, UserDO, UserRes
 
         // 校验是否存在无效角色
         List<String> roleNames = validRowList.stream().map(UserImportRowReq::getRoleName).distinct().toList();
-        int existRoleCount = roleService.countByNames(roleNames);
-        CheckUtils.throwIf(existRoleCount < roleNames.size(), "存在无效角色，请检查数据");
+        List<RoleDO> importRoles = roleService.listByNames(roleNames);
+        CheckUtils.throwIf(importRoles.size() < roleNames.size(), "存在无效角色，请检查数据");
+        rejectDerivedImportRoles(importRoles);
         // 校验是否存在无效部门（支持多级部门解析）
         Set<String> deptNames = CollUtils.mapToSet(validRowList, UserImportRowReq::getDeptName);
         int existDeptCount = countValidMultiLevelDepts(deptNames);
@@ -317,6 +318,7 @@ public class UserServiceImpl extends BaseServiceImpl<UserMapper, UserDO, UserRes
             .map(UserImportRowReq::getRoleName)
             .distinct()
             .toList());
+        rejectDerivedImportRoles(roleList);
         Map<String, Long> roleMap = roleList.stream().collect(Collectors.toMap(RoleDO::getName, RoleDO::getId));
         // 获取多级部门映射
         Map<String, Long> deptMap = buildMultiLevelDeptMapping(importUserList.stream()
@@ -527,10 +529,30 @@ public class UserServiceImpl extends BaseServiceImpl<UserMapper, UserDO, UserRes
         }
         if (CollUtil.isNotEmpty(updateList)) {
             baseMapper.updateBatchById(updateList);
-            userRoleService.deleteByUserIds(CollUtils.mapToList(updateList, UserDO::getId));
         }
-        if (CollUtil.isNotEmpty(userRoleDOList)) {
-            userRoleService.saveBatch(userRoleDOList);
+        if (CollUtil.isEmpty(userRoleDOList)) {
+            return;
+        }
+        Set<Long> updatedUserIds = CollUtils.mapToSet(updateList, UserDO::getId);
+        Map<Long, List<Long>> updatedRoleIds = userRoleDOList.stream()
+            .filter(item -> updatedUserIds.contains(item.getUserId()))
+            .collect(Collectors.groupingBy(UserRoleDO::getUserId, Collectors.mapping(UserRoleDO::getRoleId, Collectors
+                .toList())));
+        updatedRoleIds.forEach((userId, roleIds) -> userRoleService.assignRolesToUser(roleIds, userId));
+        List<UserRoleDO> insertedUserRoles = userRoleDOList.stream()
+            .filter(item -> !updatedUserIds.contains(item.getUserId()))
+            .toList();
+        if (CollUtil.isNotEmpty(insertedUserRoles)) {
+            userRoleService.saveBatch(insertedUserRoles);
+        }
+    }
+
+    /** 拒绝用户导入流程授予由 EVE 游戏身份自动维护的派生角色。 */
+    static void rejectDerivedImportRoles(List<RoleDO> roles) {
+        if (roles.stream()
+            .map(RoleDO::getCode)
+            .anyMatch(top.continew.admin.common.enums.EveDerivedIdentity.ROLE_CODES::contains)) {
+            throw new BusinessException("EVE 派生角色由游戏身份自动维护，不允许通过用户导入授予");
         }
     }
 

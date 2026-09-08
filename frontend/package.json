@@ -3,6 +3,11 @@
   "type": "module",
   "version": "4.1.0",
   "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=22 <23",
+    "pnpm": ">=9 <10"
+  },
   "scripts": {
     "bootstrap": "pnpm install --registry=https://registry.npmmirror.com",
     "dev": "vite --host",
@@ -105,10 +110,5 @@
   },
   "lint-staged": {
     "*": "eslint --fix"
-  },
-  "packageManager": "pnpm@9.15.9",
-  "engines": {
-    "node": ">=22 <23",
-    "pnpm": ">=9 <10"
   }
 }

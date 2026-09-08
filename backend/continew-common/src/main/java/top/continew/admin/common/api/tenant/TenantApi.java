@@ -16,6 +16,9 @@
 
 package top.continew.admin.common.api.tenant;
 
+import top.continew.admin.common.model.dto.EveTenantCreateDTO;
+import top.continew.admin.common.model.dto.EveTenantCreateResultDTO;
+
 /**
  * 租户业务 API
  * 
@@ -31,4 +34,12 @@ public interface TenantApi {
      * @param userId   用户 ID
      */
     void bindAdminUser(Long tenantId, Long userId);
+
+    /**
+     * 创建并初始化 EVE 军团租户。
+     *
+     * @param request 军团租户创建信息
+     * @return 租户及初始管理员用户信息
+     */
+    EveTenantCreateResultDTO createEveTenant(EveTenantCreateDTO request);
 }

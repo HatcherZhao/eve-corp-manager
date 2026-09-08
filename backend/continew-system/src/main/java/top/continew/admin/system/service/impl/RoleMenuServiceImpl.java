@@ -27,8 +27,9 @@ import top.continew.starter.core.util.CollUtils;
 import top.continew.starter.data.service.impl.ServiceImpl;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Set;
 
 /**
  * 角色和菜单业务实现
@@ -50,15 +51,16 @@ public class RoleMenuServiceImpl extends ServiceImpl<RoleMenuMapper, RoleMenuDO>
             .list()
             .stream()
             .map(RoleMenuDO::getMenuId)
-            .collect(Collectors.toList());
-        if (CollUtil.isEmpty(CollUtil.disjunction(menuIds, oldMenuIdList))) {
+            .toList();
+        Set<Long> requestedMenuIds = new HashSet<>(menuIds);
+        if (requestedMenuIds.size() == menuIds.size() && requestedMenuIds.equals(new HashSet<>(oldMenuIdList))) {
             return false;
         }
         // 删除原有关联
         baseMapper.lambdaUpdate().eq(RoleMenuDO::getRoleId, roleId).remove();
-        // 保存最新关联
+        // 批量工具会另开 SqlSession，无法看到当前事务尚未提交的删除，必须使用当前 Mapper 会话写入。
         List<RoleMenuDO> roleMenuList = CollUtils.mapToList(menuIds, menuId -> new RoleMenuDO(roleId, menuId));
-        return baseMapper.insertBatch(roleMenuList);
+        return roleMenuList.stream().allMatch(roleMenu -> baseMapper.insert(roleMenu) > 0);
     }
 
     @Override

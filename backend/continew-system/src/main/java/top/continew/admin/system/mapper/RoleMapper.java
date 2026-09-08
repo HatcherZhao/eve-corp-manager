@@ -17,8 +17,13 @@
 package top.continew.admin.system.mapper;
 
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import top.continew.admin.system.model.entity.RoleDO;
 import top.continew.starter.data.mapper.BaseMapper;
+
+import java.util.Collection;
+import java.util.List;
 
 /**
  * 角色 Mapper
@@ -28,4 +33,13 @@ import top.continew.starter.data.mapper.BaseMapper;
  */
 @Mapper
 public interface RoleMapper extends BaseMapper<RoleDO> {
+
+    /** 按角色编码查询租户内有效角色。 */
+    @Select("SELECT * FROM sys_role WHERE code = #{code} AND deleted = 0 LIMIT 1")
+    RoleDO selectByCode(@Param("code") String code);
+
+    /** 按角色编码集合查询租户内有效角色。 */
+    @Select({"<script>", "SELECT * FROM sys_role WHERE deleted = 0 AND code IN",
+        "<foreach collection='codes' item='code' open='(' separator=',' close=')'>#{code}</foreach>", "</script>"})
+    List<RoleDO> selectByCodes(@Param("codes") Collection<String> codes);
 }

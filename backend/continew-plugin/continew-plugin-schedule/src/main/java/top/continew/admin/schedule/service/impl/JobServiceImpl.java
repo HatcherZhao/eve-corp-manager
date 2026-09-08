@@ -20,6 +20,7 @@ import com.aizuda.snailjob.client.job.core.openapi.SnailJobOpenApi;
 import com.aizuda.snailjob.common.core.enums.StatusEnum;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import top.continew.admin.schedule.annotation.ConditionalOnEnabledScheduleJob;
 import top.continew.admin.schedule.api.JobApi;
 import top.continew.admin.schedule.api.JobClient;
 import top.continew.admin.schedule.api.JobGroupApi;
@@ -44,6 +45,7 @@ import java.util.Set;
  */
 @Service
 @RequiredArgsConstructor
+@ConditionalOnEnabledScheduleJob
 public class JobServiceImpl implements JobService {
 
     private final JobClient jobClient;

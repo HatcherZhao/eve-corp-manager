@@ -18,6 +18,7 @@ package top.continew.admin.schedule.service.impl;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import top.continew.admin.schedule.annotation.ConditionalOnEnabledScheduleJob;
 import top.continew.admin.schedule.api.JobBatchApi;
 import top.continew.admin.schedule.api.JobClient;
 import top.continew.admin.schedule.model.query.JobLogQuery;
@@ -34,6 +35,7 @@ import top.continew.starter.extension.crud.model.resp.PageResp;
  */
 @Service
 @RequiredArgsConstructor
+@ConditionalOnEnabledScheduleJob
 public class JobLogServiceImpl implements JobLogService {
 
     private final JobClient jobClient;

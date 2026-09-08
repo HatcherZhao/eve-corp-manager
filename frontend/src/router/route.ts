@@ -12,6 +12,18 @@ export const systemRoutes: RouteRecordRaw[] = [
     meta: { hidden: true },
   },
   {
+    path: '/eve/register',
+    name: 'EveRegistration',
+    component: () => import('@/views/eve/register/index.vue'),
+    meta: { title: '通过 EVE 注册', hidden: true },
+  },
+  {
+    path: '/eve/recover',
+    name: 'EvePasswordRecovery',
+    component: () => import('@/views/eve/recover/index.vue'),
+    meta: { title: '使用 EVE 找回密码', hidden: true },
+  },
+  {
     path: '/',
     name: 'Dashboard',
     component: Layout,
@@ -66,6 +78,18 @@ export const systemRoutes: RouteRecordRaw[] = [
         component: () => import('@/views/user/message/components/view/index.vue'),
         meta: { title: '查看公告' },
       },
+      {
+        path: '/eve/permissions',
+        name: 'EvePermissions',
+        component: () => import('@/views/eve/permissions/index.vue'),
+        meta: { title: 'EVE 权限', hidden: true },
+      },
+      {
+        path: '/eve/access-management',
+        name: 'EveAccessManagement',
+        component: () => import('@/views/eve/access-management/index.vue'),
+        meta: { title: '军团成员权限', hidden: true },
+      },
     ],
   },
   {
@@ -88,7 +112,7 @@ export const systemRoutes: RouteRecordRaw[] = [
       {
         path: 'https://arco.design/vue/component/button',
         meta: { title: 'Arco Design文档', icon: 'arco', hidden: false },
-      },
+      } as RouteRecordRaw,
       {
         path: '/about/source',
         name: 'AboutSource',
@@ -97,15 +121,15 @@ export const systemRoutes: RouteRecordRaw[] = [
           {
             path: 'https://gitee.com/continew/continew-admin',
             meta: { title: 'Gitee', icon: 'gitee', hidden: false },
-          },
+          } as RouteRecordRaw,
           {
             path: 'https://gitcode.com/continew/continew-admin',
             meta: { title: 'GitCode', icon: 'gitcode', hidden: false },
-          },
+          } as RouteRecordRaw,
           {
             path: 'https://github.com/continew-org/continew-admin',
             meta: { title: 'GitHub', icon: 'github', hidden: false },
-          },
+          } as RouteRecordRaw,
         ],
       },
     ],

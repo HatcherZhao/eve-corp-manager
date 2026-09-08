@@ -23,6 +23,7 @@ import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.extra.servlet.JakartaServletUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import top.continew.admin.auth.AbstractLoginHandler;
@@ -31,13 +32,17 @@ import top.continew.admin.auth.model.req.AccountLoginReq;
 import top.continew.admin.auth.model.resp.LoginResp;
 import top.continew.admin.common.constant.CacheConstants;
 import top.continew.admin.common.constant.GlobalConstants;
+import top.continew.admin.common.api.system.EveLoginIdentityReviewApi;
+import top.continew.admin.common.model.dto.EveLoginIdentityReviewDTO;
 import top.continew.admin.common.util.SecureUtils;
 import top.continew.admin.system.enums.PasswordPolicyEnum;
 import top.continew.admin.system.model.entity.user.UserDO;
 import top.continew.admin.system.model.resp.ClientResp;
 import top.continew.starter.cache.redisson.util.RedisUtils;
+import top.continew.starter.core.exception.BusinessException;
 import top.continew.starter.core.util.validation.CheckUtils;
 import top.continew.starter.core.util.validation.ValidationUtils;
+import top.continew.starter.extension.tenant.context.TenantContextHolder;
 
 import java.time.Duration;
 
@@ -53,6 +58,7 @@ import java.time.Duration;
 public class AccountLoginHandler extends AbstractLoginHandler<AccountLoginReq> {
 
     private final PasswordEncoder passwordEncoder;
+    private final ObjectProvider<EveLoginIdentityReviewApi> eveLoginIdentityReviewApiProvider;
 
     @Override
     public LoginResp login(AccountLoginReq req, ClientResp client, HttpServletRequest request) {
@@ -67,6 +73,8 @@ public class AccountLoginHandler extends AbstractLoginHandler<AccountLoginReq> {
         ValidationUtils.throwIf(isError, "用户名或密码不正确");
         // 检查用户状态
         super.checkUserStatus(user);
+        // 已绑定 EVE 的账号必须先同步最新游戏身份，避免旧权限进入新会话
+        this.reviewEveIdentity(user);
         // 执行认证
         return super.authenticate(user, client);
     }
@@ -90,6 +98,33 @@ public class AccountLoginHandler extends AbstractLoginHandler<AccountLoginReq> {
     @Override
     public AuthTypeEnum getAuthType() {
         return AuthTypeEnum.ACCOUNT;
+    }
+
+    /**
+     * 通过可选内部 API 复核 EVE 身份，未安装 EVE 模块时不影响普通账号登录。
+     *
+     * @param user 当前密码已校验通过的用户
+     */
+    void reviewEveIdentity(UserDO user) {
+        EveLoginIdentityReviewApi reviewApi = eveLoginIdentityReviewApiProvider.getIfAvailable();
+        if (reviewApi == null) {
+            return;
+        }
+        EveLoginIdentityReviewDTO result = reviewApi.review(TenantContextHolder.getTenantId(), user.getId());
+        if (result == null || result.status() == null) {
+            throw new BusinessException("EVE 身份复核失败，请稍后重试");
+        }
+        if (EveLoginIdentityReviewDTO.Status.NOT_BOUND.equals(result
+            .status()) || EveLoginIdentityReviewDTO.Status.VERIFIED.equals(result.status())) {
+            return;
+        }
+        String message = switch (result.status()) {
+            case MEMBERSHIP_INVALID -> "游戏角色已离开当前军团，无法登录该租户";
+            case REAUTHORIZATION_REQUIRED -> "EVE 授权已失效，请重新授权后登录";
+            case UPSTREAM_UNAVAILABLE -> "暂时无法复核游戏身份，请稍后重试";
+            default -> "EVE 身份复核失败，请稍后重试";
+        };
+        throw new BusinessException(message);
     }
 
     /**

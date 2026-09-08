@@ -30,6 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
 import top.continew.admin.common.context.RoleContext;
 import top.continew.admin.common.enums.RoleCodeEnum;
 import top.continew.admin.system.constant.SystemConstants;
+import top.continew.admin.common.enums.EveDerivedIdentity;
+import top.continew.admin.system.model.entity.RoleDO;
 import top.continew.admin.system.mapper.UserRoleMapper;
 import top.continew.admin.system.model.entity.UserRoleDO;
 import top.continew.admin.system.model.entity.user.UserDO;
@@ -45,6 +47,8 @@ import top.continew.starter.extension.crud.model.query.PageQuery;
 import top.continew.starter.extension.crud.model.resp.PageResp;
 
 import java.util.Collection;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -85,37 +89,56 @@ public class UserRoleServiceImpl implements UserRoleService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean assignRolesToUser(List<Long> roleIds, Long userId) {
+        rejectDerivedRoles(roleIds);
+        List<Long> oldRoleIdList = baseMapper.selectRoleIdsByUser(userId);
+        Set<Long> derivedRoleIds = CollUtil.isEmpty(oldRoleIdList)
+            ? Set.of()
+            : roleService.listByIds(oldRoleIdList)
+                .stream()
+                .filter(role -> EveDerivedIdentity.ROLE_CODES.contains(role.getCode()))
+                .map(RoleDO::getId)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        List<Long> targetRoleIds = new ArrayList<>(new LinkedHashSet<>(roleIds));
+        targetRoleIds.addAll(derivedRoleIds.stream().filter(id -> !targetRoleIds.contains(id)).toList());
         UserDO userDO = userService.getById(userId);
         if (Boolean.TRUE.equals(userDO.getIsSystem())) {
-            Collection<Long> disjunctionRoleIds = CollUtil.disjunction(roleIds, this.listRoleIdByUserId(userId));
+            Collection<Long> disjunctionRoleIds = CollUtil.disjunction(targetRoleIds, oldRoleIdList);
             CheckUtils.throwIfNotEmpty(disjunctionRoleIds, "[{}] 是系统内置用户，不允许变更角色", userDO.getNickname());
         }
         // 超级管理员和租户管理员角色不允许分配
-        CheckUtils.throwIf(roleIds.contains(SystemConstants.SUPER_ADMIN_ROLE_ID), "不允许分配超级管理员角色");
+        CheckUtils.throwIf(targetRoleIds.contains(SystemConstants.SUPER_ADMIN_ROLE_ID), "不允许分配超级管理员角色");
         Set<String> roleCodeSet = CollUtils.mapToSet(roleService.listByUserId(userId), RoleContext::getCode);
         CheckUtils.throwIf(roleCodeSet.contains(RoleCodeEnum.TENANT_ADMIN.getCode()), "不允许分配系统管理员角色");
         // 检查是否有变更
-        List<Long> oldRoleIdList = baseMapper.lambdaQuery()
-            .select(UserRoleDO::getRoleId)
-            .eq(UserRoleDO::getUserId, userId)
-            .list()
-            .stream()
-            .map(UserRoleDO::getRoleId)
-            .toList();
-        if (CollUtil.isEmpty(CollUtil.disjunction(roleIds, oldRoleIdList))) {
+        if (CollUtil.isEmpty(CollUtil.disjunction(targetRoleIds, oldRoleIdList))) {
             return false;
         }
         // 删除原有关联
-        baseMapper.lambdaUpdate().eq(UserRoleDO::getUserId, userId).remove();
+        baseMapper.deleteByUserId(userId);
         // 保存最新关联
-        List<UserRoleDO> userRoleList = CollUtils.mapToList(roleIds, roleId -> new UserRoleDO(userId, roleId));
+        List<UserRoleDO> userRoleList = CollUtils.mapToList(targetRoleIds, roleId -> new UserRoleDO(userId, roleId));
         return baseMapper.insertBatch(userRoleList);
     }
 
     @Override
     public boolean assignRoleToUsers(Long roleId, List<Long> userIds) {
+        rejectDerivedRoles(List.of(roleId));
         List<UserRoleDO> userRoleList = CollUtils.mapToList(userIds, userId -> new UserRoleDO(userId, roleId));
         return baseMapper.insertBatch(userRoleList);
+    }
+
+    /** 拒绝通过通用后台入口人工授予游戏身份派生角色。 */
+    private void rejectDerivedRoles(List<Long> roleIds) {
+        if (CollUtil.isEmpty(roleIds)) {
+            return;
+        }
+        Set<String> codes = roleService.listByIds(roleIds)
+            .stream()
+            .map(RoleDO::getCode)
+            .collect(java.util.stream.Collectors.toSet());
+        if (codes.stream().anyMatch(EveDerivedIdentity.ROLE_CODES::contains)) {
+            throw new IllegalArgumentException("EVE 派生角色由游戏身份自动维护，不允许人工授予");
+        }
     }
 
     @Override
@@ -133,18 +156,16 @@ public class UserRoleServiceImpl implements UserRoleService {
 
     @Override
     public void saveBatch(List<UserRoleDO> list) {
+        if (CollUtil.isEmpty(list)) {
+            return;
+        }
+        rejectDerivedRoles(list.stream().map(UserRoleDO::getRoleId).distinct().toList());
         baseMapper.insert(list);
     }
 
     @Override
     public List<Long> listRoleIdByUserId(Long userId) {
-        return baseMapper.lambdaQuery()
-            .select(UserRoleDO::getRoleId)
-            .eq(UserRoleDO::getUserId, userId)
-            .list()
-            .stream()
-            .map(UserRoleDO::getRoleId)
-            .toList();
+        return baseMapper.selectRoleIdsByUser(userId);
     }
 
     @Override

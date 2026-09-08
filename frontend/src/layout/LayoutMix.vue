@@ -83,7 +83,6 @@ const checkAndShowNotices = () => {
   // 如果有token，检查未读公告
   if (token) {
     setTimeout(() => {
-      console.log(noticePopupRef.value)
       noticePopupRef.value?.open()
     }, 1000) // 延迟1秒显示，让页面先加载完成
   }

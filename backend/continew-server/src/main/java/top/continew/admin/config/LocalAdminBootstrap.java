@@ -1,7 +1,19 @@
 /*
- * Copyright 2026 EVE Corp Manager contributors.
- * SPDX-License-Identifier: Apache-2.0
+ * Copyright (c) 2022-present Charles7c Authors. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
+
 package top.continew.admin.config;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -13,7 +25,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
-/** Set the initial administrator password exactly once, never overwrite a user's password. */
+/** 仅在首次启动时设置管理员初始密码，不覆盖用户已经修改的密码。 */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class LocalAdminBootstrap implements ApplicationRunner {
@@ -22,7 +34,8 @@ public class LocalAdminBootstrap implements ApplicationRunner {
     private final PasswordEncoder encoder;
     private final String initialPassword;
 
-    public LocalAdminBootstrap(JdbcTemplate jdbc, PasswordEncoder encoder,
+    public LocalAdminBootstrap(JdbcTemplate jdbc,
+                               PasswordEncoder encoder,
                                @Value("${BOOTSTRAP_ADMIN_PASSWORD:}") String initialPassword) {
         this.jdbc = jdbc;
         this.encoder = encoder;
@@ -38,7 +51,7 @@ public class LocalAdminBootstrap implements ApplicationRunner {
         if (initialPassword.length() < 16) {
             throw new IllegalStateException("Initialize BOOTSTRAP_ADMIN_PASSWORD with at least 16 characters before first startup");
         }
-        jdbc.update("UPDATE sys_user SET password = ?, email = NULL, phone = NULL WHERE id = 1 AND password = ?",
-            encoder.encode(initialPassword), UNINITIALIZED);
+        jdbc.update("UPDATE sys_user SET password = ?, email = NULL, phone = NULL WHERE id = 1 AND password = ?", encoder
+            .encode(initialPassword), UNINITIALIZED);
     }
 }

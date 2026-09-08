@@ -26,6 +26,9 @@ import top.continew.starter.core.util.validation.CheckUtils;
 import top.continew.starter.extension.tenant.config.TenantProvider;
 import top.continew.starter.extension.tenant.context.TenantContext;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+
 /**
  * 默认租户提供者
  *
@@ -53,12 +56,16 @@ public class DefaultTenantProvider implements TenantProvider {
         if (StrUtil.isBlank(tenantIdAsString)) {
             // 检查是否指定了租户编码（登录相关接口）
             HttpServletRequest request = ServletUtils.getRequest();
-            String tenantCode = request.getHeader(tenantExtensionProperties.getTenantCodeHeader());
-            if (StrUtil.isBlank(tenantCode)) {
+            String tenantIdentifier = request.getHeader(tenantExtensionProperties.getTenantCodeHeader());
+            if (StrUtil.isBlank(tenantIdentifier)) {
                 return context;
             }
-            Long id = tenantService.getIdByCode(tenantCode);
-            CheckUtils.throwIfNull(id, "编码为 [%s] 的租户不存在".formatted(tenantCode));
+            String normalizedIdentifier = URLDecoder.decode(tenantIdentifier.trim(), StandardCharsets.UTF_8);
+            Long id = tenantService.getIdByCode(normalizedIdentifier);
+            if (id == null) {
+                id = tenantService.getIdByName(normalizedIdentifier);
+            }
+            CheckUtils.throwIfNull(id, "名称为 [%s] 的军团租户不存在".formatted(normalizedIdentifier));
             tenantId = id;
         } else {
             // 指定租户

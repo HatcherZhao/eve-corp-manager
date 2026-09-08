@@ -17,12 +17,17 @@
 package top.continew.admin;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.context.ConfigurableApplicationContext;
 
-@SpringBootTest
 class ContiNewAdminApplicationIT {
 
     @Test
     void contextLoads() {
+        LocalIntegrationEnvironment.configureOrSkip();
+        try (ConfigurableApplicationContext ignored = new SpringApplicationBuilder(ContiNewAdminApplication.class)
+            .run("--server.port=0")) {
+            // 应用上下文成功启动即完成验证。
+        }
     }
 }

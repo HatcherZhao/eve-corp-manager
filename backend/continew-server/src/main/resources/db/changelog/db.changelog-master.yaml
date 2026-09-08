@@ -26,3 +26,23 @@ databaseChangeLog:
 #      file: db/changelog/postgresql/plugin/plugin_generator.sql
   - include:
       file: db/changelog/mysql/eve/001_workspace.sql
+  - include:
+      file: db/changelog/mysql/eve/002_identity_tenant_auth.sql
+  - include:
+      file: db/changelog/mysql/eve/002a_eve_tenant_package_guard.sql
+  - include:
+      file: db/changelog/mysql/eve/002b_eve_capability_permission_guard.sql
+  - include:
+      file: db/changelog/mysql/eve/003_eve_tenant_package.sql
+  - include:
+      file: db/changelog/mysql/eve/004_eve_capability_permissions.sql
+  - include:
+      file: db/changelog/mysql/eve/005_role_binding_hardening.sql
+  - include:
+      file: db/changelog/mysql/eve/006_eve_source_cache_metadata.sql
+  - include:
+      file: db/changelog/mysql/eve/007_eve_review_fairness.sql
+  - include:
+      file: db/changelog/mysql/eve/008_manager_capability_permissions.sql
+  - include:
+      file: db/changelog/mysql/eve/009_manager_capability_permission_tenant_fix.sql

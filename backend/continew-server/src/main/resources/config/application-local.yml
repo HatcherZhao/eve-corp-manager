@@ -9,12 +9,22 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 5
+  data:
+    # Redisson 3.49 在本地配置未显式声明重试间隔时，会被 Starter 的属性复制逻辑解析为 0，
+    # 导致定时器无法初始化。显式设定有效值以保证 Redis 锁、验证码和授权流程可用。
+    redisson:
+      single-server-config:
+        retry-interval: 1500
+        timeout: 10000
 continew-starter:
   tenant:
-    enabled: false
+    enabled: true
   web:
     cors:
-      allowed-origins: http://localhost:5173
+      # Vite 可通过 localhost 或 127.0.0.1 打开，二者都需要被后端 CORS 校验放行。
+      allowed-origins:
+        - http://localhost:5173
+        - http://127.0.0.1:5173
   log:
     includes:
       - DESCRIPTION
@@ -24,9 +34,25 @@ continew-starter:
       enabled: false
 justauth:
   enabled: false
+  cache:
+    type: DEFAULT
 snail-job:
   enabled: false
 logging:
   level:
     top.continew.admin: INFO
     top.continew.starter: INFO
+eve:
+  serenity:
+    sso:
+      # 网易未开放独立应用注册，本地开发复用国服 Swagger UI 公共客户端并手动粘贴回调地址。
+      enabled: true
+      client-id: ${EVE_SERENITY_CLIENT_ID:bc90aa496a404724a93f41b4f4e97761}
+      client-secret: ${EVE_SERENITY_CLIENT_SECRET:}
+      device-id: eve-corp-manager
+      callback-url: https://ali-esi.evepc.163.com/ui/oauth2-redirect.html
+      allowed-callback-uris:
+        - https://ali-esi.evepc.163.com/ui/oauth2-redirect.html
+      subject-pattern: 'CHARACTER:EVE:[0-9]+'
+      scope-claim: scp
+      scope-value-pattern: 'esi-[a-z0-9._-]+'

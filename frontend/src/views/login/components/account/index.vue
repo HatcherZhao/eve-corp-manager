@@ -8,8 +8,8 @@
     size="large"
     @submit="handleLogin"
   >
-    <a-form-item v-if="tenantStore.needInputTenantCode" field="tenantCode" hide-label>
-      <a-input v-model="tenantCode" placeholder="请输入租户编码（不输入时为默认租户）" allow-clear />
+    <a-form-item v-if="tenantStore.needInputTenantCode" field="tenantName" hide-label>
+      <a-input v-model="tenantName" placeholder="EVE 账号请输入所属军团名称" allow-clear />
     </a-form-item>
     <a-form-item field="username" hide-label>
       <a-input v-model="form.username" placeholder="请输入用户名" allow-clear />
@@ -29,7 +29,7 @@
     <a-form-item>
       <a-row justify="space-between" align="center" class="w-full">
         <a-checkbox v-model="loginConfig.rememberMe">记住我</a-checkbox>
-        <a-link>忘记密码</a-link>
+        <a-link @click="router.push('/eve/recover')">忘记密码</a-link>
       </a-row>
     </a-form-item>
     <a-form-item>
@@ -37,6 +37,16 @@
         <a-button class="btn" type="primary" :loading="loading" html-type="submit" size="large" long>立即登录</a-button>
       </a-space>
     </a-form-item>
+    <div class="eve-login-entry">
+      <a-divider orientation="center">游戏身份服务</a-divider>
+      <a-button long size="large" class="eve-login-entry__register" @click="router.push('/eve/register')">
+        <template #icon><icon-user-add /></template>
+        通过 EVE 注册
+      </a-button>
+      <a-link class="eve-login-entry__recover" @click="router.push('/eve/recover')">
+        使用 EVE 找回密码
+      </a-link>
+    </div>
   </a-form>
 </template>
 
@@ -49,6 +59,7 @@ import { encryptByRsa } from '@/utils/encrypt'
 
 const loginConfig = useStorage('login-config', {
   rememberMe: true,
+  tenantName: '',
   username: 'admin', // 演示默认值
   password: '', // 演示默认值
 })
@@ -56,7 +67,7 @@ const loginConfig = useStorage('login-config', {
 const isCaptchaEnabled = ref(true)
 // 验证码图片
 const captchaImgBase64 = ref()
-const tenantCode = ref()
+const tenantName = ref(loginConfig.value.tenantName)
 const formRef = ref<FormInstance>()
 const form = reactive({
   username: loginConfig.value.username,
@@ -111,6 +122,7 @@ const userStore = useUserStore()
 const tabsStore = useTabsStore()
 const router = useRouter()
 const loading = ref(false)
+
 // 登录
 const handleLogin = async () => {
   try {
@@ -123,10 +135,11 @@ const handleLogin = async () => {
       password: encryptByRsa(form.password) || '',
       captcha: form.captcha,
       uuid: form.uuid,
-    }, tenantCode.value)
+    }, tenantName.value.trim())
     tabsStore.reset()
     const { redirect, ...othersQuery } = router.currentRoute.value.query
     const { rememberMe } = loginConfig.value
+    loginConfig.value.tenantName = rememberMe ? tenantName.value.trim() : ''
     loginConfig.value.username = rememberMe ? form.username : ''
 
     // 如果有重定向参数，解码并直接跳转到完整路径
@@ -214,5 +227,28 @@ onMounted(() => {
 .overlay p {
   font-size: 12px;
   color: white;
+}
+
+.eve-login-entry {
+  margin-top: -8px;
+  text-align: center;
+
+  :deep(.arco-divider-text) {
+    color: var(--color-text-3);
+    font-size: 12px;
+  }
+}
+
+.eve-login-entry__register {
+  height: 40px;
+  color: rgb(var(--arcoblue-6));
+  border-color: rgba(var(--arcoblue-6), 0.35);
+  background: rgba(var(--arcoblue-6), 0.06);
+}
+
+.eve-login-entry__recover {
+  display: inline-flex;
+  margin-top: 12px;
+  font-size: 12px;
 }
 </style>

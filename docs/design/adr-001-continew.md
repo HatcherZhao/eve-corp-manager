@@ -23,13 +23,14 @@
 
 复用账号登录、RBAC、动态菜单、字典、参数配置、日志、文件、代码生成等能力。新增 continew-eve 模块承载 EVE 领域服务与模型，Controller 在 continew-server，前端业务目录为 src/apis/eve 和 src/views/eve。
 
-当前权限 eve:workspace:view 仅用于工作台入口。未来军团数据接口还必须校验 server/corporation_id 与角色授权关系；不能把系统角色、ContiNew 租户与 EVE 军团直接当成同一概念。首期 local profile 关闭租户隔离，保留上游租户代码供后续评估。
+`eve:workspace:view` 等站内权限只决定页面和功能访问；EVE 能力还会同时校验服务端确定的军团租户、授权 Scope 与当前游戏角色，不能把系统角色、ContiNew 租户与 EVE 军团混为一类。local profile 已启用租户隔离；请求头篡改、跨租户绑定和授权归属已有自动化测试，真实数据库集成测试验证了租户字段、Token 密文和 Scope 持久化。
 
-EVE OAuth 与站内 Sa-Token 分开：未来验证网易角色后关联本站身份，再发本站令牌；EVE access_token/refresh_token 不用作站内通行令牌。此前 EIMS 回调网址导入方案仍待联调。本阶段没有实现虚假的 SSO 成功路径。
+EVE OAuth 与站内 Sa-Token 分开：验证网易角色后关联本站身份，再签发本站令牌；EVE access_token/refresh_token 不用作站内通行令牌。授权回调、Token 生命周期和手工导入流程已有自动化覆盖，但真实国服应用凭据及账号场景仍待上线前联调；未配置凭据时不会产生虚假的 SSO 成功路径。
 
 ## 已完成的项目化调整
 
 - EVE 工作台接口、Vue 页面、菜单/权限及站点名称 Liquibase 增量迁移。
+- EVE 国服注册、绑定、找回密码、主动刷新、重新授权、派生角色、权限树及授权定时复核。
 - local 配置、仅绑定回环地址的数据库/Redis Compose、Python 初始化/启动脚本。
 - 运行环境注入随机管理员初始密码、数据库、Redis、JWT、字段加密/RSA 密钥；前端独立 public key 配置。
 - 移除上游网页统计脚本、演示数据重置任务、示例第三方 OAuth 配置；生产 API 改用同源 /api，不再调用上游演示服务。

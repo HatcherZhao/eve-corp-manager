@@ -38,6 +38,12 @@ export default defineConfig(({ command, mode }) => {
           changeOrigin: true, // 是否允许不同源
           secure: false, // 支持https
           rewrite: (path) => path.replace(new RegExp(`^${env.VITE_API_PREFIX}`), ''),
+          // 浏览器到 Vite 为同源请求；不要将其 Origin 转给后端，避免本地代理链路再触发后端 CORS 校验。
+          configure: (proxy) => {
+            proxy.on('proxyReq', (proxyReq) => {
+              proxyReq.removeHeader('origin')
+            })
+          },
         },
       },
     },

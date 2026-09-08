@@ -52,6 +52,14 @@ public interface TenantService extends BaseService<TenantResp, TenantDetailResp,
     Long getIdByCode(String code);
 
     /**
+     * 根据名称查询。
+     *
+     * @param name 名称
+     * @return ID
+     */
+    Long getIdByName(String name);
+
+    /**
      * 检查租户状态
      *
      * @param id ID

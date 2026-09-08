@@ -16,6 +16,10 @@
 
 package top.continew.admin.common.api.system;
 
+import top.continew.admin.common.model.dto.EveSiteRoleDTO;
+
+import java.util.List;
+
 /**
  * 角色业务 API
  *
@@ -38,4 +42,13 @@ public interface RoleApi {
      * @param roleId 角色 ID
      */
     void updateUserContext(Long roleId);
+
+    /**
+     * 查询指定租户用户的本站角色及逐角色权限摘要。
+     *
+     * @param tenantId 租户 ID
+     * @param userId   用户 ID
+     * @return 本站角色安全摘要
+     */
+    List<EveSiteRoleDTO> listEveSiteRoles(Long tenantId, Long userId);
 }

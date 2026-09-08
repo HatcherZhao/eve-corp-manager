@@ -139,6 +139,17 @@ public class TenantServiceImpl extends BaseServiceImpl<TenantMapper, TenantDO, T
     }
 
     @Override
+    @Cached(name = TenantCacheConstants.TENANT_KEY_PREFIX, key = "'NAME:' + #name")
+    public Long getIdByName(String name) {
+        return baseMapper.lambdaQuery()
+            .select(TenantDO::getId)
+            .eq(TenantDO::getName, name)
+            .oneOpt()
+            .map(TenantDO::getId)
+            .orElse(null);
+    }
+
+    @Override
     public void checkStatus(Long id) {
         // 默认租户
         if (tenantExtensionProperties.getDefaultTenantId().equals(id)) {

@@ -17,6 +17,7 @@
     "checkJs": true, // 报告 javascript 文件中的错误
     "strict": true, // 开启所有严格的类型检查
     "noImplicitAny": false,
+    "noEmit": true, // 类型检查禁止向源码目录生成 JavaScript 和 Source Map
     "sourceMap": true, // 是否生成相应的Map映射的文件，默认：false
     "esModuleInterop": true, // 是否通过为所有导入模块创建命名空间对象，允许CommonJS和ES模块之间的互操作性，开启改选项时，也自动开启allowSyntheticDefaultImports选项，默认：false
     "skipLibCheck": true, // 是否跳过声明文件的类型检查，这可以在编译期间以牺牲类型系统准确性为代价来节省时间，默认：false

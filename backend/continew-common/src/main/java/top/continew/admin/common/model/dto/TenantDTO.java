@@ -54,6 +54,11 @@ public class TenantDTO implements Serializable {
     private String adminPassword;
 
     /**
+     * 管理员昵称
+     */
+    private String adminNickname;
+
+    /**
      * 套餐 ID
      */
     private Long packageId;

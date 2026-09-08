@@ -10,14 +10,14 @@
 | 数据库 | MySQL 8.0.42 |
 | ORM / 迁移 | MyBatis-Plus / Liquibase |
 | 缓存 | Redis 7.2.8，Redisson / JetCache 沿用上游 |
-| EVE 客户端 | 国服契约驱动的独立适配层，尚未实现 |
-| 调度 | 上游调度代码保留但未启用；ESI 调度实现留待授权联调 |
+| EVE 客户端 | 国服契约驱动的独立适配层；SSO、Token 与角色查询客户端已实现 |
+| 调度 | 上游调度代码保留；EVE 授权定时复核已实现，业务数据同步留待后续范围 |
 
 ## 模块和数据流
 
 浏览器访问自己的 API；Java 负责 SSO callback、游戏 API 与后台同步；页面查询本地快照，刷新按钮提交受限同步任务，不让每次打开页面都扇出数百次游戏请求。
 
-模块：identity（站内用户/角色）、eve-auth（授权与令牌）、esi-adapter（国服契约）、corporation、assets、structures、mining、members、sync、audit。
+当前模块：identity（站内用户/派生角色）、eve-auth（授权与令牌）、esi-adapter（国服契约）、corporation、permission、audit。assets、structures、mining、members 和业务数据 sync 属于后续范围。
 
 ## 最小数据模型
 

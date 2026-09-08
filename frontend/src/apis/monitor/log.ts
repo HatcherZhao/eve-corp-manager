@@ -17,10 +17,10 @@ export function getLog(id: string) {
 
 /** @desc 导出登录日志 */
 export function exportLoginLog(query: T.LogQuery) {
-  return http.download<any>(`${BASE_URL}/export/login`, query)
+  return http.download(`${BASE_URL}/export/login`, query)
 }
 
 /** @desc 导出操作日志 */
 export function exportOperationLog(query: T.LogQuery) {
-  return http.download<any>(`${BASE_URL}/export/operation`, query)
+  return http.download(`${BASE_URL}/export/operation`, query)
 }

@@ -27,6 +27,8 @@ import top.continew.admin.common.api.tenant.PackageMenuApi;
 import top.continew.admin.common.api.tenant.TenantApi;
 import top.continew.admin.common.api.tenant.TenantDataApi;
 import top.continew.admin.common.constant.GlobalConstants;
+import top.continew.admin.common.context.UserContextHolder;
+import top.continew.admin.common.base.model.entity.BaseDO;
 import top.continew.admin.common.enums.DataScopeEnum;
 import top.continew.admin.common.enums.DisEnableStatusEnum;
 import top.continew.admin.common.enums.GenderEnum;
@@ -149,6 +151,7 @@ public class TenantDataApiForSystemImpl implements TenantDataApi {
         dept.setSort(1);
         dept.setStatus(DisEnableStatusEnum.ENABLE);
         dept.setIsSystem(true);
+        prepareInsert(dept);
         deptMapper.insert(dept);
         return dept.getId();
     }
@@ -170,6 +173,7 @@ public class TenantDataApiForSystemImpl implements TenantDataApi {
         role.setIsSystem(true);
         role.setMenuCheckStrictly(true);
         role.setDeptCheckStrictly(true);
+        prepareInsert(role);
         roleMapper.insert(role);
         return role.getId();
     }
@@ -187,7 +191,9 @@ public class TenantDataApiForSystemImpl implements TenantDataApi {
         // 初始化用户
         UserDO user = new UserDO();
         user.setUsername(tenant.getAdminUsername());
-        user.setNickname(RoleCodeEnum.TENANT_ADMIN.getDescription());
+        user.setNickname(tenant.getAdminNickname() == null || tenant.getAdminNickname().isBlank()
+            ? RoleCodeEnum.TENANT_ADMIN.getDescription()
+            : tenant.getAdminNickname());
         user.setPassword(password);
         user.setGender(GenderEnum.UNKNOWN);
         user.setDescription("系统初始用户");
@@ -195,7 +201,16 @@ public class TenantDataApiForSystemImpl implements TenantDataApi {
         user.setIsSystem(true);
         user.setPwdResetTime(LocalDateTime.now());
         user.setDeptId(deptId);
+        prepareInsert(user);
         userMapper.insert(user);
         return user.getId();
+    }
+
+    /** 未登录的 EVE 认领流程使用系统管理员作为初始化审计主体。 */
+    private static void prepareInsert(BaseDO entity) {
+        if (UserContextHolder.getUserId() == null) {
+            entity.setCreateUser(1L);
+        }
+        entity.setDeleted(0L);
     }
 }
