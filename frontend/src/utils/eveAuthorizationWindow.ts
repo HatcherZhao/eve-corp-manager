@@ -32,6 +32,17 @@ export function navigateEveAuthorizationWindow(popup: Window | null, authorizati
   return true
 }
 
+/**
+ * 重新授权前退出当前网易登录态，再由官方退出页回跳到本次唯一授权地址。
+ *
+ * 这只处理网易 EVE 登录会话，不会宣称或尝试清除用户浏览器的全部缓存。
+ */
+export function navigateEveReauthorizationWindow(popup: Window | null, authorizationUri: string): boolean {
+  const logoutUrl = new URL(EVE_LOGOUT_URL)
+  logoutUrl.searchParams.set('returnUrl', authorizationUri)
+  return navigateEveAuthorizationWindow(popup, logoutUrl.toString())
+}
+
 /** 关闭尚未进入授权流程的空窗口。 */
 export function closePreparedEveAuthorizationWindow(popup: Window | null) {
   if (popup && !popup.closed) popup.close()

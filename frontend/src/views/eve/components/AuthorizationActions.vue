@@ -10,7 +10,7 @@ import {
 } from '@/apis/eve'
 import {
   closePreparedEveAuthorizationWindow,
-  navigateEveAuthorizationWindow,
+  navigateEveReauthorizationWindow,
   prepareEveAuthorizationWindow,
 } from '@/utils/eveAuthorizationWindow'
 
@@ -80,7 +80,7 @@ async function handleRefresh() {
   }
 }
 
-/** 在小窗口发起重新授权，授权地址不会写入浏览器存储。 */
+/** 在小窗口退出旧网易会话后发起重新授权，避免复用异常的旧登录态。 */
 async function handleReauthorize() {
   const popup = prepareEveAuthorizationWindow()
   if (!popup) {
@@ -90,7 +90,7 @@ async function handleReauthorize() {
   starting.value = true
   try {
     const { data } = await startEveReauthorization()
-    if (!navigateEveAuthorizationWindow(popup, data.authorizationUri)) {
+    if (!navigateEveReauthorizationWindow(popup, data.authorizationUri)) {
       Message.warning('授权窗口已关闭，请重新发起授权')
       return
     }
@@ -198,7 +198,7 @@ async function handleCompleteReauthorization(): Promise<boolean> {
       @before-ok="handleCompleteReauthorization"
       @cancel="callbackUrl = ''"
     >
-      <p class="eve-authorization-actions__hint">完成国服授权后，粘贴浏览器最终停留的完整地址。验证后输入内容会立即清空。</p>
+      <p class="eve-authorization-actions__hint">已先退出当前网易 EVE 登录会话。请在弹窗中重新登录、选择角色并完成授权，再粘贴浏览器最终停留的完整地址；验证后输入内容会立即清空。</p>
       <a-textarea
         v-model="callbackUrl"
         :auto-size="{ minRows: 4, maxRows: 7 }"

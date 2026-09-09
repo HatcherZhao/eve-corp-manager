@@ -22,10 +22,8 @@ import org.redisson.api.RedissonClient;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import top.continew.admin.common.api.system.RoleApi;
 import top.continew.admin.common.context.UserContext;
 import top.continew.admin.common.context.UserContextHolder;
-import top.continew.admin.common.model.dto.EveSiteRoleDTO;
 import top.continew.admin.eve.auth.OAuthTransaction;
 import top.continew.admin.eve.auth.OAuthTransactionPurpose;
 import top.continew.admin.eve.auth.OAuthTransactionStore;
@@ -42,7 +40,6 @@ import top.continew.admin.eve.model.entity.EveAuthAuditDO;
 import top.continew.admin.eve.model.entity.EveAuthorizationDO;
 import top.continew.admin.eve.model.entity.EveCharacterDO;
 import top.continew.admin.eve.model.enums.EveAuthorizationStatus;
-import top.continew.admin.eve.model.enums.EveCapability;
 import top.continew.admin.eve.model.enums.EveAuthAuditEventType;
 import top.continew.admin.eve.model.enums.EveAuthAuditResult;
 import top.continew.admin.eve.security.SerenityCallback;
@@ -54,11 +51,8 @@ import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Collection;
-import java.util.Arrays;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.concurrent.TimeUnit;
@@ -73,7 +67,6 @@ import java.util.concurrent.TimeUnit;
 public class EvePermissionReauthorizationService {
 
     private static final Pattern CHARACTER_ID_SUFFIX = Pattern.compile("(?:^|:)([1-9][0-9]*)$");
-
     private final EveCharacterMapper characterMapper;
     private final EveAuthorizationMapper authorizationMapper;
     private final EveAuthAuditMapper auditMapper;
@@ -84,34 +77,18 @@ public class EvePermissionReauthorizationService {
     private final SerenityJwtDecoderFactory jwtDecoderFactory;
     private final EveAuthorizationTokenService tokenService;
     private final EvePermissionRefreshService permissionRefreshService;
-    private final RoleApi roleApi;
     private final SerenityProperties properties;
     private final RedissonClient redissonClient;
+    private final EveAuthorizationScopePolicy scopePolicy;
 
     /** 发起绑定当前租户、用户、服务器和原游戏角色的重新授权。 */
     public SerenityAuthorizationStart startCurrent(String browserBindingDigest) {
         UserContext context = UserContextHolder.getContext();
         EveCharacterDO character = primaryCharacter(context.getTenantId(), context.getId());
-        EveAuthorizationDO authorization = latestAuthorization(context.getTenantId(), context.getId(), character);
-        Set<String> scopes = new LinkedHashSet<>(authorization.getScopes() == null
-            ? List.of()
-            : authorization.getScopes());
-        scopes.addAll(properties.getSso().getRequiredScopes());
-        Set<String> permissions = roleApi.listEveSiteRoles(context.getTenantId(), context.getId())
-            .stream()
-            .flatMap(role -> safePermissions(role).stream())
-            .collect(java.util.stream.Collectors.toSet());
-        Arrays.stream(EveCapability.values())
-            .filter(capability -> permissions.contains(capability.getSitePermission()))
-            .map(EveCapability::getScope)
-            .forEach(scopes::add);
+        latestAuthorization(context.getTenantId(), context.getId(), character);
         return authorizationStartService.start(OAuthTransactionPurpose.EXPAND_SCOPES, context.getTenantId(), context
-            .getId(), character.getServer(), character.getCharacterId(), browserBindingDigest, scopes);
-    }
-
-    /** 安全读取站内角色权限集合。 */
-    private static List<String> safePermissions(EveSiteRoleDTO role) {
-        return role.permissions() == null ? List.of() : role.permissions();
+            .getId(), character.getServer(), character.getCharacterId(), browserBindingDigest, scopePolicy
+                .plannedScopes());
     }
 
     /**

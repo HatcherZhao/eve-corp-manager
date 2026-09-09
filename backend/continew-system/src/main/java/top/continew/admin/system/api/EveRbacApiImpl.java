@@ -71,6 +71,10 @@ public class EveRbacApiImpl implements EveRbacApi {
         ALLOWED_PERMISSIONS.put("eve:extractions:view", "月矿计划");
         ALLOWED_PERMISSIONS.put("eve:mining:view", "采矿账本");
         ALLOWED_PERMISSIONS.put("eve:members:view", "军团人员");
+        ALLOWED_PERMISSIONS.put("eve:members:track:view", "成员追踪信息");
+        ALLOWED_PERMISSIONS.put("eve:members:organize", "成员分组与备注");
+        ALLOWED_PERMISSIONS.put("eve:members:export", "成员数据导出");
+        ALLOWED_PERMISSIONS.put("eve:members:history:view", "成员同步历史");
     }
 
     private final RoleMapper roleMapper;
@@ -245,7 +249,7 @@ public class EveRbacApiImpl implements EveRbacApi {
         return role;
     }
 
-    /** 将输入权限限制到固定五项 EVE 查看权限。 */
+    /** 将输入权限限制到固定 EVE 查看权限，追踪权限可单独授予非总监成员。 */
     List<String> validatePermissions(List<String> permissions) {
         List<String> normalized = permissions == null ? List.of() : permissions.stream().distinct().toList();
         rejectIf(normalized.stream()
@@ -253,7 +257,7 @@ public class EveRbacApiImpl implements EveRbacApi {
         return normalized;
     }
 
-    /** 原子替换业务角色关联的五项能力菜单。 */
+    /** 原子替换业务角色关联的固定能力菜单。 */
     private void replaceRoleMenus(Long roleId, List<String> permissions) {
         roleMenuService.deleteByRoleIds(List.of(roleId));
         if (permissions.isEmpty()) {

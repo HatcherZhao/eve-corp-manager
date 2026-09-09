@@ -94,7 +94,7 @@ class SerenityAuthorizationStartServiceTest {
         assertThat(query.getFirst("response_type")).isEqualTo("code");
         assertThat(query.getFirst("state")).isEqualTo(stateCaptor.getValue());
         assertThat(query.getFirst("device_id")).isEqualTo("eve-corp-manager");
-        assertThat(query.getFirst("relogin")).isEqualTo("1");
+        assertThat(query.containsKey("relogin")).isFalse();
         assertThat(query.getFirst("code_challenge_method")).isEqualTo("S256");
         assertThat(query.getFirst("code_challenge")).isEqualTo(OAuthSecurityUtils.createS256Challenge(transaction
             .getVerifier()));
@@ -127,7 +127,9 @@ class SerenityAuthorizationStartServiceTest {
         assertThat(transaction.getBoundUserId()).isEqualTo(20L);
         assertThat(transaction.getBoundServer()).isEqualTo("serenity");
         assertThat(transaction.getBoundCharacterId()).isEqualTo(8001L);
-        assertThat(UriComponentsBuilder.fromUriString(result.authorizationUri()).build().getQueryParams())
-            .doesNotContainKey("relogin");
+        assertThat(UriComponentsBuilder.fromUriString(result.authorizationUri())
+            .build()
+            .getQueryParams()
+            .containsKey("relogin")).isFalse();
     }
 }

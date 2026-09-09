@@ -110,10 +110,6 @@ public class SerenityAuthorizationStartService {
             .queryParam("state", state)
             .queryParam("code_challenge", challenge)
             .queryParam("code_challenge_method", "S256");
-        if (purpose == OAuthTransactionPurpose.REGISTER) {
-            // 新用户注册必须要求网易重新认证，避免沿用浏览器中其他人的网易登录态。
-            authorizationBuilder.queryParam("relogin", "1");
-        }
         String authorizationUri = authorizationBuilder.build().encode().toUriString();
         return new SerenityAuthorizationStart(authorizationUri);
     }

@@ -51,15 +51,17 @@ const handleError = (msg: string) => {
 // 请求拦截器
 http.interceptors.request.use(
   (config: AxiosRequestConfig) => {
+    // 登录和图形验证码必须脱离旧会话：登录由本次填写的军团名称解析租户，验证码则完全无需身份。
+    const isAnonymousRequest = config.url === '/auth/login' || config.url === '/captcha/image'
     const token = getToken()
     if (!config.headers) {
       config.headers = {}
     }
-    if (token) {
+    if (token && !isAnonymousRequest) {
       config.headers.Authorization = `Bearer ${token}`
     }
     const tenantStore = useTenantStore()
-    if (tenantStore.tenantEnabled && tenantStore.tenantId) {
+    if (!isAnonymousRequest && tenantStore.tenantEnabled && tenantStore.tenantId) {
       config.headers['X-Tenant-Id'] = tenantStore.tenantId
     }
     return config

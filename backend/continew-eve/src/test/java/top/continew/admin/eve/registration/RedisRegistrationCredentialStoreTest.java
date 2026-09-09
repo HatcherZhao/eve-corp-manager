@@ -103,9 +103,9 @@ class RedisRegistrationCredentialStoreTest {
         when(bucket.get()).thenAnswer(invocation -> stored.get());
         RedisRegistrationCredentialStore store = new RedisRegistrationCredentialStore(client, "test-field-key");
 
-        String credential = store.issue("browser-a", identity(), Duration.ofMillis(50));
+        String credential = store.issue("browser-a", identity(), Duration.ofSeconds(1));
         RegistrationCredentialSnapshot processing = store.find(credential, "browser-a").orElseThrow();
-        Thread.sleep(80);
+        Thread.sleep(1100);
 
         assertThat(processing.processingExpiresAt()).isAfter(processing.credentialExpiresAt());
         assertThat(store.find(credential, "browser-a")).contains(processing);

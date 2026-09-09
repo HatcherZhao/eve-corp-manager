@@ -42,7 +42,7 @@ import top.continew.admin.eve.registration.EveRegistrationCompleteResult;
 import top.continew.admin.eve.registration.EveRegistrationService;
 import top.continew.admin.eve.registration.RegistrationCallbackResult;
 import top.continew.admin.eve.registration.SerenityRegistrationCallbackService;
-import top.continew.admin.eve.model.enums.EveCapability;
+import top.continew.admin.eve.service.EveAuthorizationScopePolicy;
 import top.continew.admin.eve.security.OAuthSecurityUtils;
 import top.continew.starter.core.util.validation.ValidationUtils;
 import top.continew.starter.extension.tenant.annotation.TenantIgnore;
@@ -54,8 +54,6 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
-import java.util.LinkedHashSet;
-import java.util.Set;
 
 /**
  * 未登录用户通过 EVE 国服身份验证注册本站账号。
@@ -77,6 +75,7 @@ public class EveRegistrationController {
     private final SerenityRegistrationCallbackService callbackService;
     private final EveRegistrationService registrationService;
     private final SerenityProperties properties;
+    private final EveAuthorizationScopePolicy scopePolicy;
 
     /** 发起带 state 和 PKCE S256 的国服注册授权。 */
     @PostMapping("/start")
@@ -84,9 +83,8 @@ public class EveRegistrationController {
     @RateLimiter(name = "EVE_REGISTRATION_START", rate = 30, interval = 1, unit = TimeUnit.MINUTES, type = LimitType.IP, message = "EVE 注册授权发起过于频繁，请稍后再试")
     public SerenityAuthorizationStart start(HttpServletRequest request, HttpServletResponse response) {
         String binding = getOrCreateBrowserBinding(request, response);
-        Set<String> scopes = new LinkedHashSet<>(properties.getSso().getRequiredScopes());
-        Arrays.stream(EveCapability.values()).map(EveCapability::getScope).forEach(scopes::add);
-        return authorizationStartService.start(OAuthTransactionPurpose.REGISTER, null, digest(binding), scopes);
+        return authorizationStartService.start(OAuthTransactionPurpose.REGISTER, null, digest(binding), scopePolicy
+            .plannedScopes());
     }
 
     /** 导入并验证固定国服回调地址，返回一次性本站注册凭证。 */

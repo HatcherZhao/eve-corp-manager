@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import top.continew.admin.common.api.system.EveRbacApi;
 import top.continew.admin.common.context.UserContext;
@@ -34,6 +35,10 @@ import top.continew.admin.common.context.UserContextHolder;
 import top.continew.admin.common.model.dto.EveRbacOverviewDTO;
 import top.continew.admin.controller.eve.model.EveBusinessRoleReq;
 import top.continew.admin.controller.eve.model.EveMemberRoleAssignReq;
+import top.continew.admin.eve.model.EveMemberOperationAuditResp;
+import top.continew.admin.eve.service.EveMemberOperationAuditService;
+
+import java.util.List;
 
 /**
  * EVE 军团租户业务角色与成员授权控制面。
@@ -47,6 +52,7 @@ import top.continew.admin.controller.eve.model.EveMemberRoleAssignReq;
 public class EveRbacController {
 
     private final EveRbacApi rbacApi;
+    private final EveMemberOperationAuditService memberOperationAuditService;
 
     /** 查询可管理权限、角色与成员。 */
     @GetMapping("/overview")
@@ -88,5 +94,13 @@ public class EveRbacController {
     public void assignMemberRoles(@PathVariable Long userId, @RequestBody EveMemberRoleAssignReq req) {
         UserContext context = UserContextHolder.getContext();
         rbacApi.assignMemberRoles(context.getTenantId(), context.getId(), userId, req.roleIds());
+        memberOperationAuditService.recordBusinessRoleUpdate(context, userId);
+    }
+
+    /** 查询最近成员业务角色调整记录。 */
+    @GetMapping("/audit")
+    @Operation(summary = "查询成员权限变更审计")
+    public List<EveMemberOperationAuditResp> listAudit(@RequestParam(defaultValue = "20") int limit) {
+        return memberOperationAuditService.listBusinessRoleActivities(limit);
     }
 }

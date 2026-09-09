@@ -64,6 +64,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -90,8 +91,9 @@ class EvePermissionRefreshServiceTest {
     private EveDerivedIdentityService derivedIdentityService;
     private EveCapabilityPolicy capabilityPolicy;
     private RoleApi roleApi;
+    private EveAuthorizationScopePolicy scopePolicy;
     private RLock lock;
-    private RBucket<LocalDateTime> cooldown;
+    private RBucket<String> cooldown;
     private EvePermissionRefreshService service;
 
     /** 初始化当前租户用户、分布式锁和基础身份事实。 */
@@ -114,11 +116,12 @@ class EvePermissionRefreshServiceTest {
         lock = mock(RLock.class);
         cooldown = mock(RBucket.class);
         when(redissonClient.getLock("eve:serenity:permission-refresh:10:20")).thenReturn(lock);
-        when(redissonClient.<LocalDateTime>getBucket("eve:serenity:permission-refresh-cooldown:10:20"))
-            .thenReturn(cooldown);
+        when(redissonClient.<String>getBucket("eve:serenity:permission-refresh-cooldown:10:20")).thenReturn(cooldown);
         when(lock.tryLock(anyLong(), eq(TimeUnit.MILLISECONDS))).thenReturn(true);
         when(lock.isHeldByCurrentThread()).thenReturn(true);
-        service = new EvePermissionRefreshService(characterMapper, corporationMapper, memberMapper, authorizationMapper, snapshotMapper, auditMapper, esiClient, lifecycleService, tokenService, derivedIdentityService, capabilityPolicy, roleApi, redissonClient, new SerenityProperties());
+        SerenityProperties properties = new SerenityProperties();
+        scopePolicy = new EveAuthorizationScopePolicy(properties);
+        service = new EvePermissionRefreshService(characterMapper, corporationMapper, memberMapper, authorizationMapper, snapshotMapper, auditMapper, esiClient, lifecycleService, tokenService, derivedIdentityService, capabilityPolicy, roleApi, redissonClient, properties, scopePolicy);
         when(roleApi.listEveSiteRoles(10L, 20L)).thenReturn(List.of());
         when(capabilityPolicy.evaluateAll(eq(10L), any())).thenReturn(List.of());
         stubBoundIdentity();
@@ -148,14 +151,12 @@ class EvePermissionRefreshServiceTest {
         stubUpstream(9001L, List.of("Director"), List.of(), List.of(), List.of());
         when(snapshotMapper.selectLatest(10L, 100L)).thenReturn(snapshot(false, List.of()));
         EveAuthorizationDO authorization = authorization();
-        authorization.setScopes(List
-            .of("esi-characters.read_corporation_roles.v1", "esi-assets.read_corporation_assets.v1"));
+        authorization.setScopes(List.copyOf(scopePolicy.plannedScopes()));
         when(authorizationMapper.selectByUserCharacter(10L, 20L, 100L)).thenReturn(List.of(authorization));
         when(lifecycleService.ensureAccessToken(authorization)).thenReturn("access-token");
         EveSiteRoleDTO memberRole = siteRole("corp_member", List.of("eve:assets:view"));
         EveSiteRoleDTO adminRole = siteRole("corp_admin", List.of("eve:assets:view"));
-        when(roleApi.listEveSiteRoles(10L, 20L)).thenReturn(List.of(memberRole), List.of(memberRole), List
-            .of(adminRole));
+        when(roleApi.listEveSiteRoles(10L, 20L)).thenReturn(List.of(memberRole), List.of(adminRole));
         when(capabilityPolicy.evaluateAll(eq(10L), any())).thenReturn(List.of(EveCapabilityResult
             .of(EveCapability.ASSETS, EveCapabilityStatus.MISSING_GAME_ROLE)), List.of(EveCapabilityResult
                 .of(EveCapability.ASSETS, EveCapabilityStatus.AVAILABLE)));
@@ -220,33 +221,33 @@ class EvePermissionRefreshServiceTest {
         EvePermissionRefreshResp response = service.refresh(10L, 20L, false);
 
         assertThat(response.status()).isEqualTo(EvePermissionRefreshStatus.REAUTHORIZATION_REQUIRED);
-        assertThat(response.missingScopes()).containsExactly("esi-characters.read_corporation_roles.v1");
+        assertThat(response.missingScopes()).contains("esi-characters.read_corporation_roles.v1");
         assertThat(response.reauthorizationPath()).isEqualTo("/eve/permissions/reauthorization/start");
         verify(lifecycleService, never()).ensureAccessToken(any());
         verify(esiClient, never()).getCharacter(anyLong());
     }
 
-    /** 已获业务模块权限但缺少对应 Scope 时，应刷新身份事实并提示扩展授权。 */
+    /** 已确认授权包不完整时，应直接提示一次性重新授权。 */
     @Test
-    void shouldRequireScopeExpansionForPermittedCapability() {
-        stubUpstream(9001L, List.of("Director"), List.of(), List.of(), List.of());
-        when(snapshotMapper.selectLatest(10L, 100L)).thenReturn(snapshot(false, List.of("Director")));
-        when(roleApi.listEveSiteRoles(10L, 20L)).thenReturn(List.of(siteRole("asset_viewer", List
-            .of("eve:assets:view"))));
+    void shouldRequireScopeExpansionForIncompletePlannedBundle() {
+        EveAuthorizationDO authorization = authorization();
+        authorization.setScopes(List.of("esi-characters.read_corporation_roles.v1"));
+        when(authorizationMapper.selectByUserCharacter(10L, 20L, 100L)).thenReturn(List.of(authorization));
 
         EvePermissionRefreshResp response = service.refresh(10L, 20L, false);
 
         assertThat(response.status()).isEqualTo(EvePermissionRefreshStatus.REAUTHORIZATION_REQUIRED);
-        assertThat(response.missingScopes()).containsExactly("esi-assets.read_corporation_assets.v1");
+        assertThat(response.missingScopes())
+            .contains("esi-assets.read_corporation_assets.v1", "esi-corporations.track_members.v1", "esi-mail.send_mail.v1");
         assertThat(response.reauthorizationPath()).isEqualTo("/eve/permissions/reauthorization/start");
-        verify(tokenService).markVerified(eq(10L), eq(20L), eq(400L), any(LocalDateTime.class));
-        verify(tokenService, never()).markReauthorizationRequired(any(), any(), any(), any());
+        verify(lifecycleService, never()).ensureAccessToken(any());
+        verify(tokenService).markReauthorizationRequired(eq(10L), eq(20L), eq(400L), eq(OAuthFailureCode.PERMANENT));
     }
 
     /** 冷却期内重复请求不得触发任何上游调用。 */
     @Test
     void shouldReturnCooldownWithoutCallingUpstream() {
-        when(cooldown.get()).thenReturn(LocalDateTime.now().plusMinutes(3));
+        when(cooldown.get()).thenReturn(LocalDateTime.now().plusMinutes(3).toString());
         when(snapshotMapper.selectLatest(10L, 100L)).thenReturn(snapshot(false, List.of()));
 
         EvePermissionRefreshResp response = service.refresh(10L, 20L, false);
@@ -279,7 +280,7 @@ class EvePermissionRefreshServiceTest {
             verify(cooldown, never()).set(any(), any(java.time.Duration.class));
             verify(lock, never()).unlock();
             TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
-            verify(cooldown).set(any(LocalDateTime.class), any(java.time.Duration.class));
+            verify(cooldown).set(anyString(), any(java.time.Duration.class));
             TransactionSynchronizationManager.getSynchronizations()
                 .forEach(synchronization -> synchronization
                     .afterCompletion(TransactionSynchronization.STATUS_COMMITTED));
@@ -366,6 +367,7 @@ class EvePermissionRefreshServiceTest {
 
         assertThat(response.status()).isEqualTo(EvePermissionRefreshStatus.MEMBERSHIP_INVALID);
         verify(tokenService).markReauthorizationRequired(10L, 20L, 400L, OAuthFailureCode.PERMANENT);
+        verify(derivedIdentityService).synchronize(10L, 20L);
     }
 
     /** 建立站内已绑定角色、军团、成员和授权。 */
@@ -409,15 +411,15 @@ class EvePermissionRefreshServiceTest {
                 .plusMinutes(30), "role-etag"));
     }
 
-    /** 创建有效角色读取授权。 */
-    private static EveAuthorizationDO authorization() {
+    /** 创建包含已确认军团运营功能授权包的有效授权。 */
+    private EveAuthorizationDO authorization() {
         EveAuthorizationDO authorization = new EveAuthorizationDO();
         authorization.setId(400L);
         authorization.setTenantId(10L);
         authorization.setUserId(20L);
         authorization.setCharacterRefId(100L);
         authorization.setStatus(EveAuthorizationStatus.ACTIVE);
-        authorization.setScopes(List.of("esi-characters.read_corporation_roles.v1"));
+        authorization.setScopes(List.copyOf(scopePolicy.plannedScopes()));
         authorization.setAccessToken("access-token");
         authorization.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(10));
         return authorization;
@@ -432,7 +434,7 @@ class EvePermissionRefreshServiceTest {
         snapshot.setRolesAtBase(List.of());
         snapshot.setRolesAtOther(List.of());
         snapshot.setCapturedAt(LocalDateTime.now().minusHours(1));
-        snapshot.setSourceExpiresAt(LocalDateTime.now());
+        snapshot.setSourceExpiresAt(LocalDateTime.now(java.time.ZoneOffset.UTC));
         return snapshot;
     }
 
@@ -440,4 +442,5 @@ class EvePermissionRefreshServiceTest {
     private static EveSiteRoleDTO siteRole(String code, List<String> permissions) {
         return new EveSiteRoleDTO(1L, code, code, code, DataScopeEnum.ALL, true, permissions);
     }
+
 }

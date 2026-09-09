@@ -33,7 +33,7 @@ public enum EveCapability {
     STRUCTURES("structures", "建筑设施", "建筑状态、服务与燃料到期", "eve:structures:view", "esi-corporations.read_structures.v1", "Station_Manager"),
     EXTRACTIONS("extractions", "月矿计划", "矿块拉取、到达与自然碎裂时间", "eve:extractions:view", "esi-industry.read_corporation_mining.v1", "Station_Manager"),
     MINING("mining", "采矿账本", "观察者记录的矿种、数量与角色", "eve:mining:view", "esi-industry.read_corporation_mining.v1", "Accountant"),
-    MEMBERS("members", "军团人员", "成员名单与有权查看的追踪记录", "eve:members:view", "esi-corporations.track_members.v1", "Director");
+    MEMBERS("members", "军团人员", "成员名册；位置、舰船与上下线追踪按单独权限和总监数据源控制", "eve:members:view", "esi-corporations.read_corporation_membership.v1", null);
 
     private final String key;
     private final String title;

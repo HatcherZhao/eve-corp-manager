@@ -17,12 +17,9 @@
 package top.continew.admin.eve.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import cn.dev33.satoken.stp.StpUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import top.continew.admin.eve.client.SerenityTokenResponse;
 import top.continew.admin.eve.client.OAuthFailureCode;
 import top.continew.admin.eve.mapper.EveAuthorizationMapper;
@@ -45,7 +42,6 @@ import java.util.List;
 public class EveAuthorizationTokenService {
 
     private final EveAuthorizationMapper authorizationMapper;
-    private final EveDerivedIdentityService derivedIdentityService;
     private final Clock clock = Clock.systemUTC();
 
     /**
@@ -101,7 +97,7 @@ public class EveAuthorizationTokenService {
     }
 
     /**
-     * 撤销后原子清空两类密文并记录撤销状态。
+     * 撤销后原子清空两类密文并记录撤销状态；本站账号和最近已验证的军团身份不受影响。
      *
      * @param authorizationId 授权记录 ID
      */
@@ -112,7 +108,6 @@ public class EveAuthorizationTokenService {
             .set("refresh_token", null)
             .set("status", EveAuthorizationStatus.REVOKED)
             .set("revoked_at", LocalDateTime.now(clock)));
-        convergeIdentityAndSessions(tenantId, userId);
     }
 
     /**
@@ -143,9 +138,6 @@ public class EveAuthorizationTokenService {
                 .set("last_verified_at", LocalDateTime.now(clock));
         }
         updateOwned(tenantId, userId, authorizationId, wrapper.eq("status", EveAuthorizationStatus.ACTIVE));
-        if (permanent) {
-            convergeIdentityAndSessions(tenantId, userId);
-        }
     }
 
     /** 标记授权已通过最新上游事实验证。 */
@@ -174,23 +166,6 @@ public class EveAuthorizationTokenService {
             .set("last_verified_at", LocalDateTime.now(clock))
             .set("failure_code", failureCode.name())
             .eq("status", EveAuthorizationStatus.ACTIVE));
-        convergeIdentityAndSessions(tenantId, userId);
-    }
-
-    /** 失效或撤销提交后重算多角色身份并注销该用户全部会话。 */
-    private void convergeIdentityAndSessions(Long tenantId, Long userId) {
-        derivedIdentityService.synchronize(tenantId, userId);
-        Runnable logout = () -> StpUtil.logout(userId);
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            logout.run();
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                logout.run();
-            }
-        });
     }
 
     /** 为全部更新附加租户和所有者条件，并要求精确更新一行。 */

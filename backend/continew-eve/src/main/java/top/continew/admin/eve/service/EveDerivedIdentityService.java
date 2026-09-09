@@ -20,16 +20,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import top.continew.admin.common.api.system.EveDerivedRoleApi;
 import top.continew.admin.common.enums.EveDerivedIdentity;
-import top.continew.admin.eve.mapper.EveAuthorizationMapper;
 import top.continew.admin.eve.mapper.EveCharacterMapper;
 import top.continew.admin.eve.mapper.EveCharacterRoleSnapshotMapper;
-import top.continew.admin.eve.model.entity.EveAuthorizationDO;
+import top.continew.admin.eve.mapper.EveCorporationMemberMapper;
 import top.continew.admin.eve.model.entity.EveCharacterDO;
 import top.continew.admin.eve.model.entity.EveCharacterRoleSnapshotDO;
-import top.continew.admin.eve.model.enums.EveAuthorizationStatus;
+import top.continew.admin.eve.model.enums.EveCorporationMemberStatus;
 
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Objects;
 
@@ -43,12 +40,12 @@ import java.util.Objects;
 public class EveDerivedIdentityService {
 
     private final EveCharacterMapper characterMapper;
-    private final EveAuthorizationMapper authorizationMapper;
     private final EveCharacterRoleSnapshotMapper roleSnapshotMapper;
+    private final EveCorporationMemberMapper memberMapper;
     private final EveDerivedRoleApi derivedRoleApi;
 
     /**
-     * 聚合全部有效授权角色，按 CEO、总监、普通成员的优先级同步站内身份。
+     * 聚合当前军团成员的最近已验证角色事实，按 CEO、总监、普通成员的优先级同步站内身份。
      *
      * @param tenantId 租户 ID
      * @param userId   用户 ID
@@ -57,14 +54,14 @@ public class EveDerivedIdentityService {
         boolean member = false;
         boolean director = false;
         for (EveCharacterDO character : characterMapper.selectActiveByUser(tenantId, userId)) {
-            if (!ownedBy(character, tenantId, userId) || !hasActiveAuthorization(tenantId, userId, character.getId())) {
-                continue;
-            }
-            EveCharacterRoleSnapshotDO snapshot = roleSnapshotMapper.selectLatest(tenantId, character.getId());
-            if (!isFreshOwnedSnapshot(snapshot, tenantId, character.getId())) {
+            if (!ownedBy(character, tenantId, userId) || !hasActiveMembership(tenantId, userId, character.getId())) {
                 continue;
             }
             member = true;
+            EveCharacterRoleSnapshotDO snapshot = roleSnapshotMapper.selectLatest(tenantId, character.getId());
+            if (!isOwnedSnapshot(snapshot, tenantId, character.getId())) {
+                continue;
+            }
             if (Boolean.TRUE.equals(snapshot.getIsCeo())) {
                 derivedRoleApi.synchronize(tenantId, userId, EveDerivedIdentity.OWNER);
                 return;
@@ -81,40 +78,16 @@ public class EveDerivedIdentityService {
         return Objects.equals(tenantId, character.getTenantId()) && Objects.equals(userId, character.getUserId());
     }
 
-    /** 判断角色是否至少存在一条有效授权。 */
-    private boolean hasActiveAuthorization(Long tenantId, Long userId, Long characterRefId) {
-        return authorizationMapper.selectByUserCharacter(tenantId, userId, characterRefId)
-            .stream()
-            .anyMatch(authorization -> ownedBy(authorization, tenantId, userId, characterRefId) && isUsableAuthorization(authorization));
+    /** 仅保存当前仍归属于该军团租户的成员基础身份。 */
+    private boolean hasActiveMembership(Long tenantId, Long userId, Long characterRefId) {
+        var member = memberMapper.selectCurrent(tenantId, userId, characterRefId);
+        return member != null && EveCorporationMemberStatus.ACTIVE.equals(member.getStatus());
     }
 
-    /** 授权必须处于 ACTIVE，且访问令牌仍有效或刷新令牌可用于续期。 */
-    private static boolean isUsableAuthorization(EveAuthorizationDO authorization) {
-        if (!EveAuthorizationStatus.ACTIVE.equals(authorization.getStatus())) {
-            return false;
-        }
-        boolean accessTokenAvailable = authorization.getAccessToken() != null && !authorization.getAccessToken()
-            .isBlank() && authorization.getExpiresAt() != null && authorization.getExpiresAt()
-                .isAfter(LocalDateTime.now(ZoneOffset.UTC));
-        boolean refreshTokenAvailable = authorization.getRefreshToken() != null && !authorization.getRefreshToken()
-            .isBlank();
-        return accessTokenAvailable || refreshTokenAvailable;
-    }
-
-    /** 快照必须属于当前租户角色，且上游事实缓存仍在有效期内。 */
-    private static boolean isFreshOwnedSnapshot(EveCharacterRoleSnapshotDO snapshot,
-                                                Long tenantId,
-                                                Long characterRefId) {
+    /** 快照必须严格属于当前租户角色；其缓存期限只影响数据刷新，不影响本站登录身份。 */
+    private static boolean isOwnedSnapshot(EveCharacterRoleSnapshotDO snapshot, Long tenantId, Long characterRefId) {
         return snapshot != null && Objects.equals(tenantId, snapshot.getTenantId()) && Objects
-            .equals(characterRefId, snapshot.getCharacterRefId()) && snapshot.getSourceExpiresAt() != null && snapshot
-                .getSourceExpiresAt()
-                .isAfter(LocalDateTime.now());
-    }
-
-    /** 判断授权是否严格属于当前租户用户和角色。 */
-    private static boolean ownedBy(EveAuthorizationDO authorization, Long tenantId, Long userId, Long characterRefId) {
-        return Objects.equals(tenantId, authorization.getTenantId()) && Objects.equals(userId, authorization
-            .getUserId()) && Objects.equals(characterRefId, authorization.getCharacterRefId());
+            .equals(characterRefId, snapshot.getCharacterRefId());
     }
 
     /** 归一可空角色集合。 */

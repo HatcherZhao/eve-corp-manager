@@ -39,7 +39,7 @@ import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 处理当前用户主动撤销 EVE 授权并完成本地权限收敛。
+ * 处理当前用户主动撤销 EVE 授权；本站账号与军团身份独立保留。
  *
  * @author zhaoyuqing
  */

@@ -23,7 +23,6 @@ import top.continew.admin.common.context.UserContext;
 import top.continew.admin.common.context.UserContextHolder;
 import top.continew.admin.common.enums.EveDerivedIdentity;
 import top.continew.admin.common.model.dto.EveSiteRoleDTO;
-import top.continew.admin.eve.config.SerenityProperties;
 import top.continew.admin.eve.mapper.EveAuthorizationMapper;
 import top.continew.admin.eve.mapper.EveCharacterMapper;
 import top.continew.admin.eve.mapper.EveCharacterRoleSnapshotMapper;
@@ -67,7 +66,7 @@ public class EvePermissionTreeService {
     private final EveCharacterRoleSnapshotMapper snapshotMapper;
     private final EveAuthorizationMapper authorizationMapper;
     private final RoleApi roleApi;
-    private final SerenityProperties properties;
+    private final EveAuthorizationScopePolicy scopePolicy;
 
     /** 从当前会话服务端上下文定位租户与用户，不接收客户端角色或军团参数。 */
     public EvePermissionTreeResp getCurrentTree() {
@@ -84,7 +83,7 @@ public class EvePermissionTreeService {
      * @return 三分区只读权限响应
      */
     EvePermissionTreeResp getTree(Long tenantId, Long userId, Set<String> effectivePermissions) {
-        LocalDateTime checkedAt = LocalDateTime.now();
+        LocalDateTime checkedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
         List<EveSiteRoleDTO> roles = roleApi.listEveSiteRoles(tenantId, userId);
         EvePermissionTreeResp.SiteRoleSection siteRoles = toSiteRoles(roles, effectivePermissions, checkedAt);
         List<EveCharacterDO> characters = characterMapper.selectActiveByUser(tenantId, userId);
@@ -252,9 +251,7 @@ public class EvePermissionTreeService {
         Set<String> owned = authorization == null || authorization.getScopes() == null
             ? Set.of()
             : new LinkedHashSet<>(authorization.getScopes());
-        Set<String> required = properties.getSso().getRequiredScopes() == null
-            ? Set.of()
-            : properties.getSso().getRequiredScopes();
+        Set<String> required = scopePolicy.plannedScopes();
         Map<String, Set<String>> capabilitiesByScope = new LinkedHashMap<>();
         Arrays.stream(EveCapability.values())
             .forEach(capability -> capabilitiesByScope.computeIfAbsent(capability
@@ -264,7 +261,7 @@ public class EvePermissionTreeService {
         owned.stream().sorted().forEach(all::add);
         List<EvePermissionTreeResp.ScopeItem> items = all.stream().map(scope -> {
             List<String> capabilities = capabilitiesByScope.getOrDefault(scope, Set.of()).stream().sorted().toList();
-            String displayName = capabilities.isEmpty() ? scope : "模块授权：" + String.join("、", capabilities);
+            String displayName = scopeDisplayName(scope, capabilities);
             return new EvePermissionTreeResp.ScopeItem("oauth-scope:" + scope, scope, displayName, owned
                 .contains(scope), required.contains(scope), capabilities);
         }).toList();
@@ -275,6 +272,20 @@ public class EvePermissionTreeService {
         return new EvePermissionTreeResp.ScopeSection(authorization == null
             ? null
             : authorization.getStatus(), items, updatedAt, SCOPE_DATA_SOURCE);
+    }
+
+    /** 返回用户可理解的授权用途，避免在权限树中只显示机器 Scope 名称。 */
+    private static String scopeDisplayName(String scope, List<String> capabilities) {
+        if (!capabilities.isEmpty()) {
+            return "模块授权：" + String.join("、", capabilities);
+        }
+        return switch (scope) {
+            case "esi-corporations.read_divisions.v1" -> "资产分部与机库名称";
+            case "esi-corporations.track_members.v1" -> "成员位置、舰船与上下线追踪";
+            case "esi-universe.read_structures.v1" -> "资产所在建筑位置解析";
+            case "esi-mail.send_mail.v1" -> "游戏内邮件发送";
+            default -> scope;
+        };
     }
 
     /** 返回首个非空时间。 */

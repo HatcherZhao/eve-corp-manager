@@ -19,16 +19,15 @@ package top.continew.admin.eve.service;
 import org.junit.jupiter.api.Test;
 import top.continew.admin.common.api.system.EveDerivedRoleApi;
 import top.continew.admin.common.enums.EveDerivedIdentity;
-import top.continew.admin.eve.mapper.EveAuthorizationMapper;
 import top.continew.admin.eve.mapper.EveCharacterMapper;
 import top.continew.admin.eve.mapper.EveCharacterRoleSnapshotMapper;
-import top.continew.admin.eve.model.entity.EveAuthorizationDO;
+import top.continew.admin.eve.mapper.EveCorporationMemberMapper;
 import top.continew.admin.eve.model.entity.EveCharacterDO;
 import top.continew.admin.eve.model.entity.EveCharacterRoleSnapshotDO;
-import top.continew.admin.eve.model.enums.EveAuthorizationStatus;
+import top.continew.admin.eve.model.entity.EveCorporationMemberDO;
+import top.continew.admin.eve.model.enums.EveCorporationMemberStatus;
 
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.mockito.Mockito.mock;
@@ -46,15 +45,15 @@ class EveDerivedIdentityServiceTest {
     @Test
     void shouldPreserveHigherIdentityFromSecondaryCharacter() {
         EveCharacterMapper characterMapper = mock(EveCharacterMapper.class);
-        EveAuthorizationMapper authorizationMapper = mock(EveAuthorizationMapper.class);
         EveCharacterRoleSnapshotMapper snapshotMapper = mock(EveCharacterRoleSnapshotMapper.class);
+        EveCorporationMemberMapper memberMapper = mock(EveCorporationMemberMapper.class);
         EveDerivedRoleApi roleApi = mock(EveDerivedRoleApi.class);
-        EveDerivedIdentityService service = new EveDerivedIdentityService(characterMapper, authorizationMapper, snapshotMapper, roleApi);
+        EveDerivedIdentityService service = new EveDerivedIdentityService(characterMapper, snapshotMapper, memberMapper, roleApi);
         EveCharacterDO primary = character(100L);
         EveCharacterDO secondary = character(101L);
         when(characterMapper.selectActiveByUser(10L, 20L)).thenReturn(List.of(primary, secondary));
-        when(authorizationMapper.selectByUserCharacter(10L, 20L, 100L)).thenReturn(List.of(authorization(100L)));
-        when(authorizationMapper.selectByUserCharacter(10L, 20L, 101L)).thenReturn(List.of(authorization(101L)));
+        when(memberMapper.selectCurrent(10L, 20L, 100L)).thenReturn(member());
+        when(memberMapper.selectCurrent(10L, 20L, 101L)).thenReturn(member());
         when(snapshotMapper.selectLatest(10L, 100L)).thenReturn(snapshot(100L, false, List.of()));
         when(snapshotMapper.selectLatest(10L, 101L)).thenReturn(snapshot(101L, true, List.of()));
 
@@ -63,63 +62,62 @@ class EveDerivedIdentityServiceTest {
         verify(roleApi).synchronize(10L, 20L, EveDerivedIdentity.OWNER);
     }
 
-    /** 已失效的高权限授权不得继续参与派生身份。 */
+    /** 待重新授权时保留最近已验证的军团身份，确保用户仍可登录并完成重新授权。 */
     @Test
-    void shouldIgnoreInactiveAuthorizationWhenAggregating() {
+    void shouldKeepLastVerifiedIdentityWhenAuthorizationNeedsReauthorization() {
         EveCharacterMapper characterMapper = mock(EveCharacterMapper.class);
-        EveAuthorizationMapper authorizationMapper = mock(EveAuthorizationMapper.class);
         EveCharacterRoleSnapshotMapper snapshotMapper = mock(EveCharacterRoleSnapshotMapper.class);
+        EveCorporationMemberMapper memberMapper = mock(EveCorporationMemberMapper.class);
         EveDerivedRoleApi roleApi = mock(EveDerivedRoleApi.class);
-        EveDerivedIdentityService service = new EveDerivedIdentityService(characterMapper, authorizationMapper, snapshotMapper, roleApi);
+        EveDerivedIdentityService service = new EveDerivedIdentityService(characterMapper, snapshotMapper, memberMapper, roleApi);
         EveCharacterDO character = character(100L);
-        EveAuthorizationDO authorization = authorization(100L);
-        authorization.setStatus(EveAuthorizationStatus.REAUTH_REQUIRED);
         when(characterMapper.selectActiveByUser(10L, 20L)).thenReturn(List.of(character));
-        when(authorizationMapper.selectByUserCharacter(10L, 20L, 100L)).thenReturn(List.of(authorization));
+        when(memberMapper.selectCurrent(10L, 20L, 100L)).thenReturn(member());
+        when(snapshotMapper.selectLatest(10L, 100L)).thenReturn(snapshot(100L, false, List.of("Director")));
 
         service.synchronize(10L, 20L);
 
-        verify(roleApi).synchronize(10L, 20L, EveDerivedIdentity.NONE);
+        verify(roleApi).synchronize(10L, 20L, EveDerivedIdentity.ADMIN);
     }
 
-    /** 缺少上游有效期的高权限快照不得继续派生站内身份。 */
+    /** 缺少上游有效期只影响刷新，不得降级最近已验证的 CEO 身份。 */
     @Test
-    void shouldDowngradeWhenSnapshotExpiryIsMissing() {
+    void shouldKeepIdentityWhenSnapshotExpiryIsMissing() {
         EveCharacterMapper characterMapper = mock(EveCharacterMapper.class);
-        EveAuthorizationMapper authorizationMapper = mock(EveAuthorizationMapper.class);
         EveCharacterRoleSnapshotMapper snapshotMapper = mock(EveCharacterRoleSnapshotMapper.class);
+        EveCorporationMemberMapper memberMapper = mock(EveCorporationMemberMapper.class);
         EveDerivedRoleApi roleApi = mock(EveDerivedRoleApi.class);
-        EveDerivedIdentityService service = new EveDerivedIdentityService(characterMapper, authorizationMapper, snapshotMapper, roleApi);
+        EveDerivedIdentityService service = new EveDerivedIdentityService(characterMapper, snapshotMapper, memberMapper, roleApi);
         EveCharacterDO character = character(100L);
         EveCharacterRoleSnapshotDO snapshot = snapshot(100L, true, List.of("Director"));
         snapshot.setSourceExpiresAt(null);
         when(characterMapper.selectActiveByUser(10L, 20L)).thenReturn(List.of(character));
-        when(authorizationMapper.selectByUserCharacter(10L, 20L, 100L)).thenReturn(List.of(authorization(100L)));
+        when(memberMapper.selectCurrent(10L, 20L, 100L)).thenReturn(member());
         when(snapshotMapper.selectLatest(10L, 100L)).thenReturn(snapshot);
 
         service.synchronize(10L, 20L);
 
-        verify(roleApi).synchronize(10L, 20L, EveDerivedIdentity.NONE);
+        verify(roleApi).synchronize(10L, 20L, EveDerivedIdentity.OWNER);
     }
 
-    /** 已过期的高权限快照必须立即降权，不能继续派生 OWNER 或 ADMIN。 */
+    /** 快照过期只影响数据新鲜度，不得让本站菜单在未获得反向游戏事实时消失。 */
     @Test
-    void shouldDowngradeWhenSnapshotIsExpired() {
+    void shouldKeepIdentityWhenSnapshotIsExpired() {
         EveCharacterMapper characterMapper = mock(EveCharacterMapper.class);
-        EveAuthorizationMapper authorizationMapper = mock(EveAuthorizationMapper.class);
         EveCharacterRoleSnapshotMapper snapshotMapper = mock(EveCharacterRoleSnapshotMapper.class);
+        EveCorporationMemberMapper memberMapper = mock(EveCorporationMemberMapper.class);
         EveDerivedRoleApi roleApi = mock(EveDerivedRoleApi.class);
-        EveDerivedIdentityService service = new EveDerivedIdentityService(characterMapper, authorizationMapper, snapshotMapper, roleApi);
+        EveDerivedIdentityService service = new EveDerivedIdentityService(characterMapper, snapshotMapper, memberMapper, roleApi);
         EveCharacterDO character = character(100L);
         EveCharacterRoleSnapshotDO snapshot = snapshot(100L, false, List.of("Director"));
-        snapshot.setSourceExpiresAt(LocalDateTime.now().minusSeconds(1));
+        snapshot.setSourceExpiresAt(LocalDateTime.now(java.time.ZoneOffset.UTC).minusSeconds(1));
         when(characterMapper.selectActiveByUser(10L, 20L)).thenReturn(List.of(character));
-        when(authorizationMapper.selectByUserCharacter(10L, 20L, 100L)).thenReturn(List.of(authorization(100L)));
+        when(memberMapper.selectCurrent(10L, 20L, 100L)).thenReturn(member());
         when(snapshotMapper.selectLatest(10L, 100L)).thenReturn(snapshot);
 
         service.synchronize(10L, 20L);
 
-        verify(roleApi).synchronize(10L, 20L, EveDerivedIdentity.NONE);
+        verify(roleApi).synchronize(10L, 20L, EveDerivedIdentity.ADMIN);
     }
 
     /** 创建属于当前用户的角色。 */
@@ -131,18 +129,6 @@ class EveDerivedIdentityServiceTest {
         return character;
     }
 
-    /** 创建有效授权。 */
-    private static EveAuthorizationDO authorization(Long characterRefId) {
-        EveAuthorizationDO authorization = new EveAuthorizationDO();
-        authorization.setTenantId(10L);
-        authorization.setUserId(20L);
-        authorization.setCharacterRefId(characterRefId);
-        authorization.setStatus(EveAuthorizationStatus.ACTIVE);
-        authorization.setAccessToken("encrypted-access");
-        authorization.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(10));
-        return authorization;
-    }
-
     /** 创建最新角色快照。 */
     private static EveCharacterRoleSnapshotDO snapshot(Long characterRefId, boolean ceo, List<String> roles) {
         EveCharacterRoleSnapshotDO snapshot = new EveCharacterRoleSnapshotDO();
@@ -150,7 +136,14 @@ class EveDerivedIdentityServiceTest {
         snapshot.setCharacterRefId(characterRefId);
         snapshot.setIsCeo(ceo);
         snapshot.setRoles(roles);
-        snapshot.setSourceExpiresAt(LocalDateTime.now().plusMinutes(10));
+        snapshot.setSourceExpiresAt(LocalDateTime.now(java.time.ZoneOffset.UTC).plusMinutes(10));
         return snapshot;
+    }
+
+    /** 创建当前有效的军团成员关系。 */
+    private static EveCorporationMemberDO member() {
+        EveCorporationMemberDO member = new EveCorporationMemberDO();
+        member.setStatus(EveCorporationMemberStatus.ACTIVE);
+        return member;
     }
 }

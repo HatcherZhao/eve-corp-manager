@@ -3,10 +3,12 @@ import { Message, Modal } from '@arco-design/web-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
   type EveBusinessRoleReq,
+  type EveMemberOperationAudit,
   type EveRbacOverview,
   assignEveMemberRoles,
   createEveBusinessRole,
   deleteEveBusinessRole,
+  getEveMemberRoleAudit,
   getEveRbacOverview,
   updateEveBusinessRole,
 } from '@/apis/eve'
@@ -17,6 +19,7 @@ const router = useRouter()
 const loading = ref(false)
 const saving = ref(false)
 const overview = ref<EveRbacOverview>({ permissions: [], roles: [], members: [] })
+const roleAudits = ref<EveMemberOperationAudit[]>([])
 const roleModalVisible = ref(false)
 const editingRoleId = ref<string>()
 const form = reactive<EveBusinessRoleReq>({ name: '', description: '', permissions: [] })
@@ -26,7 +29,9 @@ const roleOptions = computed(() => overview.value.roles.map((role) => ({ label: 
 async function loadOverview() {
   loading.value = true
   try {
-    overview.value = (await getEveRbacOverview()).data
+    const [overviewResponse, auditResponse] = await Promise.all([getEveRbacOverview(), getEveMemberRoleAudit()])
+    overview.value = overviewResponse.data
+    roleAudits.value = auditResponse.data
   } finally {
     loading.value = false
   }
@@ -80,6 +85,7 @@ async function updateMemberRoles(userId: string, roleIds: string[]) {
   const member = overview.value.members.find((item) => item.id === userId)
   if (member) member.businessRoleIds = [...roleIds]
   Message.success('成员权限已更新')
+  roleAudits.value = (await getEveMemberRoleAudit()).data
 }
 
 onMounted(loadOverview)
@@ -93,7 +99,7 @@ onMounted(loadOverview)
           <template #icon><icon-left /></template>返回工作台
         </a-button>
         <h1>军团成员权限</h1>
-        <p>CEO 与总监可组合五项站内查看权限，并将业务角色分配给本军团成员。</p>
+        <p>CEO 与总监可组合站内权限，并将业务角色分配给本军团成员。</p>
       </div>
       <a-button type="primary" @click="openCreate"><template #icon><icon-plus /></template>新建业务角色</a-button>
     </header>
@@ -110,6 +116,18 @@ onMounted(loadOverview)
           </article>
         </div>
         <a-empty v-else description="尚未创建业务角色" />
+      </section>
+
+      <section class="eve-access__section">
+        <div class="eve-access__title"><div><span>03</span><h2>权限变更记录</h2></div><small>仅保留操作者、目标成员和操作时间，不记录权限快照</small></div>
+        <a-table :data="roleAudits" :pagination="false" size="small" row-key="id">
+          <template #columns>
+            <a-table-column title="操作" data-index="summary" />
+            <a-table-column title="操作者" :width="180"><template #cell="{ record }">{{ record.actorUsername || `用户 #${record.actorUserId}` }}</template></a-table-column>
+            <a-table-column title="目标用户" :width="140"><template #cell="{ record }">用户 #{{ record.targetUserId }}</template></a-table-column>
+            <a-table-column title="时间" data-index="occurredAt" :width="190" />
+          </template>
+        </a-table>
       </section>
 
       <section class="eve-access__section">

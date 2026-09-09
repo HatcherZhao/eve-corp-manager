@@ -135,8 +135,8 @@ public class EveCapabilityPolicy {
             }
             snapshotSeen = true;
             List<String> globalRoles = snapshot.getRoles() == null ? Collections.emptyList() : snapshot.getRoles();
-            if (Boolean.TRUE.equals(snapshot.getIsCeo()) || globalRoles.contains("Director") || globalRoles
-                .contains(capability.getGameRole())) {
+            if (capability.getGameRole() == null || Boolean.TRUE.equals(snapshot.getIsCeo()) || globalRoles
+                .contains("Director") || globalRoles.contains(capability.getGameRole())) {
                 return EveCapabilityResult.of(capability, EveCapabilityStatus.AVAILABLE);
             }
         }
@@ -207,6 +207,6 @@ public class EveCapabilityPolicy {
         return snapshot != null && Objects.equals(tenantId, snapshot.getTenantId()) && Objects
             .equals(characterRefId, snapshot.getCharacterRefId()) && snapshot.getSourceExpiresAt() != null && snapshot
                 .getSourceExpiresAt()
-                .isAfter(LocalDateTime.now());
+                .isAfter(LocalDateTime.now(ZoneOffset.UTC));
     }
 }

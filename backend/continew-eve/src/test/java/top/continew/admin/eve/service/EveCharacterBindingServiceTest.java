@@ -111,7 +111,7 @@ class EveCharacterBindingServiceTest {
             .thenReturn(new SerenityTokenResponse("access", "refresh", "Bearer", 1200, null));
         when(decoderFactory.create()).thenReturn(decoder);
         when(decoder.decode("access")).thenReturn(jwt(1001L));
-        service = new EveCharacterBindingService(mock(SerenityAuthorizationStartService.class), transactionStore, callbackParser, tokenClient, decoderFactory, esiClient, characterMapper, corporationMapper, mock(EveCorporationMemberMapper.class), mock(EveAuthorizationMapper.class), mock(EveCharacterRoleSnapshotMapper.class), derivedIdentityService, redissonClient, properties);
+        service = new EveCharacterBindingService(mock(SerenityAuthorizationStartService.class), transactionStore, callbackParser, tokenClient, decoderFactory, esiClient, characterMapper, corporationMapper, mock(EveCorporationMemberMapper.class), mock(EveAuthorizationMapper.class), mock(EveCharacterRoleSnapshotMapper.class), derivedIdentityService, redissonClient, properties, new EveAuthorizationScopePolicy(properties));
     }
 
     /** 同军团、未绑定角色可进入持久化流程并同步派生身份。 */

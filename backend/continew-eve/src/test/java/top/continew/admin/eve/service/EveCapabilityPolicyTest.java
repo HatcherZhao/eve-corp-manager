@@ -124,7 +124,7 @@ class EveCapabilityPolicyTest {
     void shouldFailClosedForExpiredSnapshot() {
         stubCharacterAndAuthorizations(List.of(authorization(100L, List.of(EveCapability.ASSETS.getScope()), true)));
         EveCharacterRoleSnapshotDO snapshot = snapshot(100L, List.of("Director"));
-        snapshot.setSourceExpiresAt(LocalDateTime.now().minusSeconds(1));
+        snapshot.setSourceExpiresAt(LocalDateTime.now(java.time.ZoneOffset.UTC).minusSeconds(1));
         stubSnapshots(snapshot);
 
         assertThat(evaluate(EveCapability.ASSETS, Set.of("eve:assets:view")).status())
@@ -331,7 +331,7 @@ class EveCapabilityPolicyTest {
         snapshot.setCharacterRefId(characterRefId);
         snapshot.setRoles(roles);
         snapshot.setIsCeo(false);
-        snapshot.setSourceExpiresAt(LocalDateTime.now().plusMinutes(10));
+        snapshot.setSourceExpiresAt(LocalDateTime.now(java.time.ZoneOffset.UTC).plusMinutes(10));
         return snapshot;
     }
 }

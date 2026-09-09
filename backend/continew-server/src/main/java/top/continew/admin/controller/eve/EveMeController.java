@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import top.continew.admin.eve.model.EveMeContextResp;
 import top.continew.admin.eve.service.EveContextService;
+import top.continew.admin.system.service.EveSessionPermissionRefreshService;
 import top.continew.starter.log.annotation.Log;
 
 /**
@@ -39,11 +40,13 @@ import top.continew.starter.log.annotation.Log;
 public class EveMeController {
 
     private final EveContextService contextService;
+    private final EveSessionPermissionRefreshService sessionPermissionRefreshService;
 
-    /** 查询当前用户的游戏身份、军团和模块能力。 */
+    /** 查询当前用户的游戏身份、军团和模块能力，并同步本次会话的本站权限。 */
     @GetMapping("/context")
     @Operation(summary = "查询当前 EVE 用户上下文")
     public EveMeContextResp getContext() {
+        sessionPermissionRefreshService.refreshCurrentEveUser();
         return contextService.getCurrentContext();
     }
 }

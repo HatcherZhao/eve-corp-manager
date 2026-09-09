@@ -19,4 +19,7 @@ for line in env_file.read_text().splitlines():
         raise SystemExit('Invalid local environment file.')
     env[key] = value
 env['SPRING_PROFILES_ACTIVE'] = 'dev,local'
-raise SystemExit(subprocess.call(['java', '-jar', str(jar)], env=env, cwd=ROOT / 'backend'))
+java_home = env.get('JAVA_HOME')
+java = Path(java_home) / 'bin/java' if java_home else Path('java')
+command = [str(java) if java.is_file() else 'java', '-jar', str(jar)]
+raise SystemExit(subprocess.call(command, env=env, cwd=ROOT / 'backend'))

@@ -168,6 +168,171 @@ export interface EveBusinessRoleReq {
   permissions: string[]
 }
 
+export interface EveMemberTracking {
+  baseId?: string
+  baseName?: string
+  locationId?: string
+  locationName?: string
+  shipTypeId?: string
+  shipTypeName?: string
+  lastLogonAt?: string
+  lastLogoffAt?: string
+  sourceObservedAt?: string
+  sourceExpiresAt?: string
+}
+
+/** 军团资产当前快照条目。 */
+export interface EveCorporationAsset {
+  itemId: string
+  typeId: number
+  typeName?: string
+  itemName?: string
+  locationId?: string
+  locationName?: string
+  locationType: 'station' | 'solar_system' | 'item' | 'other'
+  locationFlag: string
+  quantity: number
+  singleton: boolean
+  blueprintCopy?: boolean
+  lastSeenAt: string
+  sourceExpiresAt?: string
+}
+
+export interface EveCorporationAssetQuery extends PageQuery {
+  keyword?: string
+  locationType?: EveCorporationAsset['locationType']
+}
+
+/** 军团资产树节点；容器节点只在游戏资产确有子资产时出现。 */
+export interface EveCorporationAssetTreeNode {
+  key: string
+  title: string
+  kind: 'solar_system' | 'npc_station' | 'player_structure' | 'corporation_structure' | 'npc_structure' | 'space_asset' | 'corporation_office' | 'corporation_hangar' | 'asset_safety_package' | 'asset_safety_origin' | 'space_assets' | 'warehouse' | 'structure_compartment_group' | 'structure_compartment' | 'ship' | 'ship_compartment_group' | 'ship_compartment' | 'container' | 'asset' | 'unresolved'
+  itemId?: string
+  typeId?: number
+  typeName?: string
+  itemName?: string
+  quantity?: number
+  locationFlag?: string
+  singleton?: boolean
+  blueprintCopy?: boolean
+  lastSeenAt?: string
+  sourceExpiresAt?: string
+  children: EveCorporationAssetTreeNode[]
+}
+
+/** 军团资产当前完整层级快照。 */
+export interface EveCorporationAssetTree {
+  nodes: EveCorporationAssetTreeNode[]
+  assetCount: number
+}
+
+export interface EveAssetSyncResult {
+  assetCount: number
+  pageCount: number
+  synchronizedAt: string
+  sourceExpiresAt?: string
+}
+
+/** evedata.xlsx 导入后的数据库静态资料统计。 */
+export interface EveStaticReferenceImportResult {
+  sourceFileName: string
+  sourceUpdatedAt: string
+  typeCount: number
+  locationCount: number
+  imported: boolean
+}
+
+export interface EveStaticTypeReference {
+  typeId: number
+  typeName: string
+  typeDescription?: string
+  marketCategoryL1: string
+  marketCategoryL2: string
+  marketCategoryL3: string
+  marketCategoryL4: string
+  marketCategoryL5: string
+  marketCategoryL6: string
+  sourceUpdatedAt: string
+}
+
+export interface EveStaticTypeReferenceQuery extends PageQuery {
+  keyword?: string
+  marketCategoryL1?: string
+}
+
+export interface EveStaticLocationReference {
+  referenceType: 'REGION' | 'CONSTELLATION' | 'SOLAR_SYSTEM' | 'NPC_STATION' | 'PUBLIC_STRUCTURE'
+  referenceId: string
+  referenceName: string
+  solarSystemId?: string
+  constellationId?: string
+  regionId?: string
+  securityStatus?: number
+  sourceUpdatedAt: string
+}
+
+export interface EveStaticLocationReferenceQuery extends PageQuery {
+  keyword?: string
+  referenceType?: EveStaticLocationReference['referenceType']
+}
+
+export interface EveMember {
+  id: string
+  characterId: string
+  characterName?: string
+  organizationGroup?: string
+  memberNote?: string
+  status: 'ACTIVE' | 'LEFT'
+  joinedAt?: string
+  leftAt?: string
+  lastSeenAt: string
+  /** 无 eve:members:track:view 时服务端不会返回该字段。 */
+  tracking?: EveMemberTracking
+}
+
+export interface EveMemberPageQuery extends PageQuery {
+  keyword?: string
+  status?: string
+}
+
+export interface EveMemberSyncResult {
+  rosterCount: number
+  trackingCount: number
+  trackingSynchronized: boolean
+  trackingUnavailableReason?: string
+  synchronizedAt: string
+  rosterSourceExpiresAt?: string
+  trackingSourceExpiresAt?: string
+}
+
+export interface EveMemberSyncRun {
+  id: string
+  resource: 'ROSTER' | 'TRACKING'
+  status: 'SUCCEEDED' | 'FAILED' | 'SKIPPED'
+  recordCount: number
+  sourceExpiresAt?: string
+  failureCode?: string
+  startedAt: string
+  finishedAt?: string
+}
+
+export interface EveMemberOperationAudit {
+  id: string
+  rosterMemberId?: string
+  targetUserId?: string
+  eventType: string
+  summary: string
+  actorUserId: string
+  actorUsername?: string
+  occurredAt: string
+}
+
+export interface EveMemberOrganizationReq {
+  organizationGroup?: string
+  memberNote?: string
+}
+
 export function getWorkspace() {
   return http.get<Workspace>('/eve/workspace')
 }
@@ -226,6 +391,86 @@ export function completeEveReauthorization(callbackUrl: string) {
 
 export function getEveRbacOverview() {
   return http.get<EveRbacOverview>('/eve/rbac/overview')
+}
+
+/** 查询当前军团最近完整资产快照。 */
+export function getEveCorporationAssets(query: EveCorporationAssetQuery) {
+  return http.get<PageRes<EveCorporationAsset[]>>('/eve/assets', query)
+}
+
+/** 查询按星系、空间站或建筑、仓库与实际容器组织的完整资产树。 */
+export function getEveCorporationAssetTree() {
+  return http.get<EveCorporationAssetTree>('/eve/assets/tree')
+}
+
+/** 同步当前军团完整资产快照。 */
+export function syncEveCorporationAssets() {
+  return http.post<EveAssetSyncResult>('/eve/assets/sync')
+}
+
+/** 用新的 evedata.xlsx 原子更新数据库中的 EVE 静态资料。 */
+export function importEveStaticReference(file: FormData) {
+  return http.post<EveStaticReferenceImportResult>('/eve/reference/import', file)
+}
+
+/** 分页查询 evedata.xlsx 中的物品类型资料。 */
+export function getEveStaticTypes(query: EveStaticTypeReferenceQuery) {
+  return http.get<PageRes<EveStaticTypeReference[]>>('/eve/reference/types', query)
+}
+
+/** 导出当前筛选条件下的物品类型资料。 */
+export function exportEveStaticTypes(query: Pick<EveStaticTypeReferenceQuery, 'keyword' | 'marketCategoryL1'>) {
+  return http.download('/eve/reference/types/export', query)
+}
+
+/** 分页查询 evedata.xlsx 中的星域、星座、星系与建筑位置资料。 */
+export function getEveStaticLocations(query: EveStaticLocationReferenceQuery) {
+  return http.get<PageRes<EveStaticLocationReference[]>>('/eve/reference/locations', query)
+}
+
+/** 导出当前筛选条件下的位置资料。 */
+export function exportEveStaticLocations(query: Pick<EveStaticLocationReferenceQuery, 'keyword' | 'referenceType'>) {
+  return http.download('/eve/reference/locations/export', query)
+}
+
+/** 查询当前军团完整游戏成员名册。 */
+export function getEveMembers(query: EveMemberPageQuery) {
+  return http.get<PageRes<EveMember[]>>('/eve/members', query)
+}
+
+/** 查询当前军团单个游戏成员。 */
+export function getEveMember(characterId: string) {
+  return http.get<EveMember>(`/eve/members/${characterId}`)
+}
+
+/** 更新成员在本军团内的分组与备注。 */
+export function updateEveMemberOrganization(characterId: string, data: EveMemberOrganizationReq) {
+  return http.put<EveMember>(`/eve/members/${characterId}/organization`, data)
+}
+
+/** 查询成员名册、追踪资源的最近同步批次。 */
+export function getEveMemberSyncRuns(limit = 20) {
+  return http.get<EveMemberSyncRun[]>('/eve/members/sync-runs', { limit })
+}
+
+/** 查询最近成员分组与备注调整记录。 */
+export function getEveMemberOrganizationAudit(limit = 20) {
+  return http.get<EveMemberOperationAudit[]>('/eve/members/activities', { limit })
+}
+
+/** 导出当前筛选条件下的成员资料。 */
+export function exportEveMembers(query: Pick<EveMemberPageQuery, 'keyword' | 'status'>) {
+  return http.download('/eve/members/export', query)
+}
+
+/** 查询最近成员业务角色调整记录。 */
+export function getEveMemberRoleAudit(limit = 20) {
+  return http.get<EveMemberOperationAudit[]>('/eve/rbac/audit', { limit })
+}
+
+/** 手动同步名册与可用的追踪资源。 */
+export function syncEveMembers() {
+  return http.post<EveMemberSyncResult>('/eve/members/sync')
 }
 
 export function createEveBusinessRole(data: EveBusinessRoleReq) {

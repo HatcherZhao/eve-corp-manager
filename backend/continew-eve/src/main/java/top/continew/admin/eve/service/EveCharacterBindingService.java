@@ -96,12 +96,13 @@ public class EveCharacterBindingService {
     private final EveDerivedIdentityService derivedIdentityService;
     private final RedissonClient redissonClient;
     private final SerenityProperties properties;
+    private final EveAuthorizationScopePolicy scopePolicy;
 
     /** 为当前会话创建绑定新角色的 OAuth 事务。 */
     public SerenityAuthorizationStart startCurrent(String browserBindingDigest) {
         UserContext context = UserContextHolder.getContext();
         return authorizationStartService.start(OAuthTransactionPurpose.BIND_CHARACTER, context.getTenantId(), context
-            .getId(), null, null, browserBindingDigest, properties.getSso().getRequiredScopes());
+            .getId(), null, null, browserBindingDigest, scopePolicy.plannedScopes());
     }
 
     /**

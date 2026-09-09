@@ -19,10 +19,6 @@ package top.continew.admin.eve.service;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
-import cn.dev33.satoken.stp.StpUtil;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import top.continew.admin.eve.client.OAuthFailureCode;
 import top.continew.admin.eve.client.SerenityTokenResponse;
 import top.continew.admin.eve.mapper.EveAuthorizationMapper;
@@ -36,7 +32,6 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.mockStatic;
 
 /**
  * EVE 授权令牌持久化服务测试。
@@ -139,32 +134,21 @@ class EveAuthorizationTokenServiceTest {
         verify(mapper).update(isNull(), any(Wrapper.class));
     }
 
-    /** 永久失败必须原子清除令牌、重算派生身份并注销全部会话。 */
+    /** 永久失败必须原子清除令牌，不得影响本站登录会话。 */
     @Test
     @SuppressWarnings("rawtypes")
-    void shouldClearTokensAndConvergeSessionsAfterPermanentFailure() {
+    void shouldRetainSiteSessionAfterPermanentFailure() {
         EveAuthorizationMapper mapper = mock(EveAuthorizationMapper.class);
-        EveDerivedIdentityService identityService = mock(EveDerivedIdentityService.class);
         EveAuthorizationDO current = new EveAuthorizationDO();
         current.setFailureCount(0);
         when(mapper.selectOwnedById(10L, 20L, 9L)).thenReturn(current);
         when(mapper.update(any(), any())).thenReturn(1);
-        EveAuthorizationTokenService service = new EveAuthorizationTokenService(mapper, identityService);
-
-        TransactionSynchronizationManager.initSynchronization();
-        try (MockedStatic<StpUtil> stpUtil = mockStatic(StpUtil.class)) {
-            service.recordFailure(10L, 20L, 9L, OAuthFailureCode.UNAUTHORIZED);
-            stpUtil.verify(() -> StpUtil.logout(20L), org.mockito.Mockito.never());
-            TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
-            stpUtil.verify(() -> StpUtil.logout(20L));
-        } finally {
-            TransactionSynchronizationManager.clearSynchronization();
-        }
+        EveAuthorizationTokenService service = new EveAuthorizationTokenService(mapper);
+        service.recordFailure(10L, 20L, 9L, OAuthFailureCode.UNAUTHORIZED);
 
         org.mockito.ArgumentCaptor<UpdateWrapper> captor = org.mockito.ArgumentCaptor.forClass(UpdateWrapper.class);
         verify(mapper).update(isNull(), captor.capture());
         assertThat(captor.getValue().getSqlSet()).contains("access_token", "refresh_token");
-        verify(identityService).synchronize(10L, 20L);
     }
 
     /** 临时失败只累加分类并保持授权可重试，不得写成永久失败状态。 */
@@ -199,8 +183,8 @@ class EveAuthorizationTokenServiceTest {
             .hasMessage("当前用户无权更新该 EVE 授权");
     }
 
-    /** 创建带派生身份收敛替身的令牌服务。 */
+    /** 创建授权令牌服务。 */
     private static EveAuthorizationTokenService service(EveAuthorizationMapper mapper) {
-        return new EveAuthorizationTokenService(mapper, mock(EveDerivedIdentityService.class));
+        return new EveAuthorizationTokenService(mapper);
     }
 }

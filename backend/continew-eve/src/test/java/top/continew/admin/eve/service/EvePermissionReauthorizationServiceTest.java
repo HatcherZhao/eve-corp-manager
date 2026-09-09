@@ -23,11 +23,8 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import top.continew.admin.common.api.system.RoleApi;
 import top.continew.admin.common.context.UserContext;
 import top.continew.admin.common.context.UserContextHolder;
-import top.continew.admin.common.enums.DataScopeEnum;
-import top.continew.admin.common.model.dto.EveSiteRoleDTO;
 import top.continew.admin.eve.auth.OAuthTransaction;
 import top.continew.admin.eve.auth.OAuthTransactionPurpose;
 import top.continew.admin.eve.auth.OAuthTransactionStore;
@@ -78,7 +75,6 @@ class EvePermissionReauthorizationServiceTest {
     private SerenityTokenClient tokenClient;
     private JwtDecoder jwtDecoder;
     private SerenityAuthorizationStartService authorizationStartService;
-    private RoleApi roleApi;
     private EvePermissionReauthorizationService service;
 
     /** 初始化原角色、原授权和一次性 OAuth 事务。 */
@@ -89,7 +85,6 @@ class EvePermissionReauthorizationServiceTest {
         OAuthTransactionStore transactionStore = mock(OAuthTransactionStore.class);
         SerenityCallbackUrlParser callbackParser = mock(SerenityCallbackUrlParser.class);
         authorizationStartService = mock(SerenityAuthorizationStartService.class);
-        roleApi = mock(RoleApi.class);
         tokenClient = mock(SerenityTokenClient.class);
         SerenityJwtDecoderFactory decoderFactory = mock(SerenityJwtDecoderFactory.class);
         jwtDecoder = mock(JwtDecoder.class);
@@ -139,15 +134,12 @@ class EvePermissionReauthorizationServiceTest {
         when(authorizationLock.tryLock(anyLong(), eq(java.util.concurrent.TimeUnit.MILLISECONDS))).thenReturn(true);
         when(userLock.isHeldByCurrentThread()).thenReturn(true);
         when(authorizationLock.isHeldByCurrentThread()).thenReturn(true);
-        service = new EvePermissionReauthorizationService(characterMapper, authorizationMapper, mock(EveAuthAuditMapper.class), authorizationStartService, transactionStore, callbackParser, tokenClient, decoderFactory, tokenService, refreshService, roleApi, properties, redissonClient);
+        service = new EvePermissionReauthorizationService(characterMapper, authorizationMapper, mock(EveAuthAuditMapper.class), authorizationStartService, transactionStore, callbackParser, tokenClient, decoderFactory, tokenService, refreshService, properties, redissonClient, new EveAuthorizationScopePolicy(properties));
     }
 
-    /** 重新授权请求必须补充当前用户已获业务权限对应的受支持 Scope。 */
+    /** 重新授权必须一次性索取已确认军团运营功能的完整 Scope 包。 */
     @Test
-    void shouldRequestScopesForPermittedCapabilities() {
-        when(roleApi.listEveSiteRoles(10L, 20L)).thenReturn(List
-            .of(new EveSiteRoleDTO(1L, "asset_viewer", "资产查看", null, DataScopeEnum.ALL, false, List
-                .of("eve:assets:view"))));
+    void shouldRequestAllPlannedScopes() {
         SerenityAuthorizationStart expected = new SerenityAuthorizationStart("https://login.example.test");
         when(authorizationStartService
             .start(eq(OAuthTransactionPurpose.EXPAND_SCOPES), eq(10L), eq(20L), eq("serenity"), eq(8001L), eq("browser-digest"), any()))
@@ -164,7 +156,7 @@ class EvePermissionReauthorizationServiceTest {
             .start(eq(OAuthTransactionPurpose.EXPAND_SCOPES), eq(10L), eq(20L), eq("serenity"), eq(8001L), eq("browser-digest"), scopes
                 .capture());
         assertThat(scopes.getValue())
-            .contains("esi-characters.read_corporation_roles.v1", "esi-assets.read_corporation_assets.v1");
+            .contains("esi-characters.read_corporation_roles.v1", "esi-assets.read_corporation_assets.v1", "esi-corporations.read_divisions.v1", "esi-corporations.track_members.v1", "esi-universe.read_structures.v1", "esi-mail.send_mail.v1");
     }
 
     /** 同一角色重新授权成功后原子替换令牌并立即刷新权限，不创建新账号。 */

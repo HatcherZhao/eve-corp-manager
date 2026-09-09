@@ -68,7 +68,7 @@ class EvePermissionTreeServiceTest {
         roleApi = mock(RoleApi.class);
         properties = new SerenityProperties();
         properties.getSso().setRequiredScopes(Set.of("esi-characters.read_corporation_roles.v1"));
-        service = new EvePermissionTreeService(characterMapper, snapshotMapper, authorizationMapper, roleApi, properties);
+        service = new EvePermissionTreeService(characterMapper, snapshotMapper, authorizationMapper, roleApi, new EveAuthorizationScopePolicy(properties));
     }
 
     /** 每个范围都返回 49 项完整目录，未知角色只追加在原范围且 CEO 独立展示。 */
@@ -229,7 +229,7 @@ class EvePermissionTreeServiceTest {
         snapshot.setRolesAtBase(List.of());
         snapshot.setRolesAtOther(List.of());
         snapshot.setCapturedAt(LocalDateTime.of(2026, 9, 7, 20, 0));
-        snapshot.setSourceExpiresAt(LocalDateTime.now().plusHours(1));
+        snapshot.setSourceExpiresAt(LocalDateTime.now(java.time.ZoneOffset.UTC).plusHours(1));
         return snapshot;
     }
 

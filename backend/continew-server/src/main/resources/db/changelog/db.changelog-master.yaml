@@ -46,3 +46,19 @@ databaseChangeLog:
       file: db/changelog/mysql/eve/008_manager_capability_permissions.sql
   - include:
       file: db/changelog/mysql/eve/009_manager_capability_permission_tenant_fix.sql
+  - include:
+      file: db/changelog/mysql/eve/010_corporation_members.sql
+  - include:
+      file: db/changelog/mysql/eve/011_preserve_identity_during_reauthorization.sql
+  - include:
+      file: db/changelog/mysql/eve/012_member_operations.sql
+  - include:
+      file: db/changelog/mysql/eve/013_corporation_assets.sql
+  - include:
+      file: db/changelog/mysql/eve/014_asset_tree_location.sql
+  - include:
+      file: db/changelog/mysql/eve/015_asset_tree_structure.sql
+  - include:
+      file: db/changelog/mysql/eve/016_static_reference.sql
+  - include:
+      file: db/changelog/mysql/eve/017_static_reference_menus.sql

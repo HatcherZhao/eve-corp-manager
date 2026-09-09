@@ -24,9 +24,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import top.continew.admin.common.api.system.RoleApi;
 import top.continew.admin.common.context.UserContext;
 import top.continew.admin.common.context.UserContextHolder;
-import top.continew.admin.common.api.system.RoleApi;
 import top.continew.admin.common.model.dto.EveSiteRoleDTO;
 import top.continew.admin.eve.client.OAuthFailureCode;
 import top.continew.admin.eve.client.SerenityEsiClient;
@@ -50,7 +50,6 @@ import top.continew.admin.eve.model.enums.EveAuthAuditEventType;
 import top.continew.admin.eve.model.enums.EveAuthAuditResult;
 import top.continew.admin.eve.model.enums.EveAuthorizationStatus;
 import top.continew.admin.eve.model.enums.EveCharacterStatus;
-import top.continew.admin.eve.model.enums.EveCapability;
 import top.continew.admin.eve.model.enums.EveCapabilityStatus;
 import top.continew.admin.eve.model.enums.EveCorporationMemberStatus;
 import top.continew.admin.eve.model.enums.EvePermissionRefreshStatus;
@@ -96,6 +95,7 @@ public class EvePermissionRefreshService {
     private final RoleApi roleApi;
     private final RedissonClient redissonClient;
     private final SerenityProperties properties;
+    private final EveAuthorizationScopePolicy scopePolicy;
 
     /** 从当前登录会话安全刷新，不接受客户端角色或军团参数。 */
     @Transactional(rollbackFor = Exception.class)
@@ -246,15 +246,14 @@ public class EvePermissionRefreshService {
         if (!EveAuthorizationStatus.ACTIVE.equals(authorization.getStatus())) {
             return emptyResponse(EvePermissionRefreshStatus.AUTHORIZATION_DISABLED, requestedAt);
         }
-        List<String> missingRequiredScopes = missingRequiredScopes(authorization.getScopes());
-        if (!missingRequiredScopes.isEmpty()) {
+        List<String> missingPlannedScopes = scopePolicy.missingPlannedScopes(authorization.getScopes());
+        if (!missingPlannedScopes.isEmpty()) {
             tokenService.markReauthorizationRequired(tenantId, userId, authorization
                 .getId(), OAuthFailureCode.PERMANENT);
             audit(tenantId, userId, character.getId(), authorization
                 .getId(), EveAuthAuditResult.FAILURE, "MISSING_SCOPES");
-            return responseFromLatest(tenantId, userId, EvePermissionRefreshStatus.REAUTHORIZATION_REQUIRED, requestedAt, null, missingRequiredScopes, REAUTHORIZATION_PATH);
+            return responseFromLatest(tenantId, userId, EvePermissionRefreshStatus.REAUTHORIZATION_REQUIRED, requestedAt, null, missingPlannedScopes, REAUTHORIZATION_PATH);
         }
-        List<String> missingCapabilityScopes = missingCapabilityScopes(tenantId, userId, authorization.getScopes());
         String accessToken;
         try {
             accessToken = lifecycleService.ensureAccessToken(authorization);
@@ -284,9 +283,7 @@ public class EvePermissionRefreshService {
             LocalDateTime checkedAt = LocalDateTime.now();
             EvePermissionRefreshResp refreshed = persistFacts(tenantId, userId, character, corporation, authorization, characterResponse, corporationResponse, rolesResponse
                 .body(), requestedAt, checkedAt, rolesResponse.expiresAt());
-            return missingCapabilityScopes.isEmpty()
-                ? refreshed
-                : requireScopeExpansion(refreshed, missingCapabilityScopes);
+            return refreshed;
         } catch (SerenityEsiClientException e) {
             if (isPermanent(e.getFailureCode())) {
                 tokenService.markReauthorizationRequired(tenantId, userId, authorization.getId(), e.getFailureCode());
@@ -396,7 +393,7 @@ public class EvePermissionRefreshService {
                     .derivedIdentity()), capabilityChanges(beforeState.capabilities(), afterState.capabilities()));
     }
 
-    /** 离团或换军团时停用成员身份并强制所有本站会话失效。 */
+    /** 离团或换军团时停用成员身份并收回军团权限，本站账号仍可登录。 */
     private void invalidateMembership(Long tenantId,
                                       Long userId,
                                       EveCharacterDO character,
@@ -413,6 +410,7 @@ public class EvePermissionRefreshService {
             memberMapper.updateById(member);
         }
         tokenService.markReauthorizationRequired(tenantId, userId, authorization.getId(), OAuthFailureCode.PERMANENT);
+        derivedIdentityService.synchronize(tenantId, userId);
     }
 
     /** 读取指定的有效角色绑定。 */
@@ -456,27 +454,6 @@ public class EvePermissionRefreshService {
         return authorization != null && Objects.equals(characterRefId, authorization.getCharacterRefId())
             ? authorization
             : null;
-    }
-
-    /** 计算当前授权缺少的身份刷新必需 Scope。 */
-    private List<String> missingRequiredScopes(List<String> currentScopes) {
-        Set<String> missing = new LinkedHashSet<>(properties.getSso().getRequiredScopes());
-        missing.removeAll(currentScopes == null ? List.of() : currentScopes);
-        return List.copyOf(missing);
-    }
-
-    /** 仅为当前用户已获站内访问权的业务模块计算缺失 Scope。 */
-    private List<String> missingCapabilityScopes(Long tenantId, Long userId, List<String> currentScopes) {
-        Set<String> permissions = roleApi.listEveSiteRoles(tenantId, userId)
-            .stream()
-            .flatMap(role -> role.permissions().stream())
-            .collect(java.util.stream.Collectors.toSet());
-        Set<String> missing = java.util.Arrays.stream(EveCapability.values())
-            .filter(capability -> permissions.contains(capability.getSitePermission()))
-            .map(EveCapability::getScope)
-            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-        missing.removeAll(currentScopes == null ? List.of() : currentScopes);
-        return List.copyOf(missing);
     }
 
     /** 将上游可空数组归一为空列表并去重。 */
@@ -556,16 +533,6 @@ public class EvePermissionRefreshService {
                 .lastRoleChangedAt(), nextRefresh, response.missingScopes(), response.reauthorizationPath(), response
                     .addedGameRoles(), response.removedGameRoles(), response.derivedIdentityChange(), response
                         .capabilityChanges());
-    }
-
-    /** 保留本次成功刷新事实，同时提示用户扩展当前业务模块所需 Scope。 */
-    private static EvePermissionRefreshResp requireScopeExpansion(EvePermissionRefreshResp response,
-                                                                  List<String> missingScopes) {
-        return new EvePermissionRefreshResp(EvePermissionRefreshStatus.REAUTHORIZATION_REQUIRED, response
-            .requestedAt(), response.upstreamCheckedAt(), response.sourceExpiresAt(), response
-                .sourceExpiryEstimated(), response.lastRoleChangedAt(), response
-                    .nextSuggestedRefreshAt(), missingScopes, REAUTHORIZATION_PATH, response.addedGameRoles(), response
-                        .removedGameRoles(), response.derivedIdentityChange(), response.capabilityChanges());
     }
 
     /** 读取刷新前已持久化的游戏事实及当前站内权限状态。 */

@@ -14,23 +14,16 @@
  * limitations under the License.
  */
 
-package top.continew.admin.common.api.system;
+package top.continew.admin.eve.model;
 
-import top.continew.admin.common.model.dto.EveLoginIdentityReviewDTO;
+import java.time.LocalDateTime;
 
 /**
- * 账号密码登录前的 EVE 身份复核内部 API。
+ * 已获授权查看者可见的成员追踪字段。
  *
  * @author zhaoyuqing
  */
-public interface EveLoginIdentityReviewApi {
-
-    /**
-     * 在创建本站会话前复核已绑定用户的最新游戏身份。
-     *
-     * @param tenantId 租户 ID
-     * @param userId   用户 ID
-     * @return 复核结果
-     */
-    EveLoginIdentityReviewDTO review(Long tenantId, Long userId);
+public record EveMemberTrackingResp(Long baseId, String baseName, Long locationId, String locationName, Long shipTypeId,
+                                    String shipTypeName, LocalDateTime lastLogonAt, LocalDateTime lastLogoffAt,
+                                    LocalDateTime sourceObservedAt, LocalDateTime sourceExpiresAt) {
 }

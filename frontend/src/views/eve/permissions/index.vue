@@ -1,10 +1,23 @@
 <script setup lang="ts">
+import type { TreeNodeData } from '@arco-design/web-vue'
 import dayjs from 'dayjs'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import AuthorizationActions from '../components/AuthorizationActions.vue'
 import { type EvePermissionNode, type EvePermissionTree, getEvePermissionTree } from '@/apis/eve'
 
 defineOptions({ name: 'EvePermissions' })
+
+type PermissionNodeKind = 'root' | 'group' | 'identity' | 'game-role' | 'site-role' | 'site-permission' | 'scope' | 'capability'
+
+interface PermissionTreeNode extends TreeNodeData {
+  kind: PermissionNodeKind
+  subtitle?: string
+  code?: string
+  owned?: boolean
+  state?: string
+  badges?: string[]
+  children?: PermissionTreeNode[]
+}
 
 const router = useRouter()
 const tree = ref<EvePermissionTree>()
@@ -17,27 +30,8 @@ const expandedKeys = ref<string[]>([])
 const normalizedKeyword = computed(() => keyword.value.trim().toLowerCase())
 const matches = (...values: Array<string | undefined>) => !normalizedKeyword.value
   || values.some((value) => value?.toLowerCase().includes(normalizedKeyword.value))
-const nodeVisible = (node: EvePermissionNode) => (!ownedOnly.value || node.owned)
-  && matches(node.displayName, node.code, node.description, node.sourceScope, ...node.capabilities)
-
-const filteredCeo = computed(() => {
-  const ceo = tree.value?.gamePermissions?.ceo
-  return ceo && nodeVisible(ceo) ? ceo : undefined
-})
-const filteredGroups = computed(() => (tree.value?.gamePermissions?.groups ?? []).map((group) => ({
-  ...group,
-  children: group.children.filter(nodeVisible),
-})).filter((group) => group.children.length || matches(group.displayName, group.sourceScope)))
-const filteredRoles = computed(() => (tree.value?.siteRoles?.roles ?? []).filter((role) => matches(
-  role.name,
-  role.code,
-  role.description,
-  role.source,
-  ...role.permissions,
-)))
-const filteredScopes = computed(() => (tree.value?.scopes?.items ?? []).filter((scope) => (!ownedOnly.value || scope.owned)
-  && matches(scope.displayName, scope.scope, ...scope.capabilities)))
-
+const scopesVerified = computed(() => Boolean(tree.value?.scopes?.authorizationStatus))
+const gamePermissionsVerified = computed(() => Boolean(tree.value?.gamePermissions?.checkedAt))
 const gameOwnedCount = computed(() => {
   const ceo = tree.value?.gamePermissions?.ceo?.owned ? 1 : 0
   return ceo + (tree.value?.gamePermissions?.groups ?? []).flatMap((group) => group.children).filter((node) => node.owned).length
@@ -45,17 +39,10 @@ const gameOwnedCount = computed(() => {
 const gameTotalCount = computed(() => (tree.value?.gamePermissions?.ceo ? 1 : 0)
   + (tree.value?.gamePermissions?.groups ?? []).flatMap((group) => group.children).length)
 const scopeOwnedCount = computed(() => (tree.value?.scopes?.items ?? []).filter((scope) => scope.owned).length)
-const gamePermissionsVerified = computed(() => Boolean(tree.value?.gamePermissions?.checkedAt))
-const scopesVerified = computed(() => Boolean(tree.value?.scopes?.authorizationStatus))
 
 function gamePermissionLabel(node: EvePermissionNode) {
   if (node.owned) return '已拥有'
   return gamePermissionsVerified.value ? '未拥有' : '未知'
-}
-
-function gamePermissionColor(node: EvePermissionNode) {
-  if (node.owned) return 'green'
-  return gamePermissionsVerified.value ? 'gray' : 'orange'
 }
 
 function scopePermissionLabel(owned: boolean) {
@@ -63,13 +50,136 @@ function scopePermissionLabel(owned: boolean) {
   return scopesVerified.value ? '未授权' : '未知'
 }
 
+function gameNodeVisible(node: EvePermissionNode) {
+  return (!ownedOnly.value || node.owned)
+    && matches(node.displayName, node.code, node.description, node.sourceScope, ...node.capabilities)
+}
+
+function createGameLeaf(node: EvePermissionNode, kind: PermissionNodeKind = 'game-role'): PermissionTreeNode {
+  return {
+    key: node.key,
+    title: node.displayName,
+    subtitle: node.description,
+    code: node.code,
+    kind,
+    owned: node.owned,
+    state: gamePermissionLabel(node),
+    badges: node.capabilities,
+  }
+}
+
+function createGameTree(): PermissionTreeNode | undefined {
+  const ceo = tree.value?.gamePermissions?.ceo
+  const groups = (tree.value?.gamePermissions?.groups ?? []).map((group) => {
+    const children = group.children.filter(gameNodeVisible).map((node) => createGameLeaf(node))
+    return {
+      key: group.key,
+      title: group.displayName,
+      subtitle: `国服角色范围：${group.sourceScope}`,
+      kind: 'group' as const,
+      children,
+    }
+  }).filter((group) => group.children.length || matches(group.title, group.subtitle))
+  const children: PermissionTreeNode[] = [
+    ...(ceo && gameNodeVisible(ceo) ? [createGameLeaf(ceo, 'identity')] : []),
+    ...groups,
+  ]
+  if (!children.length) return undefined
+  return {
+    key: 'section:game',
+    title: '游戏身份与军团角色',
+    subtitle: 'CEO 身份 → 国服四类角色范围 → 具体游戏权限',
+    kind: 'root',
+    children,
+  }
+}
+
+function createSiteTree(): PermissionTreeNode | undefined {
+  const children = (tree.value?.siteRoles?.roles ?? []).map((role) => {
+    const roleMatches = matches(role.name, role.code, role.description, role.source, ...role.permissions)
+    const permissions = role.permissions.filter((permission) => matches(permission)).map((permission) => ({
+      key: `site-permission:${role.id}:${permission}`,
+      title: permission,
+      subtitle: '本站业务权限',
+      kind: 'site-permission' as const,
+    }))
+    if (!roleMatches && !permissions.length) return undefined
+    return {
+      key: `site-role:${role.id}`,
+      title: role.name,
+      subtitle: role.description || '暂无角色说明',
+      code: role.code,
+      kind: 'site-role' as const,
+      state: role.derived ? '游戏派生' : '本站配置',
+      badges: [role.system ? '系统角色' : '', `数据范围：${role.dataScope}`].filter(Boolean),
+      children: permissions,
+    }
+  }).filter((node): node is PermissionTreeNode => Boolean(node))
+  if (!children.length) return undefined
+  return {
+    key: 'section:site',
+    title: '本站角色与业务权限',
+    subtitle: '本站角色 → 已生效业务权限',
+    kind: 'root',
+    children,
+  }
+}
+
+function createScopeTree(): PermissionTreeNode | undefined {
+  const children = (tree.value?.scopes?.items ?? []).filter((scope) => (!ownedOnly.value || scope.owned)
+    && matches(scope.displayName, scope.scope, ...scope.capabilities)).map((scope) => ({
+    key: scope.key,
+    title: scope.displayName,
+    subtitle: scope.identityRequired ? '身份识别与军团运营授权包' : '已确认功能的国服授权范围',
+    code: scope.scope,
+    kind: 'scope' as const,
+    owned: scope.owned,
+    state: scopePermissionLabel(scope.owned),
+    badges: [scope.identityRequired ? '身份必需' : ''].filter(Boolean),
+    children: scope.capabilities.map((capability) => ({
+      key: `${scope.key}:capability:${capability}`,
+      title: capability,
+      subtitle: '关联平台能力',
+      kind: 'capability' as const,
+    })),
+  }))
+  if (!children.length) return undefined
+  return {
+    key: 'section:scope',
+    title: '国服 OAuth 授权范围',
+    subtitle: '功能用途 → OAuth Scope → 关联平台能力',
+    kind: 'root',
+    children,
+  }
+}
+
+const permissionTree = computed<PermissionTreeNode[]>(() => [
+  createGameTree(),
+  createSiteTree(),
+  createScopeTree(),
+].filter((node): node is PermissionTreeNode => Boolean(node)))
+
 function formatTime(value?: string) {
   return value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '—'
 }
 
-function expandAll() {
-  expandedKeys.value = filteredGroups.value.map((group) => group.key)
+function collectBranchKeys(nodes: PermissionTreeNode[]): string[] {
+  return nodes.flatMap((node) => [
+    ...(node.children?.length ? [String(node.key)] : []),
+    ...collectBranchKeys(node.children ?? []),
+  ])
 }
+
+function expandAll() {
+  expandedKeys.value = collectBranchKeys(permissionTree.value)
+}
+
+/** 搜索时自动展开匹配路径，避免结果隐藏在折叠的角色范围内。 */
+watch(keyword, (value) => {
+  if (value.trim() && permissionTree.value.length) {
+    expandAll()
+  }
+})
 
 async function loadTree() {
   loading.value = true
@@ -77,7 +187,8 @@ async function loadTree() {
   try {
     const { data } = await getEvePermissionTree()
     tree.value = data
-    expandedKeys.value = data.gamePermissions?.groups.map((group) => group.key) ?? []
+    // 首屏只展开三条主干；四类游戏角色范围默认折叠，避免近两百项权限平铺成普通列表。
+    expandedKeys.value = ['section:game', 'section:site', 'section:scope']
   } catch {
     tree.value = undefined
     failed.value = true
@@ -99,7 +210,7 @@ onMounted(loadTree)
         </a-button>
         <span class="eve-permissions-page__eyebrow">READ-ONLY ACCESS MAP</span>
         <h1>EVE 权限总览</h1>
-        <p>完整展示游戏权限、本站角色与 OAuth Scope；页面仅供查看，不在此处直接授予权限。</p>
+        <p>沿着树状层级查看身份、游戏角色、本站权限和授权范围；页面仅供核对，不在此处直接授予权限。</p>
       </div>
       <AuthorizationActions class="eve-permissions-page__authorization-actions" @refreshed="loadTree" />
     </header>
@@ -116,14 +227,9 @@ onMounted(loadTree)
         <template #extra><a-button type="primary" @click="loadTree">重新加载</a-button></template>
       </a-result>
       <template v-else-if="tree">
-        <a-alert
-          v-if="tree.status !== 'READY'"
-          type="warning"
-          show-icon
-          class="eve-permissions-page__status-alert"
-        >
+        <a-alert v-if="tree.status !== 'READY'" type="warning" show-icon class="eve-permissions-page__status-alert">
           <template #title>权限数据尚未就绪</template>
-          {{ tree.message }}。下方仍展示完整权限目录；尚无有效快照的数据统一标记为“未知”。
+          {{ tree.message }}。下方仍展示完整目录；尚无有效快照的数据统一标记为“未知”。
           <template #action><AuthorizationActions @refreshed="loadTree" /></template>
         </a-alert>
 
@@ -133,87 +239,30 @@ onMounted(loadTree)
           <div><span>本站角色</span><strong>{{ tree.siteRoles?.roles.length ?? 0 }}</strong></div>
           <div><span>OAuth Scope</span><strong>{{ scopesVerified ? `${scopeOwnedCount}/${tree.scopes?.items.length ?? 0}` : `待验证/${tree.scopes?.items.length ?? 0}` }}</strong></div>
           <div><span>权限快照</span><strong>{{ formatTime(tree.gamePermissions?.checkedAt) }}</strong></div>
-          <div>
-            <span>{{ tree.gamePermissions?.sourceExpiryEstimated ? '本地建议刷新时间' : '上游数据有效至' }}</span>
-            <strong>{{ formatTime(tree.gamePermissions?.sourceExpiresAt) }}</strong>
-          </div>
+          <div><span>{{ tree.gamePermissions?.sourceExpiryEstimated ? '本地建议刷新时间' : '上游数据有效至' }}</span><strong>{{ formatTime(tree.gamePermissions?.sourceExpiresAt) }}</strong></div>
         </section>
 
-        <section class="eve-permissions-page__section eve-permissions-page__game-permissions">
+        <section class="eve-permissions-page__tree-section">
           <div class="eve-permissions-page__section-heading">
-            <div><span>01 / 游戏权限</span><h2>军团角色权限树</h2></div>
-            <a-tag>{{ tree.gamePermissions?.dataSource }}</a-tag>
+            <div><span>权限关系图</span><h2>从身份到能力的完整树</h2></div>
+            <a-tag>{{ tree.scopes?.authorizationStatus || '未授权' }}</a-tag>
           </div>
-
-          <article v-if="filteredCeo" class="eve-permissions-page__permission-row eve-permissions-page__permission-row--ceo">
-            <div class="eve-permissions-page__permission-status" :class="{ 'eve-permissions-page__permission-status--owned': filteredCeo.owned }">
-              <icon-check v-if="filteredCeo.owned" /><icon-minus v-else />
-            </div>
-            <div><strong>{{ filteredCeo.displayName }}</strong><p>{{ filteredCeo.description }}</p></div>
-            <code>{{ filteredCeo.code }}</code>
-            <a-tag :color="gamePermissionColor(filteredCeo)">{{ gamePermissionLabel(filteredCeo) }}</a-tag>
-          </article>
-
-          <a-collapse v-model:active-key="expandedKeys" multiple class="eve-permissions-page__permission-groups">
-            <a-collapse-item v-for="group in filteredGroups" :key="group.key" :header="group.displayName">
-              <template #extra><span class="eve-permissions-page__scope-label">{{ group.sourceScope }}</span></template>
-              <article v-for="node in group.children" :key="node.key" class="eve-permissions-page__permission-row">
-                <div class="eve-permissions-page__permission-status" :class="{ 'eve-permissions-page__permission-status--owned': node.owned }">
+          <p class="eve-permissions-page__tree-guide">展开父节点即可逐级查看：身份与角色、本站角色与业务权限、OAuth Scope 与关联能力。</p>
+          <a-tree v-model:expanded-keys="expandedKeys" :data="permissionTree" block-node show-line :selectable="false" class="eve-permissions-page__tree">
+            <template #title="node">
+              <div class="eve-permissions-page__tree-node" :class="`eve-permissions-page__tree-node--${node.kind}`">
+                <span v-if="node.owned !== undefined" class="eve-permissions-page__tree-status" :class="{ 'eve-permissions-page__tree-status--owned': node.owned }">
                   <icon-check v-if="node.owned" /><icon-minus v-else />
-                </div>
-                <div><strong>{{ node.displayName }}</strong><p>{{ node.description }}</p></div>
-                <div class="eve-permissions-page__permission-code">
-                  <code>{{ node.code }}</code>
-                  <small v-if="node.capabilities.length">关联：{{ node.capabilities.join('、') }}</small>
-                </div>
-                <a-tag :color="gamePermissionColor(node)">{{ gamePermissionLabel(node) }}</a-tag>
-              </article>
-              <a-empty v-if="!group.children.length" description="当前筛选条件下没有权限" />
-            </a-collapse-item>
-          </a-collapse>
-          <a-empty v-if="!filteredCeo && !filteredGroups.length" description="没有匹配的游戏权限" />
-        </section>
-
-        <section class="eve-permissions-page__section eve-permissions-page__site-roles">
-          <div class="eve-permissions-page__section-heading">
-            <div><span>02 / 本站角色</span><h2>站内角色与有效权限</h2></div>
-            <span class="eve-permissions-page__timestamp">检查于 {{ formatTime(tree.siteRoles?.checkedAt) }}</span>
-          </div>
-          <div class="eve-permissions-page__role-grid">
-            <article v-for="role in filteredRoles" :key="role.id" class="eve-permissions-page__role-card">
-              <div><a-tag :color="role.derived ? 'arcoblue' : 'gray'">{{ role.derived ? '游戏派生' : '本站配置' }}</a-tag><a-tag v-if="role.system" color="purple">系统角色</a-tag></div>
-              <h3>{{ role.name }}</h3>
-              <code>{{ role.code }}</code>
-              <p>{{ role.description || '暂无角色说明' }}</p>
-              <div class="eve-permissions-page__role-permissions">
-                <span v-for="permission in role.permissions" :key="permission">{{ permission }}</span>
+                </span>
+                <span v-else class="eve-permissions-page__tree-bullet" />
+                <div class="eve-permissions-page__tree-copy"><strong>{{ node.title }}</strong><small v-if="node.subtitle">{{ node.subtitle }}</small></div>
+                <code v-if="node.code">{{ node.code }}</code>
+                <div v-if="node.badges?.length" class="eve-permissions-page__tree-badges"><span v-for="badge in node.badges" :key="badge">{{ badge }}</span></div>
+                <a-tag v-if="node.state" :color="node.owned ? 'green' : node.owned === false ? (gamePermissionsVerified || scopesVerified ? 'gray' : 'orange') : 'arcoblue'">{{ node.state }}</a-tag>
               </div>
-            </article>
-          </div>
-          <a-empty v-if="!filteredRoles.length" description="没有匹配的本站角色" />
-        </section>
-
-        <section class="eve-permissions-page__section eve-permissions-page__oauth-scopes">
-          <div class="eve-permissions-page__section-heading">
-            <div><span>03 / OAuth Scope</span><h2>国服授权范围</h2></div>
-            <a-tag>{{ tree.scopes?.authorizationStatus }}</a-tag>
-          </div>
-          <div class="eve-permissions-page__scope-list">
-            <article v-for="scope in filteredScopes" :key="scope.key" class="eve-permissions-page__scope-row">
-              <div class="eve-permissions-page__permission-status" :class="{ 'eve-permissions-page__permission-status--owned': scope.owned }">
-                <icon-check v-if="scope.owned" /><icon-minus v-else />
-              </div>
-              <div><strong>{{ scope.displayName }}</strong><code>{{ scope.scope }}</code></div>
-              <div class="eve-permissions-page__scope-capabilities">
-                <a-tag v-if="scope.identityRequired" color="arcoblue">身份必需</a-tag>
-                <span v-for="capability in scope.capabilities" :key="capability">{{ capability }}</span>
-              </div>
-              <a-tag :color="scope.owned ? 'green' : scopesVerified ? 'orange' : 'gray'">
-                {{ scopePermissionLabel(scope.owned) }}
-              </a-tag>
-            </article>
-          </div>
-          <a-empty v-if="!filteredScopes.length" description="没有匹配的 OAuth Scope" />
+            </template>
+          </a-tree>
+          <a-empty v-if="!permissionTree.length" description="没有匹配的权限节点" />
         </section>
       </template>
     </a-spin>
@@ -237,53 +286,29 @@ onMounted(loadTree)
 .eve-permissions-page__summary-strip > div:last-child { border-right: 0; }
 .eve-permissions-page__summary-strip span { color: var(--color-text-3); font-size: 12px; }
 .eve-permissions-page__summary-strip strong { font-family: DINPro, sans-serif; font-size: 15px; }
-.eve-permissions-page__section { margin-top: 18px; padding: 22px; border: 1px solid var(--color-border-2); border-radius: 14px; background: var(--color-bg-1); }
-.eve-permissions-page__section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
+.eve-permissions-page__tree-section { margin-top: 18px; padding: 22px; border: 1px solid var(--color-border-2); border-radius: 14px; background: var(--color-bg-1); }
+.eve-permissions-page__section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 8px; }
 .eve-permissions-page__section-heading h2 { margin: 4px 0 0; font-size: 19px; }
-.eve-permissions-page__timestamp, .eve-permissions-page__scope-label { color: var(--color-text-3); font-size: 12px; }
-.eve-permissions-page__permission-row { display: grid; grid-template-columns: auto minmax(200px, 1fr) minmax(180px, 0.8fr) auto; align-items: center; gap: 14px; padding: 13px 14px; border-bottom: 1px solid var(--color-border-1); }
-.eve-permissions-page__permission-row:last-child { border-bottom: 0; }
-.eve-permissions-page__permission-row--ceo { margin-bottom: 14px; border: 1px solid rgba(var(--warning-6), 0.24); border-radius: 10px; background: rgba(var(--warning-6), 0.05); }
-.eve-permissions-page__permission-row p { margin: 3px 0 0; color: var(--color-text-3); font-size: 12px; }
-.eve-permissions-page__permission-status { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 8px; color: var(--color-text-4); background: var(--color-fill-2); }
-.eve-permissions-page__permission-status--owned { color: rgb(var(--success-6)); background: rgba(var(--success-6), 0.11); }
-.eve-permissions-page__permission-code { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.eve-permissions-page__permission-code code, .eve-permissions-page__scope-row code, .eve-permissions-page__role-card code { overflow-wrap: anywhere; color: var(--color-text-2); font-size: 12px; }
-.eve-permissions-page__permission-code small { color: var(--color-text-4); }
-.eve-permissions-page__permission-groups { border-radius: 10px; }
-.eve-permissions-page__role-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.eve-permissions-page__role-card { padding: 18px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-fill-1); }
-.eve-permissions-page__role-card h3 { margin: 14px 0 4px; }
-.eve-permissions-page__role-card p { min-height: 38px; color: var(--color-text-3); }
-.eve-permissions-page__role-card .arco-tag + .arco-tag { margin-left: 6px; }
-.eve-permissions-page__role-permissions { display: flex; flex-wrap: wrap; gap: 6px; }
-.eve-permissions-page__role-permissions span, .eve-permissions-page__scope-capabilities span { padding: 3px 7px; border-radius: 6px; color: var(--color-text-2); background: var(--color-fill-2); font-size: 11px; }
-.eve-permissions-page__scope-list { border: 1px solid var(--color-border-1); border-radius: 10px; }
-.eve-permissions-page__scope-row { display: grid; grid-template-columns: auto minmax(260px, 1.2fr) minmax(220px, 1fr) auto; align-items: center; gap: 14px; padding: 14px; border-bottom: 1px solid var(--color-border-1); }
-.eve-permissions-page__scope-row:last-child { border-bottom: 0; }
-.eve-permissions-page__scope-row > div:nth-child(2) { display: flex; flex-direction: column; gap: 4px; }
-.eve-permissions-page__scope-capabilities { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-
-@media (max-width: 1120px) {
-  .eve-permissions-page__summary-strip { grid-template-columns: repeat(3, 1fr); }
-  .eve-permissions-page__summary-strip > div:nth-child(3) { border-right: 0; }
-  .eve-permissions-page__summary-strip > div:nth-child(-n+3) { border-bottom: 1px solid var(--color-border-2); }
-  .eve-permissions-page__role-grid { grid-template-columns: 1fr 1fr; }
-}
-@media (max-width: 820px) {
-  .eve-permissions-page__header { align-items: flex-start; flex-direction: column; }
-  .eve-permissions-page__authorization-actions { min-width: 0; width: 100%; }
-  .eve-permissions-page__toolbar { align-items: flex-start; flex-wrap: wrap; }
-  .eve-permissions-page__search { flex-basis: 100%; }
-  .eve-permissions-page__permission-row, .eve-permissions-page__scope-row { grid-template-columns: auto 1fr auto; }
-  .eve-permissions-page__permission-code, .eve-permissions-page__scope-capabilities { grid-column: 2 / -1; }
-}
-@media (max-width: 560px) {
-  .eve-permissions-page__summary-strip { grid-template-columns: 1fr 1fr; }
-  .eve-permissions-page__summary-strip > div { border-bottom: 1px solid var(--color-border-2); }
-  .eve-permissions-page__summary-strip > div:nth-child(even) { border-right: 0; }
-  .eve-permissions-page__role-grid { grid-template-columns: 1fr; }
-  .eve-permissions-page__section { padding: 16px 12px; }
-  .eve-permissions-page__permission-row, .eve-permissions-page__scope-row { padding-inline: 6px; }
-}
+.eve-permissions-page__tree-guide { margin: 0 0 18px; color: var(--color-text-3); font-size: 13px; }
+.eve-permissions-page__tree { padding: 10px 8px; border: 1px solid var(--color-border-1); border-radius: 12px; background: linear-gradient(90deg, rgba(var(--arcoblue-6), 0.035), transparent 30%); }
+.eve-permissions-page__tree :deep(.arco-tree-node) { min-height: 44px; }
+.eve-permissions-page__tree :deep(.arco-tree-node-title) { min-width: 0; padding: 3px 8px; border-radius: 8px; }
+.eve-permissions-page__tree :deep(.arco-tree-node-title:hover) { background: var(--color-fill-1); }
+.eve-permissions-page__tree-node { display: flex; align-items: center; min-width: 0; gap: 10px; padding: 6px 0; }
+.eve-permissions-page__tree-copy { display: flex; flex: 1; flex-direction: column; min-width: 160px; gap: 2px; }
+.eve-permissions-page__tree-copy strong { font-size: 14px; line-height: 20px; }
+.eve-permissions-page__tree-copy small { overflow: hidden; color: var(--color-text-3); font-size: 12px; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.eve-permissions-page__tree-node code { max-width: 34%; overflow-wrap: anywhere; color: var(--color-text-2); font-size: 12px; }
+.eve-permissions-page__tree-status, .eve-permissions-page__tree-bullet { display: grid; width: 24px; height: 24px; flex: 0 0 24px; place-items: center; border-radius: 7px; color: var(--color-text-4); background: var(--color-fill-2); }
+.eve-permissions-page__tree-status--owned { color: rgb(var(--success-6)); background: rgba(var(--success-6), 0.11); }
+.eve-permissions-page__tree-bullet { width: 8px; height: 8px; flex-basis: 8px; margin-inline: 8px; border-radius: 50%; background: rgb(var(--arcoblue-5)); }
+.eve-permissions-page__tree-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+.eve-permissions-page__tree-badges span { padding: 3px 7px; border-radius: 6px; color: var(--color-text-2); background: var(--color-fill-2); font-size: 11px; }
+.eve-permissions-page__tree-node--root .eve-permissions-page__tree-copy strong { color: rgb(var(--arcoblue-6)); font-size: 15px; }
+.eve-permissions-page__tree-node--group .eve-permissions-page__tree-copy strong { font-weight: 600; }
+.eve-permissions-page__tree-node--identity { padding-left: 2px; background: rgba(var(--warning-6), 0.06); }
+.eve-permissions-page__tree-node--scope .eve-permissions-page__tree-copy strong { color: rgb(var(--arcoblue-6)); }
+@media (max-width: 1120px) { .eve-permissions-page__summary-strip { grid-template-columns: repeat(3, 1fr); } .eve-permissions-page__summary-strip > div:nth-child(3) { border-right: 0; } .eve-permissions-page__summary-strip > div:nth-child(-n+3) { border-bottom: 1px solid var(--color-border-2); } }
+@media (max-width: 820px) { .eve-permissions-page__header { align-items: flex-start; flex-direction: column; } .eve-permissions-page__authorization-actions { min-width: 0; width: 100%; } .eve-permissions-page__toolbar { align-items: flex-start; flex-wrap: wrap; } .eve-permissions-page__search { flex-basis: 100%; } .eve-permissions-page__tree-node { align-items: flex-start; flex-wrap: wrap; } .eve-permissions-page__tree-copy { flex-basis: calc(100% - 42px); } .eve-permissions-page__tree-node code, .eve-permissions-page__tree-badges { width: calc(100% - 42px); max-width: none; margin-left: 42px; } .eve-permissions-page__tree-badges { justify-content: flex-start; } }
+@media (max-width: 560px) { .eve-permissions-page__summary-strip { grid-template-columns: 1fr 1fr; } .eve-permissions-page__summary-strip > div { border-bottom: 1px solid var(--color-border-2); } .eve-permissions-page__summary-strip > div:nth-child(even) { border-right: 0; } .eve-permissions-page__tree-section { padding: 16px 10px; } .eve-permissions-page__tree { padding-inline: 2px; } }
 </style>
