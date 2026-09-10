@@ -26,6 +26,12 @@ const form = reactive<EveBusinessRoleReq>({ name: '', description: '', permissio
 const identityLabels = { OWNER: '军团 CEO', ADMIN: '军团总监', MEMBER: '普通成员', NONE: '未识别' }
 const roleOptions = computed(() => overview.value.roles.map((role) => ({ label: role.name, value: role.id })))
 
+/** 将权限审计的站内用户标识转换为当前军团成员的可读名称。 */
+function memberDisplayName(userId?: string) {
+  const member = overview.value.members.find((item) => item.id === userId)
+  return member?.nickname || member?.username || '成员信息不可用'
+}
+
 async function loadOverview() {
   loading.value = true
   try {
@@ -123,8 +129,8 @@ onMounted(loadOverview)
         <a-table :data="roleAudits" :pagination="false" size="small" row-key="id">
           <template #columns>
             <a-table-column title="操作" data-index="summary" />
-            <a-table-column title="操作者" :width="180"><template #cell="{ record }">{{ record.actorUsername || `用户 #${record.actorUserId}` }}</template></a-table-column>
-            <a-table-column title="目标用户" :width="140"><template #cell="{ record }">用户 #{{ record.targetUserId }}</template></a-table-column>
+            <a-table-column title="操作者" :width="180"><template #cell="{ record }">{{ record.actorUsername || '未知操作者' }}</template></a-table-column>
+            <a-table-column title="目标成员" :width="140"><template #cell="{ record }">{{ memberDisplayName(record.targetUserId) }}</template></a-table-column>
             <a-table-column title="时间" data-index="occurredAt" :width="190" />
           </template>
         </a-table>

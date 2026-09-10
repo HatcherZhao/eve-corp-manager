@@ -290,6 +290,9 @@ public class SerenityProperties implements EnvironmentAware {
         /** 访问令牌到期前主动轮换的提前量。 */
         private Duration tokenRefreshSkew = Duration.ofMinutes(2);
 
+        /** 后台授权扫描间隔；纳入到期窗口，确保任务延迟不会错过令牌主动轮换。 */
+        private Duration backgroundReviewInterval = Duration.ofMinutes(1);
+
         /** 国服角色事实的默认缓存周期。 */
         private Duration roleCacheTtl = Duration.ofHours(1);
 
@@ -301,6 +304,7 @@ public class SerenityProperties implements EnvironmentAware {
             requirePositive(cooldown, "permission-refresh.cooldown");
             requirePositive(lockWait, "permission-refresh.lock-wait");
             requirePositive(tokenRefreshSkew, "permission-refresh.token-refresh-skew");
+            requirePositive(backgroundReviewInterval, "permission-refresh.background-review-interval");
             requirePositive(roleCacheTtl, "permission-refresh.role-cache-ttl");
             if (batchSize < 1 || batchSize > 500) {
                 throw new IllegalStateException("国服权限复核批大小必须在 1 到 500 之间");

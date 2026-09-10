@@ -1,15 +1,20 @@
 <script setup lang="ts">
 import dayjs from 'dayjs'
+import utc from 'dayjs/plugin/utc'
 import { computed, onMounted, ref } from 'vue'
 import AuthorizationActions from '../components/AuthorizationActions.vue'
 import { type EveCapabilityStatus, type EveContext, getEveContext } from '@/apis/eve'
+import { getEveCharacterPortraitUrl, getEveCorporationLogoUrl } from '@/utils/eveImage'
 
 defineOptions({ name: 'EveWorkspace' })
+dayjs.extend(utc)
 
 const router = useRouter()
 const context = ref<EveContext>()
 const loading = ref(false)
 const failed = ref(false)
+const corporationLogoFailed = ref(false)
+const characterPortraitFailed = ref(false)
 
 const statusMeta: Record<EveCapabilityStatus, { label: string, color: string, reason: string }> = {
   AVAILABLE: { label: '可用', color: 'green', reason: '本站权限、OAuth Scope 与游戏角色均满足' },
@@ -28,9 +33,24 @@ const identityLabels: Record<string, string> = {
 
 const availableCount = computed(() => context.value?.capabilities.filter((item) => item.status === 'AVAILABLE').length ?? 0)
 const health = computed(() => context.value ? statusMeta[context.value.authorizationStatus] : statusMeta.NO_DATA_SOURCE)
+const dataFreshnessMeta = {
+  FRESH: { label: '有效', color: 'green' },
+  STALE: { label: '已过期', color: 'orange' },
+  SYNC_FAILED: { label: '同步失败', color: 'red' },
+  NO_DATA: { label: '尚无数据', color: 'gray' },
+} as const
+const unhealthyDataCount = computed(() => context.value?.dataFreshness.filter((item) => item.status !== 'FRESH').length ?? 0)
+const corporationLogoUrl = computed(() => getEveCorporationLogoUrl(context.value?.corporation?.corporationId))
+const characterPortraitUrl = computed(() => getEveCharacterPortraitUrl(context.value?.character?.characterId))
 
 function formatTime(value?: string) {
   return value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '—'
+}
+
+/** 国服 Expires 响应头按 UTC 入库；首屏按浏览器本地时区展示。 */
+function formatCacheExpiry(value?: string, estimated?: boolean) {
+  if (!value) return '—'
+  return estimated ? formatTime(value) : dayjs.utc(value).local().format('YYYY-MM-DD HH:mm:ss')
 }
 const canManageAccess = computed(() => ['OWNER', 'ADMIN'].includes(context.value?.derivedIdentity ?? ''))
 
@@ -40,6 +60,8 @@ async function loadContext() {
   try {
     const { data } = await getEveContext()
     context.value = data
+    corporationLogoFailed.value = false
+    characterPortraitFailed.value = false
   } catch {
     context.value = undefined
     failed.value = true
@@ -60,12 +82,19 @@ onMounted(loadContext)
 
       <template v-else-if="context">
         <header class="eve-workspace-page__header">
+          <div class="eve-workspace-page__corporation-logo" aria-label="军团游戏徽标">
+            <img v-if="corporationLogoUrl && !corporationLogoFailed" :src="corporationLogoUrl" :alt="`${context.corporation?.name || '军团'}徽标`" @error="corporationLogoFailed = true" />
+            <icon-user-group v-else />
+          </div>
           <div class="eve-workspace-page__identity">
             <span class="eve-workspace-page__eyebrow">SERENITY CORPORATION SPACE</span>
             <h1>{{ context.corporation?.name || '未绑定军团' }}</h1>
             <div class="eve-workspace-page__identity-meta">
               <span v-if="context.corporation">[{{ context.corporation.ticker }}]</span>
-              <span>{{ context.character?.name || '未绑定角色' }}</span>
+              <span class="eve-workspace-page__character-identity">
+                <img v-if="characterPortraitUrl && !characterPortraitFailed" :src="characterPortraitUrl" :alt="`${context.character?.name || '当前角色'}肖像`" @error="characterPortraitFailed = true" />
+                {{ context.character?.name || '未绑定角色' }}
+              </span>
               <a-tag color="arcoblue">{{ identityLabels[context.derivedIdentity] || context.derivedIdentity || '未识别角色' }}</a-tag>
             </div>
           </div>
@@ -96,10 +125,28 @@ onMounted(loadContext)
             <small>快照 {{ formatTime(context.permissionFreshness?.snapshotCapturedAt) }}</small>
             <small>
               {{ context.permissionFreshness?.cacheExpiryEstimated ? '本地建议刷新' : '上游数据有效至' }}
-              {{ formatTime(context.permissionFreshness?.cacheExpiresAt) }}
+              {{ formatCacheExpiry(context.permissionFreshness?.cacheExpiresAt, context.permissionFreshness?.cacheExpiryEstimated) }}
             </small>
           </div>
           <AuthorizationActions class="eve-workspace-page__authorization-actions" @refreshed="loadContext" />
+        </section>
+
+        <section class="eve-workspace-page__data-health">
+          <div class="eve-workspace-page__section-heading">
+            <div><span>数据健康</span><h2>军团数据同步状态</h2></div>
+            <p>{{ unhealthyDataCount ? `有 ${unhealthyDataCount} 项需要关注；旧快照会保留，不会被误显示为零数据。` : '全部数据模块均在上游有效期内。' }}</p>
+          </div>
+          <div class="eve-workspace-page__data-health-grid">
+            <button v-for="item in context.dataFreshness" :key="item.module" type="button" class="eve-workspace-page__data-health-card" @click="router.push(item.route)">
+              <div><span>{{ item.title }}</span><a-tag :color="dataFreshnessMeta[item.status].color">{{ dataFreshnessMeta[item.status].label }}</a-tag></div>
+              <strong v-if="item.status === 'SYNC_FAILED'">{{ item.failureCode || '同步失败' }}</strong>
+              <strong v-else-if="item.lastSuccessfulAt">{{ formatTime(item.lastSuccessfulAt) }}</strong>
+              <strong v-else>尚未完成同步</strong>
+              <small v-if="item.sourceExpiresAt">上游有效至 {{ formatCacheExpiry(item.sourceExpiresAt) }}</small>
+              <small v-else-if="item.lastFailureAt">失败于 {{ formatTime(item.lastFailureAt) }}</small>
+              <small v-else>点击进入模块处理</small>
+            </button>
+          </div>
         </section>
 
         <section class="eve-workspace-page__capability-section">
@@ -152,9 +199,14 @@ onMounted(loadContext)
     linear-gradient(120deg, rgba(var(--arcoblue-6), 0.13), transparent 55%),
     var(--color-bg-1);
 }
+.eve-workspace-page__corporation-logo { display: grid; width: 82px; height: 82px; flex: 0 0 auto; place-items: center; overflow: hidden; border: 1px solid rgba(var(--arcoblue-6), .24); border-radius: 18px; background: rgba(var(--arcoblue-6), .08); color: rgb(var(--arcoblue-6)); font-size: 32px; }
+.eve-workspace-page__corporation-logo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.eve-workspace-page__identity { min-width: 0; }
 .eve-workspace-page__eyebrow { color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; font-size: 11px; letter-spacing: 0.16em; }
 .eve-workspace-page__identity h1 { margin: 8px 0 10px; font-size: clamp(26px, 3vw, 36px); }
 .eve-workspace-page__identity-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--color-text-2); }
+.eve-workspace-page__character-identity { display: inline-flex; align-items: center; gap: 6px; }
+.eve-workspace-page__character-identity img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; }
 .eve-workspace-page__header-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 
 .eve-workspace-page__telemetry {
@@ -185,6 +237,11 @@ onMounted(loadContext)
 .eve-workspace-page__authorization-actions :deep(.eve-authorization-actions__result) { grid-template-columns: 1fr 1fr; }
 
 .eve-workspace-page__capability-section { margin-top: 28px; }
+.eve-workspace-page__data-health { margin-top: 28px; }
+.eve-workspace-page__data-health-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.eve-workspace-page__data-health-card { display: flex; min-height: 108px; flex-direction: column; gap: 7px; padding: 16px 18px; border: 1px solid var(--color-border-2); border-radius: 14px; background: var(--color-bg-1); color: inherit; cursor: pointer; text-align: left; transition: border-color .18s ease, transform .18s ease; }
+.eve-workspace-page__data-health-card:hover { border-color: rgba(var(--arcoblue-6), .45); transform: translateY(-2px); }
+.eve-workspace-page__data-health-card > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--color-text-2); font-size: 13px; }.eve-workspace-page__data-health-card > strong { overflow: hidden; color: var(--color-text-1); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }.eve-workspace-page__data-health-card > small { color: var(--color-text-3); font-size: 12px; }
 .eve-workspace-page__section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 16px; }
 .eve-workspace-page__section-heading span { color: rgb(var(--arcoblue-6)); font-size: 12px; }
 .eve-workspace-page__section-heading h2 { margin: 5px 0 0; font-size: 20px; }
@@ -225,6 +282,7 @@ onMounted(loadContext)
   .eve-workspace-page__telemetry { grid-template-columns: auto 1fr; padding: 18px; }
   .eve-workspace-page__health-stat { grid-column: 1 / -1; padding: 12px 0 0; border-top: 1px solid var(--color-border-2); border-left: 0; }
   .eve-workspace-page__capability-grid { grid-template-columns: 1fr; }
+  .eve-workspace-page__data-health-grid { grid-template-columns: 1fr; }
   .eve-workspace-page__section-heading { align-items: flex-start; flex-direction: column; }
   .eve-workspace-page__section-heading p { text-align: left; }
 }

@@ -59,6 +59,7 @@ import top.continew.admin.eve.model.serenity.SerenityCorporationRolesResponse;
 import top.continew.admin.eve.model.serenity.SerenityEsiResponse;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
@@ -101,6 +102,27 @@ public class EvePermissionRefreshService {
     @Transactional(rollbackFor = Exception.class)
     public EvePermissionRefreshResp refreshCurrent() {
         UserContext context = UserContextHolder.getContext();
+        return refresh(context.getTenantId(), context.getId(), false);
+    }
+
+    /**
+     * 工作台首屏仅在游戏权限快照缺失或过期时自动复核，避免用户每次登录都需要手动刷新。
+     *
+     * <p>未过期的快照直接复用；过期快照则沿用主动刷新相同的锁与冷却机制，防止多个页面并发请求国服。</p>
+     *
+     * @return 已发起复核时返回结果；快照仍有效时返回 {@code null}
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public EvePermissionRefreshResp refreshIfSnapshotExpiredCurrent() {
+        UserContext context = UserContextHolder.getContext();
+        EveCharacterDO character = primaryCharacter(context.getTenantId(), context.getId());
+        EveCharacterRoleSnapshotDO snapshot = character == null
+            ? null
+            : roleSnapshotMapper.selectLatest(context.getTenantId(), character.getId());
+        if (snapshot != null && snapshot.getSourceExpiresAt() != null && snapshot.getSourceExpiresAt()
+            .isAfter(LocalDateTime.now(ZoneOffset.UTC))) {
+            return null;
+        }
         return refresh(context.getTenantId(), context.getId(), false);
     }
 
@@ -247,11 +269,9 @@ public class EvePermissionRefreshService {
             return emptyResponse(EvePermissionRefreshStatus.AUTHORIZATION_DISABLED, requestedAt);
         }
         List<String> missingPlannedScopes = scopePolicy.missingPlannedScopes(authorization.getScopes());
-        if (!missingPlannedScopes.isEmpty()) {
-            tokenService.markReauthorizationRequired(tenantId, userId, authorization
-                .getId(), OAuthFailureCode.PERMANENT);
+        if (!scopePolicy.missingIdentityScopes(authorization.getScopes()).isEmpty()) {
             audit(tenantId, userId, character.getId(), authorization
-                .getId(), EveAuthAuditResult.FAILURE, "MISSING_SCOPES");
+                .getId(), EveAuthAuditResult.SUCCESS, "MISSING_IDENTITY_SCOPES");
             return responseFromLatest(tenantId, userId, EvePermissionRefreshStatus.REAUTHORIZATION_REQUIRED, requestedAt, null, missingPlannedScopes, REAUTHORIZATION_PATH);
         }
         String accessToken;
@@ -282,7 +302,7 @@ public class EvePermissionRefreshService {
                 .getCorporationRolesWithMetadata(character.getCharacterId(), accessToken);
             LocalDateTime checkedAt = LocalDateTime.now();
             EvePermissionRefreshResp refreshed = persistFacts(tenantId, userId, character, corporation, authorization, characterResponse, corporationResponse, rolesResponse
-                .body(), requestedAt, checkedAt, rolesResponse.expiresAt());
+                .body(), requestedAt, checkedAt, rolesResponse.expiresAt(), missingPlannedScopes);
             return refreshed;
         } catch (SerenityEsiClientException e) {
             if (isPermanent(e.getFailureCode())) {
@@ -319,7 +339,8 @@ public class EvePermissionRefreshService {
                                                   SerenityCorporationRolesResponse rolesResponse,
                                                   LocalDateTime requestedAt,
                                                   LocalDateTime checkedAt,
-                                                  LocalDateTime upstreamExpiresAt) {
+                                                  LocalDateTime upstreamExpiresAt,
+                                                  List<String> missingPlannedScopes) {
         List<String> roles = safeList(rolesResponse.roles());
         List<String> rolesAtHq = safeList(rolesResponse.rolesAtHq());
         List<String> rolesAtBase = safeList(rolesResponse.rolesAtBase());
@@ -385,12 +406,16 @@ public class EvePermissionRefreshService {
         PermissionState afterState = permissionState(tenantId, userId, ceo, roles, rolesAtHq, rolesAtBase, rolesAtOther);
         audit(tenantId, userId, character.getId(), authorization.getId(), EveAuthAuditResult.SUCCESS, changed
             ? "ROLES_CHANGED"
-            : "ROLES_UNCHANGED");
+            : missingPlannedScopes.isEmpty() ? "ROLES_UNCHANGED" : "ROLES_UNCHANGED_MISSING_SCOPES");
         LocalDateTime lastChangedAt = changed ? checkedAt : previous.getCapturedAt();
         return new EvePermissionRefreshResp(EvePermissionRefreshStatus.REFRESHED, requestedAt, checkedAt, sourceExpiresAt, sourceExpiryEstimated, lastChangedAt, null, List
-            .of(), null, difference(afterState.gameRoles(), beforeState.gameRoles()), difference(beforeState
-                .gameRoles(), afterState.gameRoles()), identityChange(beforeState.derivedIdentity(), afterState
-                    .derivedIdentity()), capabilityChanges(beforeState.capabilities(), afterState.capabilities()));
+            .copyOf(missingPlannedScopes), missingPlannedScopes.isEmpty()
+                ? null
+                : REAUTHORIZATION_PATH, difference(afterState.gameRoles(), beforeState
+                    .gameRoles()), difference(beforeState.gameRoles(), afterState
+                        .gameRoles()), identityChange(beforeState.derivedIdentity(), afterState
+                            .derivedIdentity()), capabilityChanges(beforeState.capabilities(), afterState
+                                .capabilities()));
     }
 
     /** 离团或换军团时停用成员身份并收回军团权限，本站账号仍可登录。 */
@@ -463,9 +488,14 @@ public class EvePermissionRefreshService {
             : values.stream().filter(value -> value != null && !value.isBlank()).distinct().toList();
     }
 
-    /** 判断上游失败是否只能通过重新授权恢复。 */
+    /**
+     * 仅 OAuth Token 端点返回 INVALID_GRANT 才能证明刷新令牌已经失效。
+     *
+     * <p>角色和军团 ESI 的 401 / 403 还可能是访问令牌缓存、Scope、游戏角色或上游策略问题，不能据此
+     * 清空刷新令牌。</p>
+     */
     private static boolean isPermanent(OAuthFailureCode code) {
-        return code == OAuthFailureCode.INVALID_GRANT || code == OAuthFailureCode.UNAUTHORIZED || code == OAuthFailureCode.FORBIDDEN || code == OAuthFailureCode.PERMANENT;
+        return code == OAuthFailureCode.INVALID_GRANT;
     }
 
     /** 写入只包含固定分类的脱敏审计。 */

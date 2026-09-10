@@ -23,9 +23,13 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import top.continew.admin.eve.model.EveMeContextResp;
+import top.continew.admin.eve.model.EveDataFreshnessResp;
 import top.continew.admin.eve.service.EveContextService;
+import top.continew.admin.eve.service.EvePermissionRefreshService;
 import top.continew.admin.system.service.EveSessionPermissionRefreshService;
 import top.continew.starter.log.annotation.Log;
+
+import java.util.List;
 
 /**
  * 当前登录用户的 EVE 身份与能力接口。
@@ -40,13 +44,22 @@ import top.continew.starter.log.annotation.Log;
 public class EveMeController {
 
     private final EveContextService contextService;
+    private final EvePermissionRefreshService permissionRefreshService;
     private final EveSessionPermissionRefreshService sessionPermissionRefreshService;
 
-    /** 查询当前用户的游戏身份、军团和模块能力，并同步本次会话的本站权限。 */
+    /** 查询当前用户的游戏身份、军团和模块能力；过期游戏快照会在首屏自动复核。 */
     @GetMapping("/context")
     @Operation(summary = "查询当前 EVE 用户上下文")
     public EveMeContextResp getContext() {
+        permissionRefreshService.refreshIfSnapshotExpiredCurrent();
         sessionPermissionRefreshService.refreshCurrentEveUser();
         return contextService.getCurrentContext();
+    }
+
+    /** 查询当前军团各已上线数据模块的新鲜度与最近同步失败提醒。 */
+    @GetMapping("/data-freshness")
+    @Operation(summary = "查询当前军团数据新鲜度")
+    public List<EveDataFreshnessResp> getDataFreshness() {
+        return contextService.getCurrentContext().dataFreshness();
     }
 }

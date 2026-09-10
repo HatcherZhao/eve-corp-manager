@@ -44,7 +44,7 @@ public enum EveSystemCapability {
     INDUSTRY_MANAGEMENT,
     /** 建筑与空间站管理。 */
     STRUCTURE_MANAGEMENT,
-    /** 月矿提取计划读取。 */
+    /** 月矿提取情报读取。 */
     MINING_EXTRACTION_READ,
     /** 月矿观察者账本读取。 */
     MINING_LEDGER_READ,

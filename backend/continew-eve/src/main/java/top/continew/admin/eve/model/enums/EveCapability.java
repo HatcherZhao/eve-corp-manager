@@ -31,9 +31,12 @@ import lombok.RequiredArgsConstructor;
 public enum EveCapability {
     ASSETS("assets", "军团资产", "资产、机库分区与容器层级", "eve:assets:view", "esi-assets.read_corporation_assets.v1", "Director"),
     STRUCTURES("structures", "建筑设施", "建筑状态、服务与燃料到期", "eve:structures:view", "esi-corporations.read_structures.v1", "Station_Manager"),
-    EXTRACTIONS("extractions", "月矿计划", "矿块拉取、到达与自然碎裂时间", "eve:extractions:view", "esi-industry.read_corporation_mining.v1", "Station_Manager"),
+    EXTRACTIONS("extractions", "月矿情报", "矿块拉取、到达与自然碎裂时间", "eve:extractions:view", "esi-industry.read_corporation_mining.v1", "Station_Manager"),
     MINING("mining", "采矿账本", "观察者记录的矿种、数量与角色", "eve:mining:view", "esi-industry.read_corporation_mining.v1", "Accountant"),
-    MEMBERS("members", "军团人员", "成员名册；位置、舰船与上下线追踪按单独权限和总监数据源控制", "eve:members:view", "esi-corporations.read_corporation_membership.v1", null);
+    MEMBERS("members", "军团人员", "成员名册；位置、舰船与上下线追踪按单独权限和总监数据源控制", "eve:members:view", "esi-corporations.read_corporation_membership.v1", null),
+    MAIL_READ("mail-read", "游戏内邮件", "查看当前授权角色的私人游戏内邮件", "eve:mail:view", "esi-mail.read_mail.v1", null),
+    MAIL_SEND("mail-send", "游戏内邮件发送", "以当前授权角色向游戏内收件人立即发信", "eve:mail:send", "esi-mail.send_mail.v1", null),
+    NOTIFICATIONS("notifications", "游戏通知", "查看当前授权角色的游戏内通知", "eve:notifications:view", "esi-characters.read_notifications.v1", null);
 
     private final String key;
     private final String title;

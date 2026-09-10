@@ -46,6 +46,7 @@ public class EveContextService {
     private final EveCorporationMapper corporationMapper;
     private final EveCharacterRoleSnapshotMapper roleSnapshotMapper;
     private final EveCapabilityPolicy capabilityPolicy;
+    private final EveDataFreshnessService dataFreshnessService;
 
     /** 构建当前登录用户的完整 EVE 上下文。 */
     public EveMeContextResp getCurrentContext() {
@@ -70,7 +71,8 @@ public class EveContextService {
             : roleSnapshotMapper.selectLatest(tenantId, character.getId());
         return new EveMeContextResp(tenantId, toCharacterInfo(character), toCorporationInfo(corporation), resolveDerivedIdentity(userContext
             .getRoleCodes()), capabilityPolicy
-                .authorizationStatus(tenantId, userId), capabilities, toPermissionFreshness(character, snapshot));
+                .authorizationStatus(tenantId, userId), capabilities, toPermissionFreshness(character, snapshot), dataFreshnessService
+                    .list(tenantId, corporation == null ? null : corporation.getId()));
     }
 
     /** 派生身份按 CEO、总监、成员优先级返回。 */

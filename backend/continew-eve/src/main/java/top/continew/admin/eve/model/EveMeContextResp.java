@@ -28,7 +28,8 @@ import java.util.List;
  */
 public record EveMeContextResp(Long tenantId, CharacterInfo character, CorporationInfo corporation,
                                String derivedIdentity, EveCapabilityStatus authorizationStatus,
-                               List<EveCapabilityResult> capabilities, PermissionFreshness permissionFreshness) {
+                               List<EveCapabilityResult> capabilities, PermissionFreshness permissionFreshness,
+                               List<EveDataFreshnessResp> dataFreshness) {
     /** 当前游戏角色摘要。 */
     public record CharacterInfo(Long id, Long characterId, String name) {
     }

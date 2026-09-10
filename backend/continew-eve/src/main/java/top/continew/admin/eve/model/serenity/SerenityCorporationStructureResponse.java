@@ -18,12 +18,26 @@ package top.continew.admin.eve.model.serenity;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 /**
- * 国服军团建筑清单中用于资产位置识别的字段。
+ * 国服军团建筑清单响应。
  *
  * @author zhaoyuqing
  */
 public record SerenityCorporationStructureResponse(@JsonProperty("structure_id") Long structureId,
                                                    @JsonProperty("type_id") Integer typeId,
-                                                   @JsonProperty("system_id") Long solarSystemId, String name) {
+                                                   @JsonProperty("system_id") Long solarSystemId,
+                                                   @JsonProperty("corporation_id") Long corporationId, String name,
+                                                   String state,
+                                                   @JsonProperty("fuel_expires") LocalDateTime fuelExpiresAt,
+                                                   List<Service> services,
+                                                   @JsonProperty("state_timer_start") LocalDateTime stateTimerStartAt,
+                                                   @JsonProperty("state_timer_end") LocalDateTime stateTimerEndAt,
+                                                   @JsonProperty("unanchors_at") LocalDateTime unanchorsAt) {
+
+    /** 建筑已安装服务及其当前在线状态。 */
+    public record Service(String name, String state) {
+    }
 }

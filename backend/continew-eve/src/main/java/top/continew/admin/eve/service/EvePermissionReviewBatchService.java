@@ -25,6 +25,7 @@ import top.continew.admin.eve.model.entity.EveAuthorizationDO;
 import top.continew.starter.extension.tenant.util.TenantUtils;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 /**
@@ -51,10 +52,13 @@ public class EvePermissionReviewBatchService {
             return 0;
         }
         LocalDateTime selectedAt = LocalDateTime.now();
-        LocalDateTime before = selectedAt.minus(properties.getPermissionRefresh().getRoleCacheTtl());
-        List<EveAuthorizationDO> authorizations = authorizationMapper.selectStaleActive(before, selectedAt, properties
-            .getPermissionRefresh()
-            .getBatchSize());
+        LocalDateTime roleRefreshBefore = selectedAt.minus(properties.getPermissionRefresh().getRoleCacheTtl());
+        LocalDateTime tokenRefreshBefore = LocalDateTime.now(ZoneOffset.UTC)
+            .plus(properties.getPermissionRefresh().getTokenRefreshSkew())
+            .plus(properties.getPermissionRefresh().getBackgroundReviewInterval());
+        List<EveAuthorizationDO> authorizations = authorizationMapper
+            .selectStaleActive(roleRefreshBefore, tokenRefreshBefore, selectedAt, properties.getPermissionRefresh()
+                .getBatchSize());
         int reviewed = 0;
         for (EveAuthorizationDO authorization : authorizations) {
             LocalDateTime attemptedAt = LocalDateTime.now();

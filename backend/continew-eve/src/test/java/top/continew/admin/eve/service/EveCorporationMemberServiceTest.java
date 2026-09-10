@@ -72,7 +72,7 @@ class EveCorporationMemberServiceTest {
         member.setStatus("ACTIVE");
         when(contextService.getCurrentContext())
             .thenReturn(new EveMeContextResp(10L, null, new EveMeContextResp.CorporationInfo(9001L, "测试军团", "TEST"), "corp_member", null, List
-                .of(), null));
+                .of(), null, List.of()));
         when(corporationMapper.selectByTenantAndCorporationId(10L, 9001L)).thenReturn(corporation);
         when(rosterMemberMapper.selectByCharacterId(eq(10L), eq(300L), eq(8001L))).thenReturn(member);
 
@@ -108,7 +108,7 @@ class EveCorporationMemberServiceTest {
         member.setMemberNote("旧备注");
         when(contextService.getCurrentContext())
             .thenReturn(new EveMeContextResp(10L, null, new EveMeContextResp.CorporationInfo(9001L, "测试军团", "TEST"), "corp_member", null, List
-                .of(), null));
+                .of(), null, List.of()));
         when(corporationMapper.selectByTenantAndCorporationId(10L, 9001L)).thenReturn(corporation);
         when(rosterMemberMapper.selectByCharacterId(10L, 300L, 8001L)).thenReturn(member);
 
@@ -131,7 +131,7 @@ class EveCorporationMemberServiceTest {
                                                        EveCorporationRosterMemberMapper rosterMemberMapper,
                                                        EveCorporationMemberTrackingMapper trackingMapper,
                                                        EveMemberOperationAuditService operationAuditService) {
-        return new EveCorporationMemberService(contextService, corporationMapper, mock(EveAuthorizationMapper.class), mock(EveCharacterRoleSnapshotMapper.class), rosterMemberMapper, trackingMapper, mock(EveMemberTrackingAccessAuditMapper.class), mock(EveAuthorizationLifecycleService.class), mock(SerenityEsiClient.class), mock(RedissonClient.class), mock(EveMemberSyncRunService.class), mock(EveMemberSyncRunMapper.class), operationAuditService, new EveStaticNameReference());
+        return new EveCorporationMemberService(contextService, corporationMapper, mock(EveAuthorizationMapper.class), mock(EveCharacterRoleSnapshotMapper.class), rosterMemberMapper, trackingMapper, mock(EveMemberTrackingAccessAuditMapper.class), mock(EveAuthorizationLifecycleService.class), mock(SerenityEsiClient.class), mock(RedissonClient.class), mock(EveMemberSyncRunService.class), mock(EveMemberSyncRunMapper.class), operationAuditService, new EveStaticNameReference(), mock(EveDataFreshnessService.class));
     }
 
     /** 构造当前租户普通成员会话。 */

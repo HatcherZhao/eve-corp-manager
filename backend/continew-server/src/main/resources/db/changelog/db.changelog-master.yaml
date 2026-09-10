@@ -62,3 +62,33 @@ databaseChangeLog:
       file: db/changelog/mysql/eve/016_static_reference.sql
   - include:
       file: db/changelog/mysql/eve/017_static_reference_menus.sql
+  - include:
+      file: db/changelog/mysql/eve/018_corporation_structures.sql
+  - include:
+      file: db/changelog/mysql/eve/019_moon_extractions.sql
+  - include:
+      file: db/changelog/mysql/eve/020_moon_extraction_view_permission.sql
+  - include:
+      file: db/changelog/mysql/eve/021_mining_ledger.sql
+  - include:
+      file: db/changelog/mysql/eve/022_mining_sync_permission_fix.sql
+  - include:
+      file: db/changelog/mysql/eve/023_mining_view_permission.sql
+  - include:
+      file: db/changelog/mysql/eve/024_site_logo.sql
+  - include:
+      file: db/changelog/mysql/eve/025_site_favicon.sql
+  - include:
+      file: db/changelog/mysql/eve/026_moon_intelligence.sql
+  - include:
+      file: db/changelog/mysql/eve/027_data_freshness.sql
+  - include:
+      file: db/changelog/mysql/eve/028_backfill_data_freshness.sql
+  - include:
+      file: db/changelog/mysql/eve/029_game_mail.sql
+  - include:
+      file: db/changelog/mysql/eve/030_auto_sync_jobs.sql
+  - include:
+      file: db/changelog/mysql/eve/031_game_mail_menu_group.sql
+  - include:
+      file: db/changelog/mysql/eve/032_game_communication_notifications.sql

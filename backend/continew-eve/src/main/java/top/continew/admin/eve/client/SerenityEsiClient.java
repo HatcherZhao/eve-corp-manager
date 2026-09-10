@@ -18,6 +18,7 @@ package top.continew.admin.eve.client;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.HttpClientErrorException;
@@ -25,6 +26,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import top.continew.admin.eve.config.SerenityProperties;
+import top.continew.admin.eve.service.EveUpstreamRequestPacer;
 import top.continew.admin.eve.model.serenity.SerenityCharacterResponse;
 import top.continew.admin.eve.model.serenity.SerenityCorporationResponse;
 import top.continew.admin.eve.model.serenity.SerenityCorporationRolesResponse;
@@ -32,11 +34,23 @@ import top.continew.admin.eve.model.serenity.SerenityCorporationMemberTrackingRe
 import top.continew.admin.eve.model.serenity.SerenityCorporationAssetResponse;
 import top.continew.admin.eve.model.serenity.SerenityCorporationAssetNameResponse;
 import top.continew.admin.eve.model.serenity.SerenityCorporationStructureResponse;
+import top.continew.admin.eve.model.serenity.SerenityCorporationDivisionResponse;
+import top.continew.admin.eve.model.serenity.SerenityCorporationMoonExtractionResponse;
+import top.continew.admin.eve.model.serenity.SerenityCorporationMiningLedgerResponse;
+import top.continew.admin.eve.model.serenity.SerenityCorporationMiningObserverResponse;
 import top.continew.admin.eve.model.serenity.SerenityEsiResponse;
 import top.continew.admin.eve.model.serenity.SerenityEsiPagedResponse;
 import top.continew.admin.eve.model.serenity.SerenityUniverseNameResponse;
+import top.continew.admin.eve.model.serenity.SerenityUniverseIdsResponse;
 import top.continew.admin.eve.model.serenity.SerenityUniverseStationResponse;
 import top.continew.admin.eve.model.serenity.SerenityUniverseStructureResponse;
+import top.continew.admin.eve.model.serenity.SerenityUniverseMoonResponse;
+import top.continew.admin.eve.model.serenity.SerenityGameMailDetailResponse;
+import top.continew.admin.eve.model.serenity.SerenityGameMailHeaderResponse;
+import top.continew.admin.eve.model.serenity.SerenityGameMailLabelResponse;
+import top.continew.admin.eve.model.serenity.SerenityGameMailSendRequest;
+import top.continew.admin.eve.model.serenity.SerenityGameMailUpdateRequest;
+import top.continew.admin.eve.model.serenity.SerenityGameNotificationResponse;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -53,11 +67,21 @@ public class SerenityEsiClient {
 
     private final RestClient restClient;
     private final SerenityProperties properties;
+    private final EveUpstreamRequestPacer requestPacer;
 
-    /** 创建国服 ESI 客户端。 */
+    /** 兼容现有单元测试创建的未接入 Spring 节流器客户端。 */
     public SerenityEsiClient(@Qualifier("serenityRestClient") RestClient restClient, SerenityProperties properties) {
+        this(restClient, properties, null);
+    }
+
+    /** 创建受全局节流器保护的国服 ESI 客户端。 */
+    @Autowired
+    public SerenityEsiClient(@Qualifier("serenityRestClient") RestClient restClient,
+                             SerenityProperties properties,
+                             EveUpstreamRequestPacer requestPacer) {
         this.restClient = restClient;
         this.properties = properties;
+        this.requestPacer = requestPacer;
     }
 
     /** 查询公开角色资料。 */
@@ -202,6 +226,92 @@ public class SerenityEsiClient {
         }
     }
 
+    /** 使用总监授权读取军团自定义机库与钱包分区名称，并保留上游缓存元数据。 */
+    public SerenityEsiResponse<SerenityCorporationDivisionResponse> getCorporationDivisionsWithMetadata(Long corporationId,
+                                                                                                        String accessToken) {
+        if (corporationId == null || corporationId <= 0 || accessToken == null || accessToken.isBlank()) {
+            throw new IllegalArgumentException("军团分区查询参数无效");
+        }
+        try {
+            ResponseEntity<SerenityCorporationDivisionResponse> response = restClient.get()
+                .uri(endpoint("/corporations/{id}/divisions/"), corporationId)
+                .headers(headers -> headers.setBearerAuth(accessToken))
+                .retrieve()
+                .toEntity(SerenityCorporationDivisionResponse.class);
+            return new SerenityEsiResponse<>(requireBody(response.getBody()), expiresAt(response), response.getHeaders()
+                .getETag());
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
+    /** 使用空间站管理员授权读取军团当前月矿提取情报。 */
+    public SerenityEsiPagedResponse<SerenityCorporationMoonExtractionResponse> getCorporationMoonExtractionsWithMetadata(Long corporationId,
+                                                                                                                         int page,
+                                                                                                                         String accessToken) {
+        if (corporationId == null || corporationId <= 0 || page < 1 || accessToken == null || accessToken.isBlank()) {
+            throw new IllegalArgumentException("军团月矿情报查询参数无效");
+        }
+        try {
+            ResponseEntity<SerenityCorporationMoonExtractionResponse[]> response = restClient.get()
+                .uri(pagedEndpoint("/corporation/{id}/mining/extractions/", page), corporationId)
+                .headers(headers -> headers.setBearerAuth(accessToken))
+                .retrieve()
+                .toEntity(SerenityCorporationMoonExtractionResponse[].class);
+            int pageCount = response.getHeaders().getFirst("X-Pages") == null
+                ? 1
+                : Math.max(1, Integer.parseInt(response.getHeaders().getFirst("X-Pages")));
+            return new SerenityEsiPagedResponse<>(List.of(requireBody(response
+                .getBody())), expiresAt(response), response.getHeaders().getETag(), pageCount);
+        } catch (NumberFormatException e) {
+            throw new SerenityEsiClientException(OAuthFailureCode.PERMANENT);
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
+    /** 使用会计授权读取军团采矿观察者的单页清单。 */
+    public SerenityEsiPagedResponse<SerenityCorporationMiningObserverResponse> getCorporationMiningObserversWithMetadata(Long corporationId,
+                                                                                                                         int page,
+                                                                                                                         String accessToken) {
+        if (corporationId == null || corporationId <= 0 || page < 1 || accessToken == null || accessToken.isBlank()) {
+            throw new IllegalArgumentException("军团采矿观察者查询参数无效");
+        }
+        try {
+            ResponseEntity<SerenityCorporationMiningObserverResponse[]> response = restClient.get()
+                .uri(pagedEndpoint("/corporation/{id}/mining/observers/", page), corporationId)
+                .headers(headers -> headers.setBearerAuth(accessToken))
+                .retrieve()
+                .toEntity(SerenityCorporationMiningObserverResponse[].class);
+            return new SerenityEsiPagedResponse<>(List.of(requireBody(response
+                .getBody())), expiresAt(response), response.getHeaders().getETag(), pageCount(response));
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
+    /** 使用会计授权读取一个观察者采矿账本的单页明细。 */
+    public SerenityEsiPagedResponse<SerenityCorporationMiningLedgerResponse> getCorporationMiningLedgerWithMetadata(Long corporationId,
+                                                                                                                    Long observerId,
+                                                                                                                    int page,
+                                                                                                                    String accessToken) {
+        if (corporationId == null || corporationId <= 0 || observerId == null || observerId <= 0 || page < 1 || accessToken == null || accessToken
+            .isBlank()) {
+            throw new IllegalArgumentException("军团采矿账本查询参数无效");
+        }
+        try {
+            ResponseEntity<SerenityCorporationMiningLedgerResponse[]> response = restClient.get()
+                .uri(pagedEndpoint("/corporation/{corporationId}/mining/observers/{observerId}/", page), corporationId, observerId)
+                .headers(headers -> headers.setBearerAuth(accessToken))
+                .retrieve()
+                .toEntity(SerenityCorporationMiningLedgerResponse[].class);
+            return new SerenityEsiPagedResponse<>(List.of(requireBody(response
+                .getBody())), expiresAt(response), response.getHeaders().getETag(), pageCount(response));
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
     /** 批量读取可自定义命名军团资产的名称；调用方必须将请求控制在 1000 个物品 ID 内。 */
     public List<SerenityCorporationAssetNameResponse> getCorporationAssetNames(Long corporationId,
                                                                                List<Long> itemIds,
@@ -240,6 +350,23 @@ public class SerenityEsiClient {
         }
     }
 
+    /** 通过公开国服接口将角色、军团或联盟名称反查为可用于邮件发送的游戏 ID。 */
+    public SerenityUniverseIdsResponse resolveUniverseIds(List<String> names) {
+        if (names == null || names.isEmpty() || names.size() > 1000 || names.stream()
+            .anyMatch(name -> name == null || name.isBlank())) {
+            throw new IllegalArgumentException("国服名称反查参数无效");
+        }
+        try {
+            return requireBody(restClient.post()
+                .uri(endpoint("/universe/ids/"))
+                .body(names)
+                .retrieve()
+                .body(SerenityUniverseIdsResponse.class));
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
     /** 使用已授权角色读取私有建筑名称，用于解析成员追踪中的大型位置 ID。 */
     public SerenityUniverseStructureResponse getUniverseStructure(Long structureId, String accessToken) {
         if (structureId == null || structureId <= 0 || accessToken == null || accessToken.isBlank()) {
@@ -251,6 +378,21 @@ public class SerenityEsiClient {
                 .headers(headers -> headers.setBearerAuth(accessToken))
                 .retrieve()
                 .body(SerenityUniverseStructureResponse.class));
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
+    /** 查询公开月球资料，用于补全月矿情报的月球和星系名称。 */
+    public SerenityUniverseMoonResponse getUniverseMoon(Long moonId) {
+        if (moonId == null || moonId <= 0) {
+            throw new IllegalArgumentException("国服月球查询参数无效");
+        }
+        try {
+            return requireBody(restClient.get()
+                .uri(endpoint("/universe/moons/{id}/"), moonId)
+                .retrieve()
+                .body(SerenityUniverseMoonResponse.class));
         } catch (RestClientException e) {
             throw classify(e);
         }
@@ -271,14 +413,138 @@ public class SerenityEsiClient {
         }
     }
 
+    /** 使用授权角色读取最近 50 封游戏内邮件头，并保留上游缓存元数据。 */
+    public SerenityEsiResponse<List<SerenityGameMailHeaderResponse>> getGameMailHeadersWithMetadata(Long characterId,
+                                                                                                    String accessToken) {
+        requireCharacterToken(characterId, accessToken, "游戏内邮件读取参数无效");
+        try {
+            ResponseEntity<SerenityGameMailHeaderResponse[]> response = restClient.get()
+                .uri(endpoint("/characters/{id}/mail/"), characterId)
+                .headers(headers -> headers.setBearerAuth(accessToken))
+                .retrieve()
+                .toEntity(SerenityGameMailHeaderResponse[].class);
+            return new SerenityEsiResponse<>(List.of(requireBody(response.getBody())), expiresAt(response), response
+                .getHeaders()
+                .getETag());
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
+    /** 使用授权角色读取最近游戏通知，并保留上游缓存元数据。 */
+    public SerenityEsiResponse<List<SerenityGameNotificationResponse>> getGameNotificationsWithMetadata(Long characterId,
+                                                                                                        String accessToken) {
+        requireCharacterToken(characterId, accessToken, "游戏通知读取参数无效");
+        try {
+            ResponseEntity<SerenityGameNotificationResponse[]> response = restClient.get()
+                .uri(endpoint("/characters/{id}/notifications/"), characterId)
+                .headers(headers -> headers.setBearerAuth(accessToken))
+                .retrieve()
+                .toEntity(SerenityGameNotificationResponse[].class);
+            return new SerenityEsiResponse<>(List.of(requireBody(response.getBody())), expiresAt(response), response
+                .getHeaders()
+                .getETag());
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
+    /** 读取当前角色在游戏中的邮件分类及各分类未读数。 */
+    public SerenityEsiResponse<List<SerenityGameMailLabelResponse>> getGameMailLabelsWithMetadata(Long characterId,
+                                                                                                  String accessToken) {
+        requireCharacterToken(characterId, accessToken, "游戏内邮件分类读取参数无效");
+        try {
+            ResponseEntity<SerenityGameMailLabelResponse[]> response = restClient.get()
+                .uri(endpoint("/characters/{id}/mail/labels/"), characterId)
+                .headers(headers -> headers.setBearerAuth(accessToken))
+                .retrieve()
+                .toEntity(SerenityGameMailLabelResponse[].class);
+            return new SerenityEsiResponse<>(List.of(requireBody(response.getBody())), expiresAt(response), response
+                .getHeaders()
+                .getETag());
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
+    /** 使用授权角色读取单封游戏内邮件正文，并保留上游缓存元数据。 */
+    public SerenityEsiResponse<SerenityGameMailDetailResponse> getGameMailDetailWithMetadata(Long characterId,
+                                                                                             Long mailId,
+                                                                                             String accessToken) {
+        requireCharacterToken(characterId, accessToken, "游戏内邮件读取参数无效");
+        if (mailId == null || mailId <= 0) {
+            throw new IllegalArgumentException("游戏内邮件 ID 无效");
+        }
+        try {
+            ResponseEntity<SerenityGameMailDetailResponse> response = restClient.get()
+                .uri(endpoint("/characters/{characterId}/mail/{mailId}/"), characterId, mailId)
+                .headers(headers -> headers.setBearerAuth(accessToken))
+                .retrieve()
+                .toEntity(SerenityGameMailDetailResponse.class);
+            return new SerenityEsiResponse<>(requireBody(response.getBody()), expiresAt(response), response.getHeaders()
+                .getETag());
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
+    /** 使用授权角色立即发送游戏内邮件，返回国服生成的邮件 ID。 */
+    public Long sendGameMail(Long characterId, SerenityGameMailSendRequest request, String accessToken) {
+        requireCharacterToken(characterId, accessToken, "游戏内邮件发送参数无效");
+        if (request == null || request.recipients() == null || request.recipients().isEmpty()) {
+            throw new IllegalArgumentException("游戏内邮件收件人不能为空");
+        }
+        try {
+            return requireBody(restClient.post()
+                .uri(endpoint("/characters/{id}/mail/"), characterId)
+                .headers(headers -> headers.setBearerAuth(accessToken))
+                .body(request)
+                .retrieve()
+                .body(Long.class));
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
+    /** 将单封游戏内邮件标记为已读或更新其游戏内分类，需邮件整理 Scope。 */
+    public void updateGameMail(Long characterId,
+                               Long mailId,
+                               SerenityGameMailUpdateRequest request,
+                               String accessToken) {
+        requireCharacterToken(characterId, accessToken, "游戏内邮件整理参数无效");
+        if (mailId == null || mailId <= 0 || request == null) {
+            throw new IllegalArgumentException("游戏内邮件整理参数无效");
+        }
+        try {
+            restClient.put()
+                .uri(endpoint("/characters/{characterId}/mail/{mailId}/"), characterId, mailId)
+                .headers(headers -> headers.setBearerAuth(accessToken))
+                .body(request)
+                .retrieve()
+                .toBodilessEntity();
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
     /** 将 HTTP Expires 转换为 UTC 时间，上游未提供时返回空。 */
     private static LocalDateTime expiresAt(ResponseEntity<?> response) {
         long expires = response.getHeaders().getExpires();
         return expires < 0 ? null : LocalDateTime.ofInstant(Instant.ofEpochMilli(expires), ZoneOffset.UTC);
     }
 
+    /** 校验角色私有接口的共同参数。 */
+    private static void requireCharacterToken(Long characterId, String accessToken, String message) {
+        if (characterId == null || characterId <= 0 || accessToken == null || accessToken.isBlank()) {
+            throw new IllegalArgumentException(message);
+        }
+    }
+
     /** 拼接固定 ESI 基址与固定路径模板。 */
     private String endpoint(String path) {
+        if (requestPacer != null) {
+            requestPacer.awaitPermit();
+        }
         return properties.getEsi().getBaseUrl().replaceAll("/+$", "") + path + "?datasource=" + properties.getEsi()
             .getDatasource()
             .getValue();
@@ -287,6 +553,16 @@ public class SerenityEsiClient {
     /** 为带 X-Pages 的接口追加页码，确保 datasource 与 page 处于同一查询串。 */
     private String pagedEndpoint(String path, int page) {
         return endpoint(path) + "&page=" + page;
+    }
+
+    /** 从上游分页响应读取并校验总页数。 */
+    private static int pageCount(ResponseEntity<?> response) {
+        try {
+            String value = response.getHeaders().getFirst("X-Pages");
+            return value == null ? 1 : Math.max(1, Integer.parseInt(value));
+        } catch (NumberFormatException e) {
+            throw new SerenityEsiClientException(OAuthFailureCode.PERMANENT);
+        }
     }
 
     /** 拒绝空响应。 */

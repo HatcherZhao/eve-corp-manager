@@ -30,6 +30,19 @@ export interface EveContext {
     cacheExpiresAt?: string
     cacheExpiryEstimated: boolean
   }
+  dataFreshness: EveDataFreshness[]
+}
+
+export interface EveDataFreshness {
+  module: 'ASSETS' | 'STRUCTURES' | 'MOON_EXTRACTIONS' | 'MINING_LEDGER' | 'MEMBER_ROSTER' | 'MEMBER_TRACKING'
+  title: string
+  route: string
+  status: 'FRESH' | 'STALE' | 'SYNC_FAILED' | 'NO_DATA'
+  lastSuccessfulAt?: string
+  sourceExpiresAt?: string
+  lastFailureAt?: string
+  failureCode?: string
+  retryable: boolean
 }
 
 export interface Workspace {
@@ -207,7 +220,7 @@ export interface EveCorporationAssetQuery extends PageQuery {
 export interface EveCorporationAssetTreeNode {
   key: string
   title: string
-  kind: 'solar_system' | 'npc_station' | 'player_structure' | 'corporation_structure' | 'npc_structure' | 'space_asset' | 'corporation_office' | 'corporation_hangar' | 'asset_safety_package' | 'asset_safety_origin' | 'space_assets' | 'warehouse' | 'structure_compartment_group' | 'structure_compartment' | 'ship' | 'ship_compartment_group' | 'ship_compartment' | 'container' | 'asset' | 'unresolved'
+  kind: 'solar_system' | 'npc_station' | 'player_structure' | 'corporation_structure' | 'npc_structure' | 'space_asset' | 'corporation_office' | 'corporation_hangar' | 'asset_safety_package' | 'asset_safety_origin' | 'space_assets' | 'warehouse' | 'structure_storage_group' | 'structure_corporation_hangar_group' | 'structure_fitting_group' | 'structure_storage' | 'structure_fitting_slot' | 'ship' | 'ship_storage_group' | 'ship_fitting_group' | 'ship_storage' | 'ship_fitting_slot' | 'container' | 'asset' | 'unresolved'
   itemId?: string
   typeId?: number
   typeName?: string
@@ -232,6 +245,117 @@ export interface EveAssetSyncResult {
   pageCount: number
   synchronizedAt: string
   sourceExpiresAt?: string
+}
+
+/** 军团玩家建筑当前快照。 */
+export interface EveCorporationStructure {
+  structureId: string
+  typeId: number
+  typeName?: string
+  structureName?: string
+  solarSystemId: string
+  solarSystemName?: string
+  state: string
+  fuelExpiresAt?: string
+  stateTimerStartAt?: string
+  stateTimerEndAt?: string
+  unanchorsAt?: string
+  services: Array<{ name: string, state: string }>
+  status: 'ACTIVE' | 'MISSING'
+  lastSeenAt: string
+  sourceExpiresAt?: string
+  note?: string
+}
+
+export interface EveCorporationStructureQuery extends PageQuery {
+  keyword?: string
+  state?: string
+}
+
+export interface EveStructureSyncResult {
+  structureCount: number
+  pageCount: number
+  synchronizedAt: string
+  sourceExpiresAt?: string
+}
+
+/** 国服观察者采矿账本的单条日期聚合记录。 */
+export interface EveMiningLedger {
+  id: string
+  observerId: string
+  observerName?: string
+  characterId: string
+  characterName?: string
+  recordedCorporationId: string
+  typeId: number
+  typeName?: string
+  recordedAt: string
+  quantity: number
+  lastSeenAt: string
+  sourceExpiresAt?: string
+}
+
+export interface EveMiningLedgerQuery extends PageQuery {
+  observerId?: string
+  characterId?: string
+  typeId?: number
+  fromDate?: string
+  toDate?: string
+  keyword?: string
+}
+
+/** 当前筛选条件下由服务端聚合的采矿账本统计。 */
+export interface EveMiningLedgerSummary {
+  quantity: number
+  entryCount: number
+  observerCount: number
+  characterCount: number
+  mineralTypeCount: number
+  latestRecordedAt?: string
+  latestSynchronizedAt?: string
+}
+
+export interface EveMiningSyncResult {
+  observerCount: number
+  ledgerCount: number
+  pageCount: number
+  synchronizedAt: string
+  sourceExpiresAt?: string
+}
+
+/** 国服月矿提取时间线。 */
+export interface EveMoonExtraction {
+  id: string
+  structureId: string
+  structureName?: string
+  structureTypeName?: string
+  moonId: string
+  moonName?: string
+  solarSystemId?: string
+  solarSystemName?: string
+  extractionStartAt: string
+  chunkArrivalAt: string
+  naturalDecayAt: string
+  status: 'ACTIVE' | 'MISSING'
+  lastSeenAt: string
+  sourceExpiresAt?: string
+  note?: string
+}
+
+export interface EveMoonExtractionQuery extends PageQuery {
+  keyword?: string
+  timeline?: 'UPCOMING' | 'ARRIVED'
+}
+
+export interface EveMoonExtractionSyncResult {
+  extractionCount: number
+  pageCount: number
+  synchronizedAt: string
+  sourceExpiresAt?: string
+}
+
+export interface EveMoonExtractionNoteReq {
+  note?: string
 }
 
 /** evedata.xlsx 导入后的数据库静态资料统计。 */
@@ -333,12 +457,120 @@ export interface EveMemberOrganizationReq {
   memberNote?: string
 }
 
+/** 游戏内邮件收件人类型。 */
+export type EveMailRecipientType = 'character' | 'corporation' | 'alliance' | 'mailing_list'
+
+/** 游戏内邮件发件人或收件人的已解析展示信息。 */
+export interface EveGameMailParty {
+  id?: string
+  type: EveMailRecipientType
+  name?: string
+}
+
+/** 提交给本站、将在服务端解析为游戏 ID 的邮件收件人。 */
+export interface EveMailRecipientInput {
+  recipientName: string
+  recipientType: Exclude<EveMailRecipientType, 'mailing_list'>
+}
+
+/** 当前授权角色收件箱中的邮件摘要。 */
+export interface EveGameMailSummary {
+  mailId: string
+  from: EveGameMailParty
+  subject: string
+  sentAt: string
+  read: boolean
+  labels: number[]
+  recipients: EveGameMailParty[]
+  bodyAvailable: boolean
+  lastSeenAt: string
+  sourceExpiresAt?: string
+}
+
+/** 游戏内邮箱的原生分类；名称和未读数均由国服返回。 */
+export interface EveGameMailLabel {
+  labelId: number
+  name: string
+  unreadCount: number
+}
+
+export interface EveGameMailQuery extends PageQuery {
+  keyword?: string
+  labelId?: number
+}
+
+/** 包含正文与收件人的游戏内邮件详情。 */
+export interface EveGameMailDetail {
+  mailId: string
+  from: EveGameMailParty
+  recipients: EveGameMailParty[]
+  subject: string
+  body: string
+  sentAt: string
+  read: boolean
+  labels: number[]
+  bodySynchronizedAt?: string
+  bodySourceExpiresAt?: string
+}
+
+export interface EveGameMailSyncResult {
+  mailCount: number
+  synchronizedAt: string
+  sourceExpiresAt?: string
+}
+
+/** 手动同步请求已交给服务端队列，实际读取受上游缓存与限流策略控制。 */
+export interface EveSyncRequestResult {
+  accepted: boolean
+  message: string
+}
+
+export interface EveGameMailSendReq {
+  recipients: EveMailRecipientInput[]
+  subject: string
+  body: string
+  approvedCost?: number
+}
+
+export interface EveGameMailSendResult {
+  mailId: string
+  status: string
+  sentAt: string
+}
+
+/** 游戏通知的产品分类。ALL 表示不按分类筛选。 */
+export type EveGameNotificationCategory = 'ALL' | 'CORPORATION_MEMBER' | 'STRUCTURE_ASSET_SAFETY' | 'WAR_SOVEREIGNTY' | 'MOON_INDUSTRY' | 'OTHER'
+
+/** 当前授权角色收到的一条游戏通知。 */
+export interface EveGameNotification {
+  notificationId: string
+  read: boolean
+  category: Exclude<EveGameNotificationCategory, 'ALL'>
+  type?: string
+  senderName?: string
+  senderType?: string
+  content?: string
+  sentAt?: string
+  lastSeenAt?: string
+  sourceExpiresAt?: string
+}
+
+export interface EveGameNotificationQuery extends PageQuery {
+  category?: EveGameNotificationCategory
+  keyword?: string
+}
+
 export function getWorkspace() {
   return http.get<Workspace>('/eve/workspace')
 }
 
 export function getEveContext() {
   return http.get<EveContext>('/eve/me/context')
+}
+
+/** 查询当前军团各数据模块的同步新鲜度与脱敏失败分类。 */
+export function getEveDataFreshness() {
+  return http.get<EveDataFreshness[]>('/eve/me/data-freshness')
 }
 
 export function startEveRegistration() {
@@ -403,9 +635,54 @@ export function getEveCorporationAssetTree() {
   return http.get<EveCorporationAssetTree>('/eve/assets/tree')
 }
 
-/** 同步当前军团完整资产快照。 */
+/** 请求后台同步当前军团完整资产快照。 */
 export function syncEveCorporationAssets() {
-  return http.post<EveAssetSyncResult>('/eve/assets/sync')
+  return http.post<EveSyncRequestResult>('/eve/assets/sync')
+}
+
+/** 导出当前筛选条件下的军团资产快照。 */
+export function exportEveCorporationAssets(query: Pick<EveCorporationAssetQuery, 'keyword' | 'locationType'>) {
+  return http.download('/eve/assets/export', query)
+}
+
+/** 查询当前军团建筑的已发布快照。 */
+export function getEveCorporationStructures(query: EveCorporationStructureQuery) {
+  return http.get<PageRes<EveCorporationStructure[]>>('/eve/structures', query)
+}
+
+/** 请求后台同步当前军团建筑。 */
+export function syncEveCorporationStructures() {
+  return http.post<EveSyncRequestResult>('/eve/structures/sync')
+}
+
+/** 查询当前军团已发布的观察者采矿账本。 */
+export function getEveMiningLedger(query: EveMiningLedgerQuery) {
+  return http.get<PageRes<EveMiningLedger[]>>('/eve/mining', query)
+}
+
+/** 汇总当前筛选条件下的观察者采矿账本。 */
+export function getEveMiningLedgerSummary(query: Omit<EveMiningLedgerQuery, 'page' | 'size'>) {
+  return http.get<EveMiningLedgerSummary>('/eve/mining/summary', query)
+}
+
+/** 请求后台同步当前军团的完整采矿账本。 */
+export function syncEveMiningLedger() {
+  return http.post<EveSyncRequestResult>('/eve/mining/sync')
+}
+
+/** 查询当前军团已发布的月矿情报时间线。 */
+export function getEveMoonExtractions(query: EveMoonExtractionQuery) {
+  return http.get<PageRes<EveMoonExtraction[]>>('/eve/extractions', query)
+}
+
+/** 请求后台读取并原子发布当前军团完整月矿时间线。 */
+export function syncEveMoonExtractions() {
+  return http.post<EveSyncRequestResult>('/eve/extractions/sync')
+}
+
+/** 保存月矿情报的简短备注。 */
+export function saveEveMoonExtractionNote(extractionId: string, data: EveMoonExtractionNoteReq) {
+  return http.put<EveMoonExtraction>(`/eve/extractions/${extractionId}/note`, data)
 }
 
 /** 用新的 evedata.xlsx 原子更新数据库中的 EVE 静态资料。 */
@@ -468,9 +745,54 @@ export function getEveMemberRoleAudit(limit = 20) {
   return http.get<EveMemberOperationAudit[]>('/eve/rbac/audit', { limit })
 }
 
-/** 手动同步名册与可用的追踪资源。 */
+/** 请求后台同步名册与可用的追踪资源。 */
 export function syncEveMembers() {
-  return http.post<EveMemberSyncResult>('/eve/members/sync')
+  return http.post<EveSyncRequestResult>('/eve/members/sync')
+}
+
+/** 查询当前登录用户授权角色的游戏内收件箱。 */
+export function getEveGameMails(query: EveGameMailQuery) {
+  return http.get<PageRes<EveGameMailSummary[]>>('/eve/mail', query)
+}
+
+/** 查询当前授权角色在游戏内的收件箱、已发送和自定义分类。 */
+export function getEveGameMailLabels() {
+  return http.get<EveGameMailLabel[]>('/eve/mail/labels')
+}
+
+/** 请求后台同步当前登录用户授权角色的最近邮件。 */
+export function syncEveGameMails() {
+  return http.post<EveSyncRequestResult>('/eve/mail/sync')
+}
+
+/** 查询当前登录用户授权角色的单封游戏内邮件正文。 */
+export function getEveGameMail(mailId: string) {
+  return http.get<EveGameMailDetail>(`/eve/mail/${mailId}`)
+}
+
+/** 将当前授权角色的游戏内邮件标记为已读。 */
+export function markEveGameMailRead(mailId: string) {
+  return http.put<EveGameMailDetail>(`/eve/mail/${mailId}/read`)
+}
+
+/** 按游戏内名称预校验邮件收件人；只查询，不会发送邮件。 */
+export function resolveEveGameMailRecipient(data: EveMailRecipientInput) {
+  return http.post<EveGameMailParty>('/eve/mail/recipients/resolve', data)
+}
+
+/** 以当前登录用户的授权角色立即发送游戏内邮件。 */
+export function sendEveGameMail(data: EveGameMailSendReq) {
+  return http.post<EveGameMailSendResult>('/eve/mail/send', data)
+}
+
+/** 查询当前授权角色已同步的游戏通知。 */
+export function getEveGameNotifications(query: EveGameNotificationQuery) {
+  return http.get<PageRes<EveGameNotification[]>>('/eve/notifications', query)
+}
+
+/** 请求后台同步当前授权角色的游戏通知。 */
+export function syncEveGameNotifications() {
+  return http.post<EveSyncRequestResult>('/eve/notifications/sync')
 }
 
 export function createEveBusinessRole(data: EveBusinessRoleReq) {

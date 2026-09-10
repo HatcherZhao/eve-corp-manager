@@ -23,7 +23,9 @@ import org.springframework.stereotype.Component;
 import top.continew.admin.eve.service.EvePermissionReviewBatchService;
 
 /**
- * EVE 国服权限定时复核入口，实际频率仍受一小时角色缓存周期约束。
+ * EVE 国服权限定时复核入口。
+ *
+ * <p>任务高频扫描即将到期的访问令牌并自动轮换；角色事实仍按缓存周期请求，避免无意义地高频访问国服。</p>
  *
  * @author zhaoyuqing
  */
@@ -34,8 +36,8 @@ public class EvePermissionReviewJob {
 
     private final EvePermissionReviewBatchService reviewBatchService;
 
-    /** 每十五分钟扫描一批到期授权，避免集中高频请求国服。 */
-    @Scheduled(cron = "0 */15 * * * ?")
+    /** 默认每分钟扫描一批授权；角色数据和令牌轮换窗口在服务层分别限流。 */
+    @Scheduled(fixedDelayString = "${eve.serenity.permission-refresh.background-review-interval:PT1M}")
     public void review() {
         reviewBatchService.reviewBatch();
     }

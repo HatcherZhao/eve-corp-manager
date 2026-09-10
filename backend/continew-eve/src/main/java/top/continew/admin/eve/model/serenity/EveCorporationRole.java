@@ -71,7 +71,7 @@ public enum EveCorporationRole {
     SKILL_PLAN_MANAGER("Skill_Plan_Manager", "技能规划管理员", CorporationRoleCategory.SKILL, "管理军团技能规划", EveSystemCapability.SKILL_PLAN_MANAGEMENT),
     STARBASE_DEFENSE_OPERATOR("Starbase_Defense_Operator", "恒星基地（POS）防御操作员", CorporationRoleCategory.STRUCTURE, "操作恒星基地（POS）防御设施", EveSystemCapability.STRUCTURE_MANAGEMENT),
     STARBASE_FUEL_TECHNICIAN("Starbase_Fuel_Technician", "恒星基地（POS）燃料技师", CorporationRoleCategory.STRUCTURE, "维护恒星基地（POS）燃料", EveSystemCapability.STRUCTURE_MANAGEMENT),
-    STATION_MANAGER("Station_Manager", "空间站管理员", CorporationRoleCategory.STRUCTURE, "管理军团建筑并读取月矿提取计划", EveSystemCapability.STRUCTURE_MANAGEMENT, EveSystemCapability.MINING_EXTRACTION_READ),
+    STATION_MANAGER("Station_Manager", "空间站管理员", CorporationRoleCategory.STRUCTURE, "管理军团建筑并读取月矿提取情报", EveSystemCapability.STRUCTURE_MANAGEMENT, EveSystemCapability.MINING_EXTRACTION_READ),
     TRADER("Trader", "交易员", CorporationRoleCategory.COMMERCE, "代表军团进行市场交易", EveSystemCapability.TRADE_MANAGEMENT);
 
     private final String code;

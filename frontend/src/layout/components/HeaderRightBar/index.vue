@@ -50,7 +50,7 @@
       <a-dropdown trigger="hover">
         <a-row align="center" :wrap="false" class="user">
           <!-- 管理员头像 -->
-          <Avatar :src="userStore.avatar" :name="userStore.nickname" :size="32" />
+          <Avatar :src="eveCharacterAvatar || userStore.avatar" :name="userStore.nickname" :size="32" />
           <span class="username">{{ userStore.nickname }}</span>
           <icon-down />
         </a-row>
@@ -81,8 +81,10 @@ import Message from './Message.vue'
 import SettingDrawer from './SettingDrawer.vue'
 import Search from './Search.vue'
 import { getUnreadMessageCount } from '@/apis'
+import { getEveContext } from '@/apis/eve'
 import { useUserStore } from '@/stores'
 import { getToken } from '@/utils/auth'
+import { getEveCharacterPortraitUrl } from '@/utils/eveImage'
 import { useBreakpoint, useDevice } from '@/hooks'
 
 defineOptions({ name: 'HeaderRight' })
@@ -97,6 +99,7 @@ onBeforeUnmount(() => {
 })
 
 const unreadMessageCount = ref(0)
+const eveCharacterAvatar = ref<string>()
 // 初始化 WebSocket
 const initWebSocket = (token: string) => {
   const wsBase = import.meta.env.VITE_API_WS_URL || `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
@@ -128,6 +131,17 @@ const getMessageCount = async () => {
   }
 }
 
+/** 使用当前登录用户绑定的游戏角色肖像，不修改其自主设置的本站头像数据。 */
+const loadEveCharacterAvatar = async () => {
+  try {
+    const { data } = await getEveContext()
+    eveCharacterAvatar.value = getEveCharacterPortraitUrl(data.character?.characterId)
+  } catch {
+    // 未绑定游戏角色或当前上下文暂不可用时，继续显示本站头像。
+    eveCharacterAvatar.value = undefined
+  }
+}
+
 const { isFullscreen, toggle } = useFullscreen()
 
 const router = useRouter()
@@ -155,6 +169,7 @@ const logout = () => {
 
 onMounted(() => {
   getMessageCount()
+  loadEveCharacterAvatar()
 })
 </script>
 

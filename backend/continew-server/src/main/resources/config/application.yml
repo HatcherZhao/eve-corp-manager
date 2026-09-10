@@ -95,6 +95,19 @@ spring.servlet.multipart:
   max-file-size: 10MB
   # 单次总上传文件大小限制
   max-request-size: 20MB
+eve:
+  reference:
+    remote-sync:
+      # 每日从公开资料源下载；内容、结构或导入校验失败时保留当前数据库快照。
+      enabled: ${EVE_REFERENCE_REMOTE_SYNC_ENABLED:true}
+      source-url: "${EVE_REFERENCE_REMOTE_SYNC_URL:https://www.ceve-market.org/dumps/evedata.xlsx}"
+      cron: "${EVE_REFERENCE_REMOTE_SYNC_CRON:0 15 4 * * *}"
+      zone: "${EVE_REFERENCE_REMOTE_SYNC_ZONE:Asia/Shanghai}"
+      timeout: "${EVE_REFERENCE_REMOTE_SYNC_TIMEOUT:PT2M}"
+      max-download-bytes: ${EVE_REFERENCE_REMOTE_SYNC_MAX_DOWNLOAD_BYTES:10485760}
+  image-cache:
+    # 部署时应将该目录挂载到持久化数据卷，避免应用升级或重启后重复拉取国服图片。
+    cache-directory: ${EVE_IMAGE_CACHE_DIR:./data/eve-images}
 ## 头像配置
 avatar:
   # 存储路径
@@ -339,4 +352,3 @@ auth:
       - /auth/user/info
       - /auth/logout
       - /system/user/password
-

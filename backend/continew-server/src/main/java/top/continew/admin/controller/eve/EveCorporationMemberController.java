@@ -36,9 +36,11 @@ import org.springframework.web.bind.annotation.RestController;
 import top.continew.admin.controller.eve.model.EveMemberOrganizationReq;
 import top.continew.admin.eve.model.EveMemberResp;
 import top.continew.admin.eve.model.EveMemberOperationAuditResp;
-import top.continew.admin.eve.model.EveMemberSyncResp;
 import top.continew.admin.eve.model.EveMemberSyncRunResp;
+import top.continew.admin.eve.model.EveSyncRequestResp;
+import top.continew.admin.eve.model.enums.EveSyncModule;
 import top.continew.admin.eve.service.EveCorporationMemberService;
+import top.continew.admin.eve.service.EveManualSyncRequestService;
 import top.continew.starter.extension.crud.model.resp.PageResp;
 
 import java.util.List;
@@ -57,6 +59,7 @@ import java.nio.charset.StandardCharsets;
 public class EveCorporationMemberController {
 
     private final EveCorporationMemberService memberService;
+    private final EveManualSyncRequestService manualSyncRequestService;
 
     /** 查询当前军团游戏成员名册；服务层按权限裁剪追踪字段。 */
     @GetMapping
@@ -155,11 +158,11 @@ public class EveCorporationMemberController {
         return '"' + text.replace("\"", "\"\"") + '"';
     }
 
-    /** 手动同步基础名册及可用的追踪快照。 */
+    /** 请求后台同步基础名册及可用的追踪快照。 */
     @PostMapping("/sync")
     @Operation(summary = "同步当前军团成员数据")
     @SaCheckPermission("eve:members:manage")
-    public EveMemberSyncResp sync() {
-        return memberService.syncCurrentTenant();
+    public EveSyncRequestResp sync() {
+        return manualSyncRequestService.requestCurrentCorporation(EveSyncModule.MEMBER_ROSTER);
     }
 }

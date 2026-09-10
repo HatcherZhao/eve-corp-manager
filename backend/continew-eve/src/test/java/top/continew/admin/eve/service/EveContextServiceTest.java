@@ -51,7 +51,8 @@ class EveContextServiceTest {
         EveCorporationMapper corporationMapper = mock(EveCorporationMapper.class);
         EveCharacterRoleSnapshotMapper snapshotMapper = mock(EveCharacterRoleSnapshotMapper.class);
         EveCapabilityPolicy capabilityPolicy = mock(EveCapabilityPolicy.class);
-        EveContextService service = new EveContextService(characterMapper, corporationMapper, snapshotMapper, capabilityPolicy);
+        EveDataFreshnessService dataFreshnessService = mock(EveDataFreshnessService.class);
+        EveContextService service = new EveContextService(characterMapper, corporationMapper, snapshotMapper, capabilityPolicy, dataFreshnessService);
         LocalDateTime checkedAt = LocalDateTime.now().minusMinutes(2);
         LocalDateTime capturedAt = LocalDateTime.now().minusMinutes(3);
         LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(57);
@@ -68,6 +69,7 @@ class EveContextServiceTest {
         when(snapshotMapper.selectLatest(10L, 100L)).thenReturn(snapshot);
         when(capabilityPolicy.evaluateAll(10L, Set.of())).thenReturn(List.of());
         when(capabilityPolicy.authorizationStatus(10L, 20L)).thenReturn(EveCapabilityStatus.AVAILABLE);
+        when(dataFreshnessService.list(10L, null)).thenReturn(List.of());
         UserContext context = new UserContext();
         context.setId(20L);
         context.setTenantId(10L);

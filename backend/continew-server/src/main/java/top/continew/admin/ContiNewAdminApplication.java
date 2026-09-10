@@ -33,6 +33,7 @@ import org.springframework.boot.SpringBootVersion;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.autoconfigure.web.ServerProperties;
 import org.springframework.cloud.openfeign.EnableFeignClients;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import top.continew.starter.core.autoconfigure.application.ApplicationProperties;
@@ -52,6 +53,7 @@ import top.continew.starter.web.model.R;
 @EnableFileStorage
 @EnableMethodCache(basePackages = "top.continew.admin")
 @EnableFeignClients
+@EnableScheduling
 @RestController
 @SpringBootApplication
 @RequiredArgsConstructor

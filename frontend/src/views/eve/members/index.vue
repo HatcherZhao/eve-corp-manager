@@ -2,6 +2,7 @@
 import { Message } from '@arco-design/web-vue'
 import dayjs from 'dayjs'
 import { computed, onMounted, reactive, ref } from 'vue'
+import DataFreshnessBanner from '../components/DataFreshnessBanner.vue'
 import {
   type EveMember,
   type EveMemberOperationAudit,
@@ -17,6 +18,7 @@ import {
 } from '@/apis/eve'
 import { useDownload } from '@/hooks'
 import { useUserStore } from '@/stores'
+import { getEveCharacterPortraitUrl } from '@/utils/eveImage'
 
 defineOptions({ name: 'EveMembers' })
 
@@ -29,6 +31,7 @@ const selectedMember = ref<EveMember>()
 const members = ref<EveMember[]>([])
 const total = ref(0)
 const syncRuns = ref<EveMemberSyncRun[]>([])
+const freshnessVersion = ref(0)
 const organizationAudits = ref<EveMemberOperationAudit[]>([])
 const organizationVisible = ref(false)
 const organizationSaving = ref(false)
@@ -44,8 +47,13 @@ function formatTime(value?: string) {
   return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '—'
 }
 
-function resolvedName(name?: string, id?: string, field = '信息') {
-  return name || (id ? `${field} ID #${id}` : '上游未提供')
+function resolvedName(name?: string, field = '信息') {
+  return name || `${field}名称待补齐`
+}
+
+/** 成员肖像由国服公开图片服务按游戏角色 ID 提供，无需额外授权。 */
+function memberPortraitUrl(characterId?: string) {
+  return getEveCharacterPortraitUrl(characterId)
 }
 
 async function loadMembers() {
@@ -118,15 +126,10 @@ async function sync() {
   syncing.value = true
   try {
     const { data } = await syncEveMembers()
-    if (data.trackingSynchronized) {
-      Message.success(`名册已同步 ${data.rosterCount} 人，追踪 ${data.trackingCount} 人`)
-    } else {
-      Message.warning(`名册已同步 ${data.rosterCount} 人；${data.trackingUnavailableReason || '追踪数据暂不可用'}`)
-    }
-    await loadMembers()
-    await loadOperations()
+    Message.success(data.message)
   } finally {
     syncing.value = false
+    freshnessVersion.value += 1
   }
 }
 
@@ -171,13 +174,16 @@ onMounted(async () => {
         <h1>成员管理</h1>
         <p>查看当前军团真实游戏成员名册。登录与登出是上游最近记录，不代表实时在线。</p>
       </div>
-      <a-button v-permission="['eve:members:manage']" type="primary" :loading="syncing" @click="sync">
-        <template #icon><icon-sync /></template>同步成员数据
-      </a-button>
+      <div class="eve-members__header-tools">
+        <DataFreshnessBanner :modules="['MEMBER_ROSTER', 'MEMBER_TRACKING']" :reload-token="freshnessVersion" />
+        <a-button v-permission="['eve:members:manage']" type="primary" :loading="syncing" @click="sync">
+          <template #icon><icon-sync /></template>同步成员数据
+        </a-button>
+      </div>
     </header>
 
     <section class="eve-members__filters">
-      <a-input v-model="query.keyword" allow-clear placeholder="角色名或角色 ID" @press-enter="search">
+      <a-input v-model="query.keyword" allow-clear placeholder="搜索角色名称" @press-enter="search">
         <template #prefix><icon-search /></template>
       </a-input>
       <a-select v-model="query.status" allow-clear placeholder="全部状态">
@@ -196,7 +202,12 @@ onMounted(async () => {
       <a-table :data="members" :loading="loading" row-key="characterId" :pagination="false" :scroll="{ x: canViewTracking ? 1470 : 900 }">
         <template #columns>
           <a-table-column title="角色" :width="210">
-            <template #cell="{ record }"><strong>{{ record.characterName || `待解析 #${record.characterId}` }}</strong><small>#{{ record.characterId }}</small></template>
+            <template #cell="{ record }">
+              <div class="eve-members__member-identity">
+                <Avatar :src="memberPortraitUrl(record.characterId)" :name="record.characterName" :size="36" :alt="`${record.characterName || '成员'}游戏肖像`" />
+                <strong>{{ record.characterName || '角色名称待补齐' }}</strong>
+              </div>
+            </template>
           </a-table-column>
           <a-table-column title="分组" :width="130"><template #cell="{ record }">{{ record.organizationGroup || '未分组' }}</template></a-table-column>
           <a-table-column title="状态" :width="90"><template #cell="{ record }"><a-tag :color="record.status === 'ACTIVE' ? 'green' : 'gray'">{{ record.status === 'ACTIVE' ? '在团' : '已离团' }}</a-tag></template></a-table-column>
@@ -204,8 +215,8 @@ onMounted(async () => {
           <template v-if="canViewTracking">
             <a-table-column title="最近登录" :width="155"><template #cell="{ record }">{{ formatTime(record.tracking?.lastLogonAt) }}</template></a-table-column>
             <a-table-column title="最近登出" :width="155"><template #cell="{ record }">{{ formatTime(record.tracking?.lastLogoffAt) }}</template></a-table-column>
-            <a-table-column title="位置" :width="180"><template #cell="{ record }">{{ resolvedName(record.tracking?.locationName, record.tracking?.locationId, '位置') }}</template></a-table-column>
-            <a-table-column title="舰船" :width="180"><template #cell="{ record }">{{ resolvedName(record.tracking?.shipTypeName, record.tracking?.shipTypeId, '舰船类型') }}</template></a-table-column>
+            <a-table-column title="位置" :width="180"><template #cell="{ record }">{{ resolvedName(record.tracking?.locationName, '位置') }}</template></a-table-column>
+            <a-table-column title="舰船" :width="180"><template #cell="{ record }"><span class="eve-members__ship-identity"><EveTypeIcon v-if="record.tracking?.shipTypeId" :type-id="record.tracking.shipTypeId" :size="24" :alt="`${record.tracking.shipTypeName || '舰船'}图标`" />{{ resolvedName(record.tracking?.shipTypeName, '舰船类型') }}</span></template></a-table-column>
           </template>
           <a-table-column title="最近同步" :width="155"><template #cell="{ record }">{{ formatTime(record.lastSeenAt) }}</template></a-table-column>
           <a-table-column title="操作" :width="130" fixed="right"><template #cell="{ record }"><a-space><a-link @click="showDetail(record)">详情</a-link><a-link v-if="canOrganize" @click="openOrganization(record)">组织信息</a-link></a-space></template></a-table-column>
@@ -218,8 +229,7 @@ onMounted(async () => {
       <a-spin :loading="detailLoading" class="eve-members__detail-loading">
         <template v-if="selectedMember">
           <a-descriptions :column="1" bordered>
-            <a-descriptions-item label="角色">{{ selectedMember.characterName || `待解析 #${selectedMember.characterId}` }}</a-descriptions-item>
-            <a-descriptions-item label="角色 ID">{{ selectedMember.characterId }}</a-descriptions-item>
+            <a-descriptions-item label="角色">{{ selectedMember.characterName || '角色名称待补齐' }}</a-descriptions-item>
             <a-descriptions-item label="成员分组">{{ selectedMember.organizationGroup || '未分组' }}</a-descriptions-item>
             <a-descriptions-item label="成员备注">{{ selectedMember.memberNote || '—' }}</a-descriptions-item>
             <a-descriptions-item label="在团状态">{{ selectedMember.status === 'ACTIVE' ? '在团' : '已离团' }}</a-descriptions-item>
@@ -231,8 +241,8 @@ onMounted(async () => {
             <a-descriptions :column="1" bordered>
               <a-descriptions-item label="最近登录">{{ formatTime(selectedMember.tracking?.lastLogonAt) }}</a-descriptions-item>
               <a-descriptions-item label="最近登出">{{ formatTime(selectedMember.tracking?.lastLogoffAt) }}</a-descriptions-item>
-              <a-descriptions-item label="位置">{{ resolvedName(selectedMember.tracking?.locationName, selectedMember.tracking?.locationId, '位置') }}</a-descriptions-item>
-              <a-descriptions-item label="舰船">{{ resolvedName(selectedMember.tracking?.shipTypeName, selectedMember.tracking?.shipTypeId, '舰船类型') }}</a-descriptions-item>
+              <a-descriptions-item label="位置">{{ resolvedName(selectedMember.tracking?.locationName, '位置') }}</a-descriptions-item>
+              <a-descriptions-item label="舰船"><span class="eve-members__ship-identity"><EveTypeIcon v-if="selectedMember.tracking?.shipTypeId" :type-id="selectedMember.tracking.shipTypeId" :size="24" :alt="`${selectedMember.tracking.shipTypeName || '舰船'}图标`" />{{ resolvedName(selectedMember.tracking?.shipTypeName, '舰船类型') }}</span></a-descriptions-item>
               <a-descriptions-item label="追踪数据时间">{{ formatTime(selectedMember.tracking?.sourceObservedAt) }}</a-descriptions-item>
             </a-descriptions>
           </template>
@@ -258,7 +268,7 @@ onMounted(async () => {
           <a-table :data="organizationAudits" :pagination="false" size="small" row-key="id">
             <template #columns>
               <a-table-column title="操作" data-index="summary" />
-              <a-table-column title="操作者" :width="180"><template #cell="{ record }">{{ record.actorUsername || `用户 #${record.actorUserId}` }}</template></a-table-column>
+              <a-table-column title="操作者" :width="180"><template #cell="{ record }">{{ record.actorUsername || '未知操作者' }}</template></a-table-column>
               <a-table-column title="时间" :width="180"><template #cell="{ record }">{{ formatTime(record.occurredAt) }}</template></a-table-column>
             </template>
           </a-table>
@@ -281,7 +291,11 @@ onMounted(async () => {
 .eve-members__eyebrow { color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; font-size: 11px; letter-spacing: .16em; }
 .eve-members h1 { margin: 8px 0; font-size: 30px; }
 .eve-members__header p { margin: 0; color: var(--color-text-3); }
+.eve-members__header-tools { display: flex; align-self: flex-start; flex-direction: column; align-items: flex-end; gap: 10px; }
 .eve-members__filters { display: flex; gap: 10px; margin: 18px 0; }
+.eve-members__member-identity { display: flex; align-items: center; min-width: 0; gap: 10px; }
+.eve-members__member-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eve-members__ship-identity { display: inline-flex; align-items: center; gap: 8px; }
 .eve-members__filters .arco-input-wrapper { width: 280px; }
 .eve-members__filters .arco-select { width: 130px; }
 .eve-members__table-wrap { padding: 18px; border: 1px solid var(--color-border-2); border-radius: 14px; background: var(--color-bg-1); }
@@ -292,5 +306,5 @@ onMounted(async () => {
 .eve-members__detail-loading { display: block; min-height: 120px; }
 .eve-members__organization-button { margin-top: 14px; }
 .eve-members__operations { margin-top: 18px; padding: 0 18px 18px; border: 1px solid var(--color-border-2); border-radius: 14px; background: var(--color-bg-1); }
-@media (max-width: 720px) { .eve-members__header { align-items: flex-start; flex-direction: column; } .eve-members__filters { flex-wrap: wrap; } .eve-members__filters .arco-input-wrapper { width: 100%; } }
+@media (max-width: 720px) { .eve-members__header { align-items: flex-start; flex-direction: column; } .eve-members__header-tools { align-items: flex-start; } .eve-members__filters { flex-wrap: wrap; } .eve-members__filters .arco-input-wrapper { width: 100%; } }
 </style>

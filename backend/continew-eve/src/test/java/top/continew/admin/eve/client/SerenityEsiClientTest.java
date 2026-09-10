@@ -29,14 +29,24 @@ import org.springframework.web.client.ResourceAccessException;
 import top.continew.admin.eve.config.SerenityProperties;
 import top.continew.admin.eve.model.serenity.SerenityCorporationMemberTrackingResponse;
 import top.continew.admin.eve.model.serenity.SerenityCorporationAssetResponse;
+import top.continew.admin.eve.model.serenity.SerenityCorporationDivisionResponse;
 import top.continew.admin.eve.model.serenity.SerenityCorporationStructureResponse;
+import top.continew.admin.eve.model.serenity.SerenityCorporationMoonExtractionResponse;
+import top.continew.admin.eve.model.serenity.SerenityCorporationMiningLedgerResponse;
+import top.continew.admin.eve.model.serenity.SerenityCorporationMiningObserverResponse;
 import top.continew.admin.eve.model.serenity.SerenityEsiPagedResponse;
 import top.continew.admin.eve.model.serenity.SerenityCorporationRolesResponse;
 import top.continew.admin.eve.model.serenity.SerenityEsiResponse;
 import top.continew.admin.eve.model.serenity.SerenityUniverseStructureResponse;
 import top.continew.admin.eve.model.serenity.SerenityUniverseStationResponse;
+import top.continew.admin.eve.model.serenity.SerenityGameMailDetailResponse;
+import top.continew.admin.eve.model.serenity.SerenityGameMailHeaderResponse;
+import top.continew.admin.eve.model.serenity.SerenityGameMailRecipient;
+import top.continew.admin.eve.model.serenity.SerenityGameMailSendRequest;
+import top.continew.admin.eve.model.serenity.SerenityGameNotificationResponse;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.net.SocketTimeoutException;
@@ -44,6 +54,7 @@ import java.net.SocketTimeoutException;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.ExpectedCount.once;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -150,7 +161,9 @@ class SerenityEsiClientTest {
             .andExpect(method(HttpMethod.GET))
             .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer access-token"))
             .andRespond(withSuccess("""
-                [{"structure_id":1016139224840,"type_id":35835,"system_id":30001421,"name":"月矿一号"}]
+                [{"structure_id":1016139224840,"type_id":35835,"system_id":30001421,"name":"月矿一号",
+                  "state":"online_deprecated","fuel_expires":"2026-09-12T01:00:00Z",
+                  "services":[{"name":"Clone Bay","state":"online"}]}]
                 """, MediaType.APPLICATION_JSON).header("X-Pages", "2"));
 
         SerenityEsiPagedResponse<SerenityCorporationStructureResponse> response = client
@@ -160,6 +173,101 @@ class SerenityEsiClientTest {
         assertThat(response.body()).singleElement()
             .extracting(SerenityCorporationStructureResponse::name)
             .isEqualTo("月矿一号");
+        assertThat(response.body()).singleElement()
+            .extracting(SerenityCorporationStructureResponse::fuelExpiresAt)
+            .isEqualTo(LocalDateTime.ofInstant(Instant.parse("2026-09-12T01:00:00Z"), ZoneOffset.UTC));
+        assertThat(response.body().get(0).services()).singleElement()
+            .extracting(SerenityCorporationStructureResponse.Service::state)
+            .isEqualTo("online");
+        server.verify();
+    }
+
+    /** 军团机库必须读取游戏内自定义分区名称，而不是向前端暴露 CorpSAG 编号。 */
+    @Test
+    void shouldRequestCorporationCustomDivisionNamesWithBearerToken() {
+        server
+            .expect(once(), requestTo("https://esi.example.test/latest/corporations/9901/divisions/?datasource=serenity"))
+            .andExpect(method(HttpMethod.GET))
+            .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer access-token"))
+            .andRespond(withSuccess("""
+                {"hangar":[{"division":1,"name":"军备库"},{"division":3,"name":"工业材料库"}],"wallet":[]}
+                """, MediaType.APPLICATION_JSON).header(HttpHeaders.EXPIRES, "Wed, 09 Sep 2026 12:00:00 GMT"));
+
+        SerenityEsiResponse<SerenityCorporationDivisionResponse> response = client
+            .getCorporationDivisionsWithMetadata(9901L, "access-token");
+
+        assertThat(response.body().hangar()).extracting(item -> item.name()).containsExactly("军备库", "工业材料库");
+        assertThat(response.expiresAt()).isEqualTo(LocalDateTime.ofInstant(Instant
+            .parse("2026-09-09T12:00:00Z"), ZoneOffset.UTC));
+        server.verify();
+    }
+
+    /** 月矿计划必须按页解析，并保留国服时间线的全部三个时间点。 */
+    @Test
+    void shouldRequestPagedCorporationMoonExtractionsWithBearerToken() {
+        server
+            .expect(once(), requestTo("https://esi.example.test/latest/corporation/9901/mining/extractions/?datasource=serenity&page=2"))
+            .andExpect(method(HttpMethod.GET))
+            .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer access-token"))
+            .andRespond(withSuccess("""
+                [{"structure_id":1016139224840,"moon_id":40009001,
+                  "extraction_start_time":"2026-09-01T01:00:00Z",
+                  "chunk_arrival_time":"2026-09-08T01:00:00Z",
+                  "natural_decay_time":"2026-09-11T01:00:00Z"}]
+                """, MediaType.APPLICATION_JSON).header("X-Pages", "2"));
+
+        SerenityEsiPagedResponse<SerenityCorporationMoonExtractionResponse> response = client
+            .getCorporationMoonExtractionsWithMetadata(9901L, 2, "access-token");
+
+        assertThat(response.pageCount()).isEqualTo(2);
+        assertThat(response.body()).singleElement().satisfies(item -> {
+            assertThat(item.structureId()).isEqualTo(1016139224840L);
+            assertThat(item.moonId()).isEqualTo(40009001L);
+            assertThat(item.extractionStartAt()).isEqualTo(LocalDateTime.ofInstant(Instant
+                .parse("2026-09-01T01:00:00Z"), ZoneOffset.UTC));
+            assertThat(item.chunkArrivalAt()).isEqualTo(LocalDateTime.ofInstant(Instant
+                .parse("2026-09-08T01:00:00Z"), ZoneOffset.UTC));
+            assertThat(item.naturalDecayAt()).isEqualTo(LocalDateTime.ofInstant(Instant
+                .parse("2026-09-11T01:00:00Z"), ZoneOffset.UTC));
+        });
+        server.verify();
+    }
+
+    /** 会计账本必须先按观察者分页，再按观察者 ID 读取对应的明细分页。 */
+    @Test
+    void shouldRequestPagedCorporationMiningObserversAndLedgerWithBearerToken() {
+        server
+            .expect(once(), requestTo("https://esi.example.test/latest/corporation/9901/mining/observers/?datasource=serenity&page=2"))
+            .andExpect(method(HttpMethod.GET))
+            .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer access-token"))
+            .andRespond(withSuccess("""
+                [{"observer_id":1016139224840,"observer_type":"structure","last_updated":"2026-09-09"}]
+                """, MediaType.APPLICATION_JSON).header("X-Pages", "2"));
+        server
+            .expect(once(), requestTo("https://esi.example.test/latest/corporation/9901/mining/observers/1016139224840/?datasource=serenity&page=3"))
+            .andExpect(method(HttpMethod.GET))
+            .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer access-token"))
+            .andRespond(withSuccess("""
+                [{"character_id":9001,"last_updated":"2026-09-09","quantity":42,
+                  "recorded_corporation_id":9901,"type_id":1230}]
+                """, MediaType.APPLICATION_JSON).header("X-Pages", "3"));
+
+        SerenityEsiPagedResponse<SerenityCorporationMiningObserverResponse> observers = client
+            .getCorporationMiningObserversWithMetadata(9901L, 2, "access-token");
+        SerenityEsiPagedResponse<SerenityCorporationMiningLedgerResponse> ledger = client
+            .getCorporationMiningLedgerWithMetadata(9901L, 1016139224840L, 3, "access-token");
+
+        assertThat(observers.pageCount()).isEqualTo(2);
+        assertThat(observers.body()).singleElement().satisfies(item -> {
+            assertThat(item.observerId()).isEqualTo(1016139224840L);
+            assertThat(item.lastUpdated()).isEqualTo(LocalDate.parse("2026-09-09"));
+        });
+        assertThat(ledger.pageCount()).isEqualTo(3);
+        assertThat(ledger.body()).singleElement().satisfies(item -> {
+            assertThat(item.characterId()).isEqualTo(9001L);
+            assertThat(item.recordedCorporationId()).isEqualTo(9901L);
+            assertThat(item.quantity()).isEqualTo(42L);
+        });
         server.verify();
     }
 
@@ -207,6 +315,84 @@ class SerenityEsiClientTest {
 
         assertThat(response.name()).isEqualTo("艾玛 VIII（帝国海军装配车间）");
         assertThat(response.solarSystemId()).isEqualTo(30002187L);
+        server.verify();
+    }
+
+    /** 游戏内邮件读取必须使用当前角色令牌，并保留邮件头和正文的缓存元数据。 */
+    @Test
+    void shouldReadGameMailHeadersAndDetailWithBearerToken() {
+        server.expect(once(), requestTo("https://esi.example.test/latest/characters/8001/mail/?datasource=serenity"))
+            .andExpect(method(HttpMethod.GET))
+            .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer access-token"))
+            .andRespond(withSuccess("""
+                [{"from":9001,"is_read":false,"labels":[1],"mail_id":10001,
+                  "recipients":[{"recipient_id":8001,"recipient_type":"character"}],
+                  "subject":"舰队通知","timestamp":"2026-09-10T04:00:00Z"}]
+                """, MediaType.APPLICATION_JSON).header(HttpHeaders.EXPIRES, "Wed, 10 Sep 2026 04:01:00 GMT"));
+        server
+            .expect(once(), requestTo("https://esi.example.test/latest/characters/8001/mail/10001/?datasource=serenity"))
+            .andExpect(method(HttpMethod.GET))
+            .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer access-token"))
+            .andRespond(withSuccess("""
+                {"body":"集合","from":9001,"is_read":false,"labels":[1],
+                 "recipients":[{"recipient_id":8001,"recipient_type":"character"}],
+                 "subject":"舰队通知","timestamp":"2026-09-10T04:00:00Z"}
+                """, MediaType.APPLICATION_JSON));
+
+        SerenityEsiResponse<java.util.List<SerenityGameMailHeaderResponse>> headers = client
+            .getGameMailHeadersWithMetadata(8001L, "access-token");
+        SerenityEsiResponse<SerenityGameMailDetailResponse> detail = client
+            .getGameMailDetailWithMetadata(8001L, 10001L, "access-token");
+
+        assertThat(headers.body()).singleElement().satisfies(item -> {
+            assertThat(item.mailId()).isEqualTo(10001L);
+            assertThat(item.recipients()).singleElement()
+                .extracting(SerenityGameMailRecipient::recipientType)
+                .isEqualTo("character");
+        });
+        assertThat(detail.body().body()).isEqualTo("集合");
+        server.verify();
+    }
+
+    /** 游戏通知读取必须使用角色令牌，并映射国服的类型、发送方和正文事实。 */
+    @Test
+    void shouldReadGameNotificationsWithBearerToken() {
+        server
+            .expect(once(), requestTo("https://esi.example.test/latest/characters/8001/notifications/?datasource=serenity"))
+            .andExpect(method(HttpMethod.GET))
+            .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer access-token"))
+            .andRespond(withSuccess("""
+                [{"is_read":false,"notification_id":10001,"sender_id":9001,"sender_type":"corporation",
+                  "text":"军团成员状态已变更","timestamp":"2026-09-10T04:00:00Z","type":"CorpAppNewMsg"}]
+                """, MediaType.APPLICATION_JSON).header(HttpHeaders.EXPIRES, "Wed, 10 Sep 2026 04:01:00 GMT"));
+
+        SerenityEsiResponse<java.util.List<SerenityGameNotificationResponse>> response = client
+            .getGameNotificationsWithMetadata(8001L, "access-token");
+
+        assertThat(response.body()).singleElement().satisfies(item -> {
+            assertThat(item.notificationId()).isEqualTo(10001L);
+            assertThat(item.senderType()).isEqualTo("corporation");
+            assertThat(item.type()).isEqualTo("CorpAppNewMsg");
+        });
+        server.verify();
+    }
+
+    /** 游戏内邮件发送必须使用 POST、Bearer Token 并返回国服邮件 ID。 */
+    @Test
+    void shouldSendGameMailWithBearerToken() {
+        server.expect(once(), requestTo("https://esi.example.test/latest/characters/8001/mail/?datasource=serenity"))
+            .andExpect(method(HttpMethod.POST))
+            .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer access-token"))
+            .andExpect(content()
+                .json("""
+                    {"approved_cost":0,"body":"集合","recipients":[{"recipient_id":9001,"recipient_type":"character"}],"subject":"舰队通知"}
+                    """))
+            .andRespond(withSuccess("10002", MediaType.APPLICATION_JSON));
+
+        Long mailId = client.sendGameMail(8001L, new SerenityGameMailSendRequest(null, "集合", java.util.List
+            .of(new SerenityGameMailRecipient(9001L, "character")), "舰队通知"), "access-token");
+
+        assertThat(mailId).isEqualTo(10002L);
         server.verify();
     }
 

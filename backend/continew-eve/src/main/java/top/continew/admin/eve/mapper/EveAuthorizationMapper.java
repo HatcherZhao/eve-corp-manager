@@ -63,11 +63,17 @@ public interface EveAuthorizationMapper extends BaseMapper<EveAuthorizationDO> {
     @Select("SELECT auth.* FROM eve_authorization auth " + "INNER JOIN eve_character character_binding ON character_binding.id = auth.character_ref_id " + "AND character_binding.tenant_id = auth.tenant_id " + "AND character_binding.user_id = auth.user_id " + "AND character_binding.server = auth.server " + "AND character_binding.status = 'ACTIVE' AND character_binding.deleted = 0 " + "INNER JOIN eve_corporation corporation ON corporation.tenant_id = character_binding.tenant_id " + "AND corporation.server = character_binding.server " + "AND corporation.corporation_id = character_binding.corporation_id " + "AND corporation.status = 'ACTIVE' AND corporation.deleted = 0 " + "INNER JOIN eve_corporation_member corporation_member " + "ON corporation_member.tenant_id = auth.tenant_id " + "AND corporation_member.corporation_ref_id = corporation.id " + "AND corporation_member.character_ref_id = auth.character_ref_id " + "AND corporation_member.user_id = auth.user_id " + "AND corporation_member.status = 'ACTIVE' AND corporation_member.deleted = 0 " + "WHERE auth.tenant_id = #{tenantId} AND auth.deleted = 0 " + "ORDER BY auth.id DESC")
     List<EveAuthorizationDO> selectTenantCandidates(@Param("tenantId") Long tenantId);
 
-    /** 跨租户查询到达复核周期的有效授权，调用方必须逐条恢复租户上下文。 */
+    /**
+     * 跨租户查询需要复核或即将到期的有效授权，调用方必须逐条恢复租户上下文。
+     *
+     * <p>角色事实按缓存周期复核；访问令牌则在到期前被后台任务选中并轮换，避免授权只能依赖用户打开页面
+     * 才续期。</p>
+     */
     @InterceptorIgnore(tenantLine = "true")
     @ResultMap("eveAuthorizationResultMap")
-    @Select("SELECT * FROM eve_authorization WHERE status = 'ACTIVE' AND deleted = 0 " + "AND (last_verified_at IS NULL OR last_verified_at <= #{before}) " + "AND (next_review_at IS NULL OR next_review_at <= #{eligibleAt}) " + "ORDER BY next_review_at ASC, last_verified_at ASC, id ASC LIMIT #{limit}")
-    List<EveAuthorizationDO> selectStaleActive(@Param("before") LocalDateTime before,
+    @Select("SELECT * FROM eve_authorization WHERE status = 'ACTIVE' AND deleted = 0 " + "AND ((last_verified_at IS NULL OR last_verified_at <= #{roleRefreshBefore}) " + "OR (expires_at IS NOT NULL AND expires_at <= #{tokenRefreshBefore})) " + "AND (next_review_at IS NULL OR next_review_at <= #{eligibleAt}) " + "ORDER BY expires_at ASC, next_review_at ASC, last_verified_at ASC, id ASC LIMIT #{limit}")
+    List<EveAuthorizationDO> selectStaleActive(@Param("roleRefreshBefore") LocalDateTime roleRefreshBefore,
+                                               @Param("tokenRefreshBefore") LocalDateTime tokenRefreshBefore,
                                                @Param("eligibleAt") LocalDateTime eligibleAt,
                                                @Param("limit") int limit);
 
@@ -79,4 +85,10 @@ public interface EveAuthorizationMapper extends BaseMapper<EveAuthorizationDO> {
                     @Param("authorizationId") Long authorizationId,
                     @Param("attemptedAt") LocalDateTime attemptedAt,
                     @Param("nextReviewAt") LocalDateTime nextReviewAt);
+
+    /** 跨租户查询拥有收件箱读取 Scope 的有效角色授权，用于个人邮箱后台同步。 */
+    @InterceptorIgnore(tenantLine = "true")
+    @ResultMap("eveAuthorizationResultMap")
+    @Select("SELECT auth.* FROM eve_authorization auth INNER JOIN eve_character character_binding " + "ON character_binding.id = auth.character_ref_id AND character_binding.tenant_id = auth.tenant_id " + "AND character_binding.user_id = auth.user_id AND character_binding.status = 'ACTIVE' " + "AND character_binding.deleted = 0 WHERE auth.status = 'ACTIVE' AND auth.deleted = 0 " + "AND JSON_CONTAINS(auth.scopes, JSON_QUOTE(#{requiredScope})) ORDER BY auth.id ASC")
+    List<EveAuthorizationDO> selectActiveByScopeForAutoSync(@Param("requiredScope") String requiredScope);
 }

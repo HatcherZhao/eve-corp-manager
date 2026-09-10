@@ -40,6 +40,7 @@ import top.continew.admin.common.config.crud.CrudApiPermissionPrefixCache;
 import top.continew.admin.common.context.UserContext;
 import top.continew.admin.common.context.UserContextHolder;
 import top.continew.admin.open.sign.OpenApiSignTemplate;
+import top.continew.admin.system.service.EveSessionPermissionRefreshService;
 import top.continew.starter.auth.satoken.autoconfigure.SaTokenExtensionProperties;
 import top.continew.starter.core.constant.StringConstants;
 import top.continew.starter.core.exception.BusinessException;
@@ -65,6 +66,7 @@ public class SaTokenConfiguration {
     private final LoginPasswordProperties loginPasswordProperties;
     private final OpenApiSignTemplate signTemplate;
     private final ApplicationContext applicationContext;
+    private final EveSessionPermissionRefreshService eveSessionPermissionRefreshService;
 
     /**
      * Sa-Token 权限认证配置
@@ -101,7 +103,7 @@ public class SaTokenConfiguration {
                 }
                 UserContext userContext = UserContextHolder.getContext();
                 CheckUtils.throwIf(userContext.isPasswordExpired(), "密码已过期，请修改密码");
-            }));
+            }), eveSessionPermissionRefreshService);
     }
 
     /**

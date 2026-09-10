@@ -45,4 +45,17 @@ public interface EveCharacterMapper extends BaseMapper<EveCharacterDO> {
     /** 按租户和本站用户查询有效游戏角色，租户条件不可省略。 */
     @Select("SELECT * FROM eve_character WHERE tenant_id = #{tenantId} AND user_id = #{userId} " + "AND status = 'ACTIVE' AND deleted = 0 ORDER BY is_primary DESC, id ASC")
     List<EveCharacterDO> selectActiveByUser(@Param("tenantId") Long tenantId, @Param("userId") Long userId);
+
+    /** 按租户、本站用户和角色绑定主键读取自动任务目标。 */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT * FROM eve_character WHERE tenant_id = #{tenantId} AND user_id = #{userId} " + "AND id = #{characterRefId} AND status = 'ACTIVE' AND deleted = 0 LIMIT 1")
+    EveCharacterDO selectActiveByTenantUserAndRefId(@Param("tenantId") Long tenantId,
+                                                    @Param("userId") Long userId,
+                                                    @Param("characterRefId") Long characterRefId);
+
+    /** 按租户和角色绑定主键读取有效邮箱同步目标及其本站用户归属。 */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT * FROM eve_character WHERE tenant_id = #{tenantId} AND id = #{characterRefId} " + "AND status = 'ACTIVE' AND deleted = 0 LIMIT 1")
+    EveCharacterDO selectActiveByTenantAndRefId(@Param("tenantId") Long tenantId,
+                                                @Param("characterRefId") Long characterRefId);
 }

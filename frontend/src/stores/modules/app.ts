@@ -71,7 +71,7 @@ const storeSetup = () => {
       document.title = resMap.get('SITE_TITLE')
       document
         .querySelector('link[rel="shortcut icon"]')
-        ?.setAttribute('href', resMap.get('SITE_FAVICON') || '/favicon.ico')
+        ?.setAttribute('href', resMap.get('SITE_FAVICON') || '/eve-corp-manager-favicon.png')
     })
   }
 
@@ -79,7 +79,9 @@ const storeSetup = () => {
   const setSiteConfig = (config: BasicConfig) => {
     Object.assign(siteConfig, config)
     document.title = config.SITE_TITLE || ''
-    document.querySelector('link[rel="shortcut icon"]')?.setAttribute('href', config.SITE_FAVICON || '/favicon.ico')
+    document
+      .querySelector('link[rel="shortcut icon"]')
+      ?.setAttribute('href', config.SITE_FAVICON || '/eve-corp-manager-favicon.png')
   }
   // 监听 色弱模式 和 哀悼模式
   watch([

@@ -54,9 +54,9 @@ class EveCorporationAssetServiceTest {
             .isEqualTo("斜长岩");
     }
 
-    /** 舰船应按实际槽位与货仓分层，不能将装配模块和货物平铺为物品。 */
+    /** 舰船仓舱和装配必须分离，已装配模块不能与货仓物品一起展示。 */
     @Test
-    void shouldGroupFittedShipAndCargoByCompartment() {
+    void shouldSeparateShipStorageFromFittings() {
         EveCorporationAssetDO ship = asset(151L, "强制者级", "station", 60000001L, "Hangar", 30000142L, "吉他");
         ship.setTypeId(16236);
         EveCorporationAssetDO highSlotModule = asset(152L, "小型聚焦增强模式激光器 I", "item", 151L, "HiSlot0", null, null);
@@ -69,23 +69,17 @@ class EveCorporationAssetServiceTest {
         EveCorporationAssetTreeNodeResp shipNode = tree.get(0).children().get(0).children().get(0).children().get(0);
         assertThat(shipNode.title()).isEqualTo("强制者级");
         assertThat(shipNode.kind()).isEqualTo("ship");
-        EveCorporationAssetTreeNodeResp compartments = shipNode.children().get(0);
-        assertThat(compartments.title()).isEqualTo("舰船分区");
-        assertThat(compartments.kind()).isEqualTo("ship_compartment_group");
-        assertThat(compartments.children()).extracting(EveCorporationAssetTreeNodeResp::title)
-            .containsExactlyInAnyOrder("高能量槽 1", "中能量槽 1", "货仓");
-        assertThat(compartments.children()).extracting(EveCorporationAssetTreeNodeResp::kind)
-            .containsOnly("ship_compartment");
-        EveCorporationAssetTreeNodeResp highSlot = compartments.children()
-            .stream()
-            .filter(item -> "高能量槽 1".equals(item.title()))
-            .findFirst()
-            .orElseThrow();
-        EveCorporationAssetTreeNodeResp cargoCompartment = compartments.children()
-            .stream()
-            .filter(item -> "货仓".equals(item.title()))
-            .findFirst()
-            .orElseThrow();
+        assertThat(shipNode.children()).extracting(EveCorporationAssetTreeNodeResp::title)
+            .containsExactlyInAnyOrder("舰船仓舱", "装配");
+        EveCorporationAssetTreeNodeResp storage = childByTitle(shipNode, "舰船仓舱");
+        EveCorporationAssetTreeNodeResp fitting = childByTitle(shipNode, "装配");
+        assertThat(storage.kind()).isEqualTo("ship_storage_group");
+        assertThat(fitting.kind()).isEqualTo("ship_fitting_group");
+        assertThat(storage.children()).extracting(EveCorporationAssetTreeNodeResp::title).containsExactly("货仓");
+        assertThat(fitting.children()).extracting(EveCorporationAssetTreeNodeResp::title)
+            .containsExactlyInAnyOrder("高能量槽 1", "中能量槽 1");
+        EveCorporationAssetTreeNodeResp highSlot = childByTitle(fitting, "高能量槽 1");
+        EveCorporationAssetTreeNodeResp cargoCompartment = childByTitle(storage, "货仓");
         assertThat(highSlot.children()).singleElement()
             .extracting(EveCorporationAssetTreeNodeResp::title)
             .isEqualTo("小型聚焦增强模式激光器 I");
@@ -151,6 +145,61 @@ class EveCorporationAssetServiceTest {
             .isEqualTo("军团机库 3");
     }
 
+    /** 军团资产接口中的 CorpSAG 编号必须使用国服返回的玩家自定义机库名称。 */
+    @Test
+    void shouldUseCorporationCustomHangarNameInsteadOfInternalDivisionNumber() {
+        EveCorporationAssetDO asset = asset(251L, "三钛合金", "station", 60001738L, "CorpSAG3", 30001421L, "奥塔列托");
+
+        List<EveCorporationAssetTreeNodeResp> tree = EveCorporationAssetService.buildTree(List.of(asset), Map.of(), Map
+            .of(3, "工业材料库"));
+
+        assertThat(tree.get(0).children().get(0).children()).singleElement()
+            .extracting(EveCorporationAssetTreeNodeResp::title)
+            .isEqualTo("工业材料库");
+    }
+
+    /** 有物品的军团机库和空机库均应显示游戏内配置的全部自定义分区名称。 */
+    @Test
+    void shouldKeepEmptyCorporationHangarsVisibleWithCustomNames() {
+        EveCorporationAssetDO office = asset(271L, "军团办公室", "station", 60000001L, "OfficeFolder", 30000142L, "吉他");
+        office.setTypeId(27);
+        EveCorporationAssetDO asset = asset(272L, "三钛合金", "item", 271L, "CorpSAG3", null, null);
+
+        List<EveCorporationAssetTreeNodeResp> tree = EveCorporationAssetService.buildTree(List.of(office, asset), Map
+            .of(), Map.of(1, "军备库", 3, "工业材料库", 7, "外交物资库"));
+
+        EveCorporationAssetTreeNodeResp officeNode = tree.get(0).children().get(0).children().get(0).children().get(0);
+        assertThat(officeNode.children()).extracting(EveCorporationAssetTreeNodeResp::title)
+            .containsExactlyInAnyOrder("军备库", "工业材料库", "外交物资库");
+        assertThat(childByTitle(officeNode, "工业材料库").children()).singleElement()
+            .extracting(EveCorporationAssetTreeNodeResp::title)
+            .isEqualTo("三钛合金");
+        assertThat(childByTitle(officeNode, "军备库").children()).isEmpty();
+    }
+
+    /** 空间站根级军团机库应归入同站办公室，不能与办公室分支重复展示。 */
+    @Test
+    void shouldAttachStationHangarsToOfficeInsteadOfRenderingDuplicateRootBranch() {
+        EveCorporationAssetDO office = asset(281L, "军团办公室", "station", 60000001L, "OfficeFolder", 30000142L, "吉他");
+        office.setTypeId(27);
+        EveCorporationAssetDO securityHangar = asset(282L, "三钛合金", "station", 60000001L, "CorpSAG1", 30000142L, "吉他");
+        EveCorporationAssetDO productionHangar = asset(283L, "斜长岩", "station", 60000001L, "CorpSAG3", 30000142L, "吉他");
+
+        List<EveCorporationAssetTreeNodeResp> tree = EveCorporationAssetService.buildTree(List
+            .of(office, securityHangar, productionHangar), Map.of(), Map.of(1, "安全环保部", 3, "生产技术部"));
+
+        EveCorporationAssetTreeNodeResp station = tree.get(0).children().get(0);
+        assertThat(station.children()).singleElement()
+            .extracting(EveCorporationAssetTreeNodeResp::title)
+            .isEqualTo("办公室");
+        EveCorporationAssetTreeNodeResp officeNode = station.children().get(0).children().get(0);
+        assertThat(officeNode.children()).extracting(EveCorporationAssetTreeNodeResp::title)
+            .containsExactlyInAnyOrder("安全环保部", "生产技术部");
+        assertThat(childByTitle(officeNode, "安全环保部").children()).singleElement()
+            .extracting(EveCorporationAssetTreeNodeResp::title)
+            .isEqualTo("三钛合金");
+    }
+
     /** 带零基序号的固定槽位应改为玩家可读的一位起始中文编号。 */
     @Test
     void shouldLocalizeIndexedStorageSlotName() {
@@ -163,28 +212,45 @@ class EveCorporationAssetServiceTest {
             .isEqualTo("高能量槽 1");
     }
 
-    /** 自有阿塔诺必须作为建筑节点展示，建筑自身的部署标记不能被误认为内部仓位。 */
+    /** 自有阿塔诺必须区分仓库、军团机库和建筑装备，建筑自身的部署标记不是内部仓位。 */
     @Test
-    void shouldPlaceCorporationStructureAboveItsActualStorageAreas() {
+    void shouldSeparateCorporationStructureStorageHangarsAndFittings() {
         EveCorporationAssetDO structure = asset(401L, "阿塔诺", "solar_system", 30001421L, "AutoFit", 30001421L, "奥塔列托");
         structure.setItemName("月矿一号");
         structure.setCorporationStructure(true);
         EveCorporationAssetDO fuel = asset(402L, "氮燃料块", "item", 401L, "StructureFuel", null, null);
         EveCorporationAssetDO core = asset(403L, "阿塔诺昇威量子芯", "item", 401L, "QuantumCoreRoom", null, null);
+        EveCorporationAssetDO service = asset(404L, "月矿钻", "item", 401L, "ServiceSlot0", null, null);
+        EveCorporationAssetDO privateStorage = asset(405L, "三钛合金", "item", 401L, "Hangar", null, null);
+        EveCorporationAssetDO corporationHangar = asset(406L, "斜长岩", "item", 401L, "CorpSAG1", null, null);
+        EveCorporationAssetDO highSlot = asset(407L, "建筑防御炮", "item", 401L, "HiSlot0", null, null);
+        EveCorporationAssetDO cargo = asset(408L, "建筑备用物资", "item", 401L, "Cargo", null, null);
+        EveCorporationAssetDO fighterTube = asset(409L, "铁骑无人机", "item", 401L, "FighterTube0", null, null);
 
         List<EveCorporationAssetTreeNodeResp> tree = EveCorporationAssetService.buildTree(List
-            .of(structure, fuel, core));
+            .of(structure, fuel, core, service, privateStorage, corporationHangar, highSlot, cargo, fighterTube));
 
         EveCorporationAssetTreeNodeResp building = tree.get(0).children().get(0);
         assertThat(building.title()).isEqualTo("月矿一号");
         assertThat(building.kind()).isEqualTo("corporation_structure");
-        EveCorporationAssetTreeNodeResp compartments = building.children().get(0);
-        assertThat(compartments.title()).isEqualTo("建筑分区");
-        assertThat(compartments.kind()).isEqualTo("structure_compartment_group");
-        assertThat(compartments.children()).extracting(EveCorporationAssetTreeNodeResp::title)
-            .containsExactly("建筑燃料仓", "量子核心仓");
-        assertThat(compartments.children()).extracting(EveCorporationAssetTreeNodeResp::kind)
-            .containsOnly("structure_compartment");
+        assertThat(building.children()).extracting(EveCorporationAssetTreeNodeResp::title)
+            .containsExactlyInAnyOrder("仓库", "军团机库", "建筑装备");
+        EveCorporationAssetTreeNodeResp storage = childByTitle(building, "仓库");
+        EveCorporationAssetTreeNodeResp corporationHangars = childByTitle(building, "军团机库");
+        EveCorporationAssetTreeNodeResp fittings = childByTitle(building, "建筑装备");
+        assertThat(storage.kind()).isEqualTo("structure_storage_group");
+        assertThat(corporationHangars.kind()).isEqualTo("structure_corporation_hangar_group");
+        assertThat(fittings.kind()).isEqualTo("structure_fitting_group");
+        assertThat(storage.children()).extracting(EveCorporationAssetTreeNodeResp::title).containsExactly("机库");
+        assertThat(corporationHangars.children()).extracting(EveCorporationAssetTreeNodeResp::title)
+            .containsExactly("军团机库 1");
+        assertThat(fittings.children()).extracting(EveCorporationAssetTreeNodeResp::title)
+            .containsExactlyInAnyOrder("建筑燃料仓", "量子核心仓", "服务槽 1", "高能量槽 1", "货仓", "铁骑发射管 1");
+    }
+
+    /** 按标题获取唯一子节点，避免测试依赖中文标题的排序顺序。 */
+    private static EveCorporationAssetTreeNodeResp childByTitle(EveCorporationAssetTreeNodeResp node, String title) {
+        return node.children().stream().filter(child -> title.equals(child.title())).findFirst().orElseThrow();
     }
 
     /** 创建用于层级测试的最小资产快照条目。 */

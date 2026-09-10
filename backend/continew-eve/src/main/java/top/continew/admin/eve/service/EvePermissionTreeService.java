@@ -283,7 +283,10 @@ public class EvePermissionTreeService {
             case "esi-corporations.read_divisions.v1" -> "资产分部与机库名称";
             case "esi-corporations.track_members.v1" -> "成员位置、舰船与上下线追踪";
             case "esi-universe.read_structures.v1" -> "资产所在建筑位置解析";
+            case "esi-mail.read_mail.v1" -> "游戏内邮件读取、正文、标签与邮件组";
             case "esi-mail.send_mail.v1" -> "游戏内邮件发送";
+            case "esi-mail.organize_mail.v1" -> "游戏内邮件已读、标签与删除管理";
+            case "esi-characters.read_notifications.v1" -> "游戏内通知读取";
             default -> scope;
         };
     }

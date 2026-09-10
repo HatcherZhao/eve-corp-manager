@@ -50,7 +50,7 @@ const identityLabels: Record<string, string> = {
 const capabilityLabels: Record<string, string> = {
   assets: '军团资产',
   structures: '军团建筑',
-  extractions: '月矿计划',
+  extractions: '月矿情报',
   mining: '月矿账本',
   members: '成员追踪',
 }
@@ -190,21 +190,74 @@ async function handleCompleteReauthorization(): Promise<boolean> {
       </div>
     </div>
 
+    <aside v-if="modalVisible" class="eve-reauthorization-side-guide" aria-label="网易授权操作指引">
+      <span>授权进行中</span>
+      <strong>完成后带回回调地址</strong>
+      <ol>
+        <li><b>1</b><div>在网易小窗口登录游戏账号</div></li>
+        <li><b>2</b><div>选择角色，点击“授权”</div></li>
+        <li><b>3</b><div>复制地址栏中的完整 URL</div></li>
+        <li><b>4</b><div>关闭小窗口，回到本站粘贴并验证</div></li>
+      </ol>
+      <p>请复制地址栏链接，不要复制网易页面文字。</p>
+    </aside>
+
     <a-modal
       v-model:visible="modalVisible"
       title="完成 EVE 重新授权"
+      :width="820"
       :ok-loading="completing"
       ok-text="验证并刷新"
       @before-ok="handleCompleteReauthorization"
       @cancel="callbackUrl = ''"
     >
-      <p class="eve-authorization-actions__hint">已先退出当前网易 EVE 登录会话。请在弹窗中重新登录、选择角色并完成授权，再粘贴浏览器最终停留的完整地址；验证后输入内容会立即清空。</p>
-      <a-textarea
-        v-model="callbackUrl"
-        :auto-size="{ minRows: 4, maxRows: 7 }"
-        placeholder="https://.../callback?code=...&state=..."
-        allow-clear
-      />
+      <div class="eve-reauthorization-modal">
+        <aside class="eve-reauthorization-modal__guide" aria-label="重新授权操作指引">
+          <div class="eve-reauthorization-modal__guide-heading">
+            <span>操作指引</span>
+            <strong>按顺序完成授权</strong>
+          </div>
+          <ol class="eve-reauthorization-modal__step-list">
+            <li>
+              <span>1</span>
+              <div><strong>登录网易 EVE</strong><p>在刚打开的小窗口中登录需要授权的游戏账号。</p></div>
+            </li>
+            <li>
+              <span>2</span>
+              <div><strong>选择角色并授权</strong><p>确认角色无误后，点击网易页面中的“授权”。</p></div>
+            </li>
+            <li>
+              <span>3</span>
+              <div><strong>复制完整地址</strong><p>授权结束后，复制小窗口浏览器地址栏中的完整 URL。</p></div>
+            </li>
+            <li>
+              <span>4</span>
+              <div><strong>关闭网易小窗口</strong><p>地址已复制即可关闭；无需在网易页面继续操作。</p></div>
+            </li>
+            <li>
+              <span>5</span>
+              <div><strong>粘贴并验证</strong><p>回到本窗口粘贴地址，再点击右下角“验证并刷新”。</p></div>
+            </li>
+          </ol>
+        </aside>
+
+        <section class="eve-reauthorization-modal__callback-panel" aria-label="授权回调地址">
+          <div class="eve-reauthorization-modal__callback-heading">
+            <span>最后一步</span>
+            <strong>粘贴授权回调地址</strong>
+          </div>
+          <p>请粘贴地址栏中的完整链接，而不是网易页面中的文字或提示内容。验证后，链接会立即从页面中清空。</p>
+          <a-textarea
+            v-model="callbackUrl"
+            :auto-size="{ minRows: 7, maxRows: 10 }"
+            placeholder="https://.../oauth2-redirect.html?code=...&state=..."
+            allow-clear
+          />
+          <a-alert type="info" :show-icon="false">
+            如需切换网易账号，请关闭当前小窗口后再次点击“重新授权”；系统会先退出旧的网易 EVE 登录会话。
+          </a-alert>
+        </section>
+      </div>
     </a-modal>
   </div>
 </template>
@@ -235,13 +288,104 @@ async function handleCompleteReauthorization(): Promise<boolean> {
   ul { margin: 4px 0; padding-left: 20px; color: var(--color-text-2); line-height: 1.7; }
   p { margin: 6px 0 0; color: var(--color-text-2); }
 }
-.eve-authorization-actions__hint { margin-top: 0; color: var(--color-text-2); line-height: 1.65; }
+.eve-reauthorization-side-guide {
+  position: fixed;
+  z-index: 1002;
+  top: 50%;
+  left: 18px;
+  box-sizing: border-box;
+  width: min(310px, calc((100vw - 960px) / 2 - 28px));
+  padding: 14px;
+  transform: translateY(-50%);
+  border: 1px solid rgba(var(--primary-6), .35);
+  border-radius: 12px;
+  background: var(--color-bg-2);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .18);
+  pointer-events: none;
+
+  > span { display: block; color: rgb(var(--primary-6)); font-size: 12px; font-weight: 600; letter-spacing: .08em; }
+  > strong { display: block; margin-top: 5px; color: var(--color-text-1); font-size: 15px; line-height: 1.45; }
+  ol { display: grid; gap: 11px; margin: 16px 0; padding: 0; list-style: none; }
+  li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; color: var(--color-text-2); font-size: 12px; line-height: 1.55; }
+  b {
+    display: grid;
+    width: 20px;
+    height: 20px;
+    place-items: center;
+    border-radius: 50%;
+    background: rgb(var(--primary-6));
+    color: var(--color-white);
+    font-size: 11px;
+  }
+  p { margin: 0; padding-top: 12px; border-top: 1px solid var(--color-border-2); color: var(--color-text-3); font-size: 12px; line-height: 1.55; }
+}
+.eve-reauthorization-modal {
+  display: grid;
+  grid-template-columns: minmax(270px, .92fr) minmax(0, 1.28fr);
+  overflow: hidden;
+  border: 1px solid var(--color-border-2);
+  border-radius: 12px;
+  background: var(--color-bg-2);
+}
+.eve-reauthorization-modal__guide {
+  padding: 20px;
+  border-right: 1px solid var(--color-border-2);
+  background: linear-gradient(155deg, rgba(var(--primary-6), .1), transparent 58%), var(--color-fill-1);
+}
+.eve-reauthorization-modal__guide-heading,
+.eve-reauthorization-modal__callback-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  span { color: rgb(var(--primary-6)); font-size: 12px; font-weight: 600; letter-spacing: .08em; }
+  strong { color: var(--color-text-1); font-size: 16px; }
+}
+.eve-reauthorization-modal__step-list {
+  display: grid;
+  gap: 14px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+
+  li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; }
+  li > span {
+    display: grid;
+    width: 24px;
+    height: 24px;
+    place-items: center;
+    border-radius: 50%;
+    background: rgb(var(--primary-6));
+    color: var(--color-white);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  strong { display: block; color: var(--color-text-1); font-size: 13px; }
+  p { margin: 3px 0 0; color: var(--color-text-3); font-size: 12px; line-height: 1.55; }
+}
+.eve-reauthorization-modal__callback-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+
+  > p { margin: 0; color: var(--color-text-2); line-height: 1.65; }
+  .arco-alert { margin-top: auto; line-height: 1.55; }
+}
 
 @media (max-width: 720px) {
   .eve-authorization-actions__result { grid-template-columns: 1fr 1fr; }
+  .eve-reauthorization-modal { grid-template-columns: 1fr; }
+  .eve-reauthorization-modal__guide { border-right: 0; border-bottom: 1px solid var(--color-border-2); }
+  .eve-reauthorization-modal__step-list { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 1359px) {
+  .eve-reauthorization-side-guide { display: none; }
 }
 @media (max-width: 440px) {
   .eve-authorization-actions__buttons > * { flex: 1; }
   .eve-authorization-actions__result { grid-template-columns: 1fr; }
+  .eve-reauthorization-modal__step-list { grid-template-columns: 1fr; }
+  .eve-reauthorization-modal__guide, .eve-reauthorization-modal__callback-panel { padding: 16px; }
 }
 </style>

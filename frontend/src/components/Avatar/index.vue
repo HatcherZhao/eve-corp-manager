@@ -1,6 +1,6 @@
 <template>
-  <a-avatar v-if="src" :size="size">
-    <img :src="src" :alt="alt" />
+  <a-avatar v-if="src && !imageFailed" :size="size">
+    <img :src="src" :alt="alt" @error="imageFailed = true" />
     <template v-if="trigger" #trigger-icon><slot name="trigger-icon"></slot></template>
   </a-avatar>
   <a-avatar
@@ -32,6 +32,7 @@ const props = withDefaults(defineProps<Props>(), {
   alt: 'avatar',
   trigger: false,
 })
+const imageFailed = ref(false)
 
 interface Props {
   src?: string
@@ -42,6 +43,11 @@ interface Props {
   alt?: string
   trigger?: boolean
 }
+
+/** 远程头像加载失败后回退为名称或默认头像；图片地址变化时允许再次加载。 */
+watch(() => props.src, () => {
+  imageFailed.value = false
+})
 
 /**
  * 英文开头：取传入字符串的前面两个字符，例如：Charles => Ch

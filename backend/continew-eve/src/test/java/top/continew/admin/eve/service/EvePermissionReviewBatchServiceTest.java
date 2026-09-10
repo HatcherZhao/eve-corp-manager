@@ -17,6 +17,7 @@
 package top.continew.admin.eve.service;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.MockedStatic;
 import top.continew.admin.eve.config.SerenityProperties;
 import top.continew.admin.eve.mapper.EveAuthorizationMapper;
@@ -27,6 +28,7 @@ import top.continew.starter.extension.tenant.util.TenantUtils;
 
 import java.util.List;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -57,7 +59,7 @@ class EvePermissionReviewBatchServiceTest {
         EveAuthorizationDO first = authorization(1L, 10L, 20L);
         EveAuthorizationDO second = authorization(2L, 10L, 20L);
         EveAuthorizationDO third = authorization(3L, 10L, 21L);
-        when(mapper.selectStaleActive(any(), any(), anyInt())).thenReturn(List.of(first, second, third));
+        when(mapper.selectStaleActive(any(), any(), any(), anyInt())).thenReturn(List.of(first, second, third));
         when(mapper.claimReview(anyLong(), anyLong(), anyLong(), any(), any())).thenReturn(1);
         EvePermissionReviewBatchService service = new EvePermissionReviewBatchService(mapper, refreshService, properties);
 
@@ -82,7 +84,7 @@ class EvePermissionReviewBatchServiceTest {
         properties.getSso().setEnabled(true);
         EveAuthorizationDO first = authorization(1L, 10L, 20L);
         EveAuthorizationDO second = authorization(2L, 10L, 21L);
-        when(mapper.selectStaleActive(any(), any(), anyInt())).thenReturn(List.of(first, second));
+        when(mapper.selectStaleActive(any(), any(), any(), anyInt())).thenReturn(List.of(first, second));
         when(mapper.claimReview(anyLong(), anyLong(), anyLong(), any(), any())).thenReturn(1);
         doThrow(new IllegalStateException("upstream unavailable")).when(refreshService).reviewAuthorization(first);
         EvePermissionReviewBatchService service = new EvePermissionReviewBatchService(mapper, refreshService, properties);
@@ -112,8 +114,8 @@ class EvePermissionReviewBatchServiceTest {
         EveAuthorizationDO firstFailed = authorization(1L, 10L, 20L);
         EveAuthorizationDO secondFailed = authorization(2L, 10L, 21L);
         EveAuthorizationDO later = authorization(3L, 10L, 22L);
-        when(mapper.selectStaleActive(any(), any(), anyInt())).thenReturn(List.of(firstFailed, secondFailed), List
-            .of(later));
+        when(mapper.selectStaleActive(any(), any(), any(), anyInt())).thenReturn(List
+            .of(firstFailed, secondFailed), List.of(later));
         when(mapper.claimReview(anyLong(), anyLong(), anyLong(), any(), any())).thenReturn(1);
         EvePermissionRefreshResp unavailable = new EvePermissionRefreshResp(EvePermissionRefreshStatus.UPSTREAM_UNAVAILABLE, LocalDateTime
             .now(), null, null, false, null, null, List.of(), null, List.of(), List.of(), null, List.of());
@@ -131,9 +133,28 @@ class EvePermissionReviewBatchServiceTest {
             assertThat(service.reviewBatch()).isEqualTo(1);
         }
 
-        verify(mapper, times(2)).selectStaleActive(any(), any(), anyInt());
+        verify(mapper, times(2)).selectStaleActive(any(), any(), any(), anyInt());
         verify(mapper, times(3)).claimReview(anyLong(), anyLong(), anyLong(), any(), any());
         verify(refreshService).reviewAuthorization(later);
+    }
+
+    /** 即将到期的访问令牌必须在角色事实尚未过期时提前进入后台轮换队列。 */
+    @Test
+    void shouldSelectTokensBeforeTheyExpire() {
+        EveAuthorizationMapper mapper = mock(EveAuthorizationMapper.class);
+        EvePermissionRefreshService refreshService = mock(EvePermissionRefreshService.class);
+        SerenityProperties properties = new SerenityProperties();
+        properties.getSso().setEnabled(true);
+        when(mapper.selectStaleActive(any(), any(), any(), anyInt())).thenReturn(List.of());
+        EvePermissionReviewBatchService service = new EvePermissionReviewBatchService(mapper, refreshService, properties);
+        LocalDateTime beforeRun = LocalDateTime.now(ZoneOffset.UTC);
+
+        assertThat(service.reviewBatch()).isZero();
+
+        ArgumentCaptor<LocalDateTime> tokenRefreshBefore = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(mapper).selectStaleActive(any(), tokenRefreshBefore.capture(), any(), anyInt());
+        assertThat(tokenRefreshBefore.getValue()).isAfterOrEqualTo(beforeRun.plusMinutes(3));
+        assertThat(tokenRefreshBefore.getValue()).isBeforeOrEqualTo(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(3));
     }
 
     /** 创建跨租户扫描返回的授权摘要。 */

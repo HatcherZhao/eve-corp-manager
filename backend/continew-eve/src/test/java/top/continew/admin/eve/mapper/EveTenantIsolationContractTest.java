@@ -64,9 +64,9 @@ class EveTenantIsolationContractTest {
         assertSqlContains(corporationLookup, "server = #{server}", "corporation_id = #{corporationId}");
 
         Method staleAuthorization = EveAuthorizationMapper.class
-            .getMethod("selectStaleActive", LocalDateTime.class, LocalDateTime.class, int.class);
+            .getMethod("selectStaleActive", LocalDateTime.class, LocalDateTime.class, LocalDateTime.class, int.class);
         assertTenantIgnored(staleAuthorization);
-        assertSqlContains(staleAuthorization, "status = 'ACTIVE'", "deleted = 0", "LIMIT #{limit}");
+        assertSqlContains(staleAuthorization, "status = 'ACTIVE'", "deleted = 0", "expires_at IS NOT NULL", "LIMIT #{limit}");
     }
 
     /** 校验方法显式声明跳过租户行拦截。 */

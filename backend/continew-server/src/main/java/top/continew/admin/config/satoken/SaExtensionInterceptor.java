@@ -26,6 +26,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.lang.Nullable;
 import top.continew.admin.common.context.UserContext;
 import top.continew.admin.common.context.UserContextHolder;
+import top.continew.admin.system.service.EveSessionPermissionRefreshService;
 import top.continew.starter.core.util.ServletUtils;
 import top.continew.starter.extension.tenant.context.TenantContextHolder;
 import top.continew.starter.json.jackson.util.JSONUtils;
@@ -42,8 +43,24 @@ import java.util.Objects;
 @Slf4j
 public class SaExtensionInterceptor extends SaInterceptor {
 
+    private static final String EVE_PATH_PREFIX = "/eve/";
+
+    private final EveSessionPermissionRefreshService eveSessionPermissionRefreshService;
+
     public SaExtensionInterceptor(SaParamFunction<Object> auth) {
+        this(auth, null);
+    }
+
+    /**
+     * 创建认证拦截器，并在 EVE 请求进入注解鉴权前刷新在线用户的本站权限。
+     *
+     * @param auth                               Sa-Token 路由认证规则
+     * @param eveSessionPermissionRefreshService EVE 会话权限刷新服务
+     */
+    public SaExtensionInterceptor(SaParamFunction<Object> auth,
+                                  EveSessionPermissionRefreshService eveSessionPermissionRefreshService) {
         super(auth);
+        this.eveSessionPermissionRefreshService = eveSessionPermissionRefreshService;
     }
 
     @Override
@@ -53,6 +70,7 @@ public class SaExtensionInterceptor extends SaInterceptor {
         if (isLogin() && getUserContext() == null) {
             return rejectMissingUserContext(response);
         }
+        refreshEveSessionPermissions(request);
         boolean flag = super.preHandle(request, response, handler);
         if (!flag || !isLogin()) {
             return flag;
@@ -85,6 +103,19 @@ public class SaExtensionInterceptor extends SaInterceptor {
     /** 获取当前登录用户上下文。 */
     UserContext getUserContext() {
         return UserContextHolder.getContext();
+    }
+
+    /** 在 EVE 权限注解校验前更新会话，确保角色菜单迁移或总监调权立即对在线用户生效。 */
+    void refreshEveSessionPermissions(HttpServletRequest request) {
+        if (eveSessionPermissionRefreshService != null && isLogin() && isEveRequest(request)) {
+            eveSessionPermissionRefreshService.refreshCurrentEveUser();
+        }
+    }
+
+    /** 判断当前请求是否属于需要同步本站军团权限的 EVE 接口。 */
+    static boolean isEveRequest(HttpServletRequest request) {
+        return request != null && request.getRequestURI() != null && request.getRequestURI()
+            .startsWith(EVE_PATH_PREFIX);
     }
 
     /** 注销当前异常登录会话。 */

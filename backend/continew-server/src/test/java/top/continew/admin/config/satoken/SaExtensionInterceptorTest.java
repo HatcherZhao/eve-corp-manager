@@ -48,6 +48,16 @@ class SaExtensionInterceptorTest {
         assertThat(SaExtensionInterceptor.hasTenantAccess(10L, 10L)).isTrue();
     }
 
+    /** 仅 EVE 接口在注解鉴权前刷新军团角色权限，避免普通接口增加无意义查询。 */
+    @Test
+    void shouldIdentifyEveRequestForSessionPermissionRefresh() {
+        MockHttpServletRequest eveRequest = new MockHttpServletRequest("GET", "/eve/mining");
+        MockHttpServletRequest ordinaryRequest = new MockHttpServletRequest("GET", "/auth/user/info");
+
+        assertThat(SaExtensionInterceptor.isEveRequest(eveRequest)).isTrue();
+        assertThat(SaExtensionInterceptor.isEveRequest(ordinaryRequest)).isFalse();
+    }
+
     /** 已登录但用户上下文丢失时必须注销会话并返回未授权，不能继续进入控制器。 */
     @Test
     void shouldLogoutAndRejectAuthenticatedSessionWithoutUserContext() throws Exception {

@@ -98,6 +98,7 @@ public class EveCorporationMemberService {
     private final EveMemberSyncRunMapper syncRunMapper;
     private final EveMemberOperationAuditService operationAuditService;
     private final EveStaticNameReference staticNameReference;
+    private final EveDataFreshnessService dataFreshnessService;
 
     /** 查询当前租户成员名册；追踪字段仅在当前会话具备独立权限时加载。 */
     public PageResp<EveMemberResp> page(int page, int size, String keyword, String status) {
@@ -235,10 +236,70 @@ public class EveCorporationMemberService {
                 throw new BusinessException("成员数据正在同步，请稍后重试");
             }
             unlockDeferred = EveAuthorizationLifecycleService.deferUnlockUntilTransactionCompletion(lock);
-            return synchronizeCurrentCorporation(tenantId, corporation);
+            EveMemberSyncResp response = synchronizeCurrentCorporation(tenantId, corporation);
+            dataFreshnessService.recordSuccess(tenantId, corporation
+                .getId(), EveDataFreshnessService.MEMBER_ROSTER, response.synchronizedAt(), response
+                    .rosterSourceExpiresAt());
+            if (response.trackingSynchronized()) {
+                dataFreshnessService.recordSuccess(tenantId, corporation
+                    .getId(), EveDataFreshnessService.MEMBER_TRACKING, response.synchronizedAt(), response
+                        .trackingSourceExpiresAt());
+            } else {
+                dataFreshnessService.recordFailure(tenantId, corporation
+                    .getId(), EveDataFreshnessService.MEMBER_TRACKING, "TRACKING_UNAVAILABLE");
+            }
+            return response;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new BusinessException("成员数据正在同步，请稍后重试");
+        } catch (RuntimeException e) {
+            if (locked) {
+                dataFreshnessService.recordFailure(tenantId, corporation
+                    .getId(), EveDataFreshnessService.MEMBER_ROSTER, e);
+            }
+            throw e;
+        } finally {
+            if (locked && !unlockDeferred && lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+
+    /** 由后台调度器同步指定军团的成员名册和追踪快照。 */
+    @Transactional(rollbackFor = Exception.class)
+    public EveMemberSyncResp syncForCorporation(Long tenantId, Long corporationRefId) {
+        EveCorporationDO corporation = requireSyncCorporation(tenantId, corporationRefId);
+        RLock lock = redissonClient.getLock("eve:serenity:member-sync:" + tenantId + ":" + corporationRefId);
+        boolean locked = false;
+        boolean unlockDeferred = false;
+        try {
+            locked = lock.tryLock(1, TimeUnit.SECONDS);
+            if (!locked) {
+                throw new BusinessException("成员数据正在同步，请稍后重试");
+            }
+            unlockDeferred = EveAuthorizationLifecycleService.deferUnlockUntilTransactionCompletion(lock);
+            EveMemberSyncResp response = synchronizeCurrentCorporation(tenantId, corporation);
+            dataFreshnessService
+                .recordSuccess(tenantId, corporationRefId, EveDataFreshnessService.MEMBER_ROSTER, response
+                    .synchronizedAt(), response.rosterSourceExpiresAt());
+            if (response.trackingSynchronized()) {
+                dataFreshnessService
+                    .recordSuccess(tenantId, corporationRefId, EveDataFreshnessService.MEMBER_TRACKING, response
+                        .synchronizedAt(), response.trackingSourceExpiresAt());
+            } else {
+                dataFreshnessService
+                    .recordFailure(tenantId, corporationRefId, EveDataFreshnessService.MEMBER_TRACKING, "TRACKING_UNAVAILABLE");
+            }
+            return response;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException("成员数据正在同步，请稍后重试");
+        } catch (RuntimeException e) {
+            if (locked) {
+                dataFreshnessService
+                    .recordFailure(tenantId, corporationRefId, EveDataFreshnessService.MEMBER_ROSTER, e);
+            }
+            throw e;
         } finally {
             if (locked && !unlockDeferred && lock.isHeldByCurrentThread()) {
                 lock.unlock();
@@ -513,6 +574,15 @@ public class EveCorporationMemberService {
             .corporationId());
         if (corporation == null || !Objects.equals(tenantId, corporation.getTenantId())) {
             throw new BusinessException("当前军团租户数据不可用");
+        }
+        return corporation;
+    }
+
+    /** 验证持久化任务中的军团目标仍属于有效租户。 */
+    private EveCorporationDO requireSyncCorporation(Long tenantId, Long corporationRefId) {
+        EveCorporationDO corporation = corporationMapper.selectActiveByTenantAndRefId(tenantId, corporationRefId);
+        if (corporation == null) {
+            throw new BusinessException("自动同步目标军团已不可用");
         }
         return corporation;
     }

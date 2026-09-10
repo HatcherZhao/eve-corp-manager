@@ -23,6 +23,8 @@ import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import top.continew.admin.eve.model.entity.EveCorporationDO;
 import top.continew.starter.data.mapper.BaseMapper;
 
+import java.util.List;
+
 /**
  * EVE 军团租户绑定 Mapper。
  *
@@ -40,4 +42,15 @@ public interface EveCorporationMapper extends BaseMapper<EveCorporationDO> {
     @Select("SELECT * FROM eve_corporation WHERE tenant_id = #{tenantId} AND corporation_id = #{corporationId} " + "AND deleted = 0 LIMIT 1")
     EveCorporationDO selectByTenantAndCorporationId(@Param("tenantId") Long tenantId,
                                                     @Param("corporationId") Long corporationId);
+
+    /** 按租户和本站军团绑定主键读取自动任务的目标，避免后台任务依赖浏览器会话。 */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT * FROM eve_corporation WHERE tenant_id = #{tenantId} AND id = #{corporationRefId} " + "AND status = 'ACTIVE' AND deleted = 0 LIMIT 1")
+    EveCorporationDO selectActiveByTenantAndRefId(@Param("tenantId") Long tenantId,
+                                                  @Param("corporationRefId") Long corporationRefId);
+
+    /** 跨租户找出可自动同步的有效军团；实际授权资格由任务执行时再次校验。 */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT * FROM eve_corporation WHERE status = 'ACTIVE' AND deleted = 0 ORDER BY id ASC")
+    List<EveCorporationDO> selectAllActiveForAutoSync();
 }

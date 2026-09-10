@@ -123,16 +123,18 @@ public class EveAuthorizationTokenService {
             throw new IllegalStateException("当前用户无权更新该 EVE 授权");
         }
         int failureCount = current.getFailureCount() == null ? 1 : current.getFailureCount() + 1;
-        boolean permanent = isPermanent(failureCode);
+        boolean revokedRefreshToken = isRevokedRefreshToken(failureCode);
         com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<EveAuthorizationDO> wrapper = Wrappers
             .<EveAuthorizationDO>update()
             .set("failure_count", failureCount)
             .set("failure_code", failureCode.name())
-            .set("last_verification_status", permanent
+            .set("last_verification_status", revokedRefreshToken
                 ? EveAuthorizationVerificationStatus.INVALID
                 : EveAuthorizationVerificationStatus.FAILED)
-            .set("status", permanent ? EveAuthorizationStatus.REAUTH_REQUIRED : EveAuthorizationStatus.ACTIVE);
-        if (permanent) {
+            .set("status", revokedRefreshToken
+                ? EveAuthorizationStatus.REAUTH_REQUIRED
+                : EveAuthorizationStatus.ACTIVE);
+        if (revokedRefreshToken) {
             wrapper.set("access_token", null)
                 .set("refresh_token", null)
                 .set("last_verified_at", LocalDateTime.now(clock));
@@ -194,9 +196,14 @@ public class EveAuthorizationTokenService {
         }
     }
 
-    /** 判断失败是否要求用户重新授权。 */
-    private static boolean isPermanent(OAuthFailureCode failureCode) {
-        return failureCode == OAuthFailureCode.INVALID_GRANT || failureCode == OAuthFailureCode.UNAUTHORIZED || failureCode == OAuthFailureCode.FORBIDDEN || failureCode == OAuthFailureCode.PERMANENT;
+    /**
+     * 仅在 OAuth Token 端点明确拒绝刷新令牌时清空凭证。
+     *
+     * <p>ESI 的 401 / 403、网络错误及未知客户端错误都不能证明刷新令牌已失效；保留凭证才能由后续
+     * 自动轮换恢复，避免将模块权限不足或上游波动误判为用户撤销授权。</p>
+     */
+    private static boolean isRevokedRefreshToken(OAuthFailureCode failureCode) {
+        return failureCode == OAuthFailureCode.INVALID_GRANT;
     }
 
     /** 将空格分隔 Scope 转换为不可变列表。 */

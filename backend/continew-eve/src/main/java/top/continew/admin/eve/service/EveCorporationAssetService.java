@@ -21,6 +21,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
+import org.redisson.api.RMap;
 import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,6 +47,8 @@ import top.continew.admin.eve.model.enums.EveAuthorizationStatus;
 import top.continew.admin.eve.model.serenity.SerenityCorporationAssetNameResponse;
 import top.continew.admin.eve.model.serenity.SerenityCorporationAssetResponse;
 import top.continew.admin.eve.model.serenity.SerenityCorporationStructureResponse;
+import top.continew.admin.eve.model.serenity.SerenityCorporationDivisionResponse;
+import top.continew.admin.eve.model.serenity.SerenityEsiResponse;
 import top.continew.admin.eve.model.serenity.SerenityEsiPagedResponse;
 import top.continew.admin.eve.model.serenity.SerenityUniverseStationResponse;
 import top.continew.admin.eve.model.serenity.SerenityUniverseStructureResponse;
@@ -54,6 +57,7 @@ import top.continew.starter.extension.crud.model.resp.PageResp;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -83,8 +87,10 @@ public class EveCorporationAssetService {
 
     static final String ASSET_SCOPE = "esi-assets.read_corporation_assets.v1";
     private static final String CORPORATION_STRUCTURE_SCOPE = "esi-corporations.read_structures.v1";
+    private static final String CORPORATION_DIVISIONS_SCOPE = "esi-corporations.read_divisions.v1";
     private static final String STRUCTURE_SCOPE = "esi-universe.read_structures.v1";
     private static final int MAX_UPSTREAM_PAGES = 1000;
+    private static final Duration HANGAR_NAME_CACHE_TTL = Duration.ofHours(1);
     private static final Pattern NPC_STATION_NAME_PATTERN = Pattern
         .compile("^.+?\\s+([0-9]+|[IVXLCDM]+)\\s+-\\s+Moon\\s+([0-9]+)\\s+-\\s+(.+)$", Pattern.CASE_INSENSITIVE);
     private static final Pattern INDEXED_STORAGE_NAME_PATTERN = Pattern
@@ -100,34 +106,26 @@ public class EveCorporationAssetService {
     private final RedissonClient redissonClient;
     private final EveStaticNameReference staticNameReference;
     private final EveStaticReferenceService staticReferenceService;
+    private final EveDataFreshnessService dataFreshnessService;
 
     /** 分页查询当前军团最近完整快照中仍存在的资产。 */
     public PageResp<EveCorporationAssetResp> page(int page, int size, String keyword, String locationType) {
         UserContext context = UserContextHolder.getContext();
         EveCorporationDO corporation = requireCurrentCorporation(context.getTenantId());
-        LambdaQueryWrapper<EveCorporationAssetDO> query = new LambdaQueryWrapper<EveCorporationAssetDO>()
-            .eq(EveCorporationAssetDO::getCorporationRefId, corporation.getId())
-            .eq(EveCorporationAssetDO::getStatus, "ACTIVE")
-            .eq(EveCorporationAssetDO::getDeleted, 0L)
-            .orderByAsc(EveCorporationAssetDO::getLocationName, EveCorporationAssetDO::getLocationId)
-            .orderByAsc(EveCorporationAssetDO::getTypeName, EveCorporationAssetDO::getTypeId)
-            .orderByAsc(EveCorporationAssetDO::getItemId);
-        if (keyword != null && !keyword.isBlank()) {
-            String value = keyword.trim();
-            query.and(item -> item.like(EveCorporationAssetDO::getTypeName, value)
-                .or()
-                .like(EveCorporationAssetDO::getItemName, value)
-                .or()
-                .like(EveCorporationAssetDO::getLocationName, value)
-                .or()
-                .like(EveCorporationAssetDO::getItemId, value));
-        }
-        if (locationType != null && !locationType.isBlank()) {
-            query.eq(EveCorporationAssetDO::getLocationType, locationType.trim());
-        }
+        LambdaQueryWrapper<EveCorporationAssetDO> query = buildAssetQuery(corporation.getId(), keyword, locationType);
         Page<EveCorporationAssetDO> result = assetMapper.selectPage(new Page<>(page, size), query);
         return new PageResp<>(result.getRecords().stream().map(EveCorporationAssetService::toResp).toList(), result
             .getTotal());
+    }
+
+    /** 导出当前军团筛选后的全部有效资产，查询口径与分页列表保持一致。 */
+    public List<EveCorporationAssetResp> listForExport(String keyword, String locationType) {
+        UserContext context = UserContextHolder.getContext();
+        EveCorporationDO corporation = requireCurrentCorporation(context.getTenantId());
+        return assetMapper.selectList(buildAssetQuery(corporation.getId(), keyword, locationType))
+            .stream()
+            .map(EveCorporationAssetService::toResp)
+            .toList();
     }
 
     /**
@@ -147,7 +145,47 @@ public class EveCorporationAssetService {
             .map(EveCorporationAssetDO::getTypeId)
             .filter(Objects::nonNull)
             .collect(Collectors.toSet()));
-        return new EveCorporationAssetTreeResp(buildTree(assets, typeReferences), assets.size());
+        Map<Integer, String> hangarNames = resolveCorporationHangarNames(context.getTenantId(), corporation);
+        return new EveCorporationAssetTreeResp(buildTree(assets, typeReferences, hangarNames), assets.size());
+    }
+
+    /**
+     * 读取军团在游戏内设置的机库分区名称，并以国服缓存周期保存在 Redis。
+     *
+     * <p>{@code CorpSAG1-7} 是资产接口使用的固定标识而非玩家可见名称；名称接口不可用时保留
+     * 编号兜底，保证资产树不会因辅助资料读取失败而不可用。</p>
+     */
+    private Map<Integer, String> resolveCorporationHangarNames(Long tenantId, EveCorporationDO corporation) {
+        RMap<Integer, String> cache = redissonClient
+            .getMap("eve:serenity:corporation-hangars:" + tenantId + ":" + corporation.getId());
+        if (!cache.isEmpty()) {
+            return Map.copyOf(cache);
+        }
+        EveAuthorizationDO source = selectAssetSource(tenantId);
+        if (source == null || source.getScopes() == null || !source.getScopes().contains(CORPORATION_DIVISIONS_SCOPE)) {
+            return Map.of();
+        }
+        try {
+            String accessToken = authorizationLifecycleService.ensureAccessToken(source);
+            SerenityEsiResponse<SerenityCorporationDivisionResponse> response = esiClient
+                .getCorporationDivisionsWithMetadata(corporation.getCorporationId(), accessToken);
+            List<SerenityCorporationDivisionResponse.Division> divisions = response.body().hangar() == null
+                ? List.of()
+                : response.body().hangar();
+            Map<Integer, String> names = divisions.stream()
+                .filter(item -> item != null && item.division() != null && item.division() >= 1 && item.division() <= 7)
+                .filter(item -> item.name() != null && !item.name().isBlank())
+                .collect(Collectors.toMap(SerenityCorporationDivisionResponse.Division::division, item -> item.name()
+                    .trim(), (left, right) -> right, LinkedHashMap::new));
+            if (!names.isEmpty()) {
+                cache.putAll(names);
+                cache.expire(HANGAR_NAME_CACHE_TTL);
+            }
+            return names;
+        } catch (RuntimeException e) {
+            log.warn("EVE 军团机库分区名称读取失败，corporationId={}", corporation.getCorporationId(), e);
+            return Map.of();
+        }
     }
 
     /** 手动同步当前军团资产，并在同步完成后发布新的当前快照。 */
@@ -165,10 +203,54 @@ public class EveCorporationAssetService {
                 throw new BusinessException("资产数据正在同步，请稍后重试");
             }
             unlockDeferred = EveAuthorizationLifecycleService.deferUnlockUntilTransactionCompletion(lock);
-            return synchronizeCurrentCorporation(tenantId, corporation);
+            EveAssetSyncResp response = synchronizeCurrentCorporation(tenantId, corporation);
+            dataFreshnessService.recordSuccess(tenantId, corporation.getId(), EveDataFreshnessService.ASSETS, response
+                .synchronizedAt(), response.sourceExpiresAt());
+            return response;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new BusinessException("资产数据正在同步，请稍后重试");
+        } catch (RuntimeException e) {
+            if (locked) {
+                dataFreshnessService.recordFailure(tenantId, corporation.getId(), EveDataFreshnessService.ASSETS, e);
+            }
+            throw e;
+        } finally {
+            if (locked && !unlockDeferred && lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+
+    /**
+     * 由后台调度器同步指定军团资产。
+     *
+     * <p>任务目标由服务端持久化记录提供，不能也不需要伪造登录用户会话。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public EveAssetSyncResp syncForCorporation(Long tenantId, Long corporationRefId) {
+        EveCorporationDO corporation = requireSyncCorporation(tenantId, corporationRefId);
+        RLock lock = redissonClient.getLock("eve:serenity:asset-sync:" + tenantId + ":" + corporationRefId);
+        boolean locked = false;
+        boolean unlockDeferred = false;
+        try {
+            locked = lock.tryLock(1, TimeUnit.SECONDS);
+            if (!locked) {
+                throw new BusinessException("资产数据正在同步，请稍后重试");
+            }
+            unlockDeferred = EveAuthorizationLifecycleService.deferUnlockUntilTransactionCompletion(lock);
+            EveAssetSyncResp response = synchronizeCurrentCorporation(tenantId, corporation);
+            dataFreshnessService.recordSuccess(tenantId, corporationRefId, EveDataFreshnessService.ASSETS, response
+                .synchronizedAt(), response.sourceExpiresAt());
+            return response;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException("资产数据正在同步，请稍后重试");
+        } catch (RuntimeException e) {
+            if (locked) {
+                dataFreshnessService.recordFailure(tenantId, corporationRefId, EveDataFreshnessService.ASSETS, e);
+            }
+            throw e;
         } finally {
             if (locked && !unlockDeferred && lock.isHeldByCurrentThread()) {
                 lock.unlock();
@@ -476,9 +558,45 @@ public class EveCorporationAssetService {
         return corporation;
     }
 
+    /** 验证持久化任务中的军团目标仍属于有效租户。 */
+    private EveCorporationDO requireSyncCorporation(Long tenantId, Long corporationRefId) {
+        EveCorporationDO corporation = corporationMapper.selectActiveByTenantAndRefId(tenantId, corporationRefId);
+        if (corporation == null) {
+            throw new BusinessException("自动同步目标军团已不可用");
+        }
+        return corporation;
+    }
+
     /** 公开批量名称接口仅接受 32 位有效宇宙 ID。 */
     private boolean isPublicUniverseId(Long id) {
         return id != null && id > 0 && id <= Integer.MAX_VALUE;
+    }
+
+    /** 构造资产列表与导出共用的租户内查询，确保筛选和排序语义始终一致。 */
+    private LambdaQueryWrapper<EveCorporationAssetDO> buildAssetQuery(Long corporationRefId,
+                                                                      String keyword,
+                                                                      String locationType) {
+        LambdaQueryWrapper<EveCorporationAssetDO> query = new LambdaQueryWrapper<EveCorporationAssetDO>()
+            .eq(EveCorporationAssetDO::getCorporationRefId, corporationRefId)
+            .eq(EveCorporationAssetDO::getStatus, "ACTIVE")
+            .eq(EveCorporationAssetDO::getDeleted, 0L)
+            .orderByAsc(EveCorporationAssetDO::getLocationName, EveCorporationAssetDO::getLocationId)
+            .orderByAsc(EveCorporationAssetDO::getTypeName, EveCorporationAssetDO::getTypeId)
+            .orderByAsc(EveCorporationAssetDO::getItemId);
+        if (keyword != null && !keyword.isBlank()) {
+            String value = keyword.trim();
+            query.and(item -> item.like(EveCorporationAssetDO::getTypeName, value)
+                .or()
+                .like(EveCorporationAssetDO::getItemName, value)
+                .or()
+                .like(EveCorporationAssetDO::getLocationName, value)
+                .or()
+                .like(EveCorporationAssetDO::getItemId, value));
+        }
+        if (locationType != null && !locationType.isBlank()) {
+            query.eq(EveCorporationAssetDO::getLocationType, locationType.trim());
+        }
+        return query;
     }
 
     /** 转换资产快照响应，绝不返回服务端数据源或授权信息。 */
@@ -497,6 +615,13 @@ public class EveCorporationAssetService {
     /** 根据静态类型分类构建树，舰船识别不依赖中文名称或当前资产快照。 */
     static List<EveCorporationAssetTreeNodeResp> buildTree(List<EveCorporationAssetDO> assets,
                                                            Map<Integer, EveStaticTypeReferenceDO> typeReferences) {
+        return buildTree(assets, typeReferences, Map.of());
+    }
+
+    /** 根据静态类型与军团自定义机库名称构建资产树。 */
+    static List<EveCorporationAssetTreeNodeResp> buildTree(List<EveCorporationAssetDO> assets,
+                                                           Map<Integer, EveStaticTypeReferenceDO> typeReferences,
+                                                           Map<Integer, String> hangarNames) {
         Map<Long, EveCorporationAssetDO> assetsByItemId = assets.stream()
             .filter(asset -> asset.getItemId() != null)
             .collect(Collectors.toMap(EveCorporationAssetDO::getItemId, item -> item, (left, right) -> left));
@@ -507,6 +632,7 @@ public class EveCorporationAssetService {
                 parentByItemId.put(asset.getItemId(), asset.getLocationId());
             }
         }
+        linkStationHangarAssetsToOffice(assetsByItemId.values(), parentByItemId);
         Set<Long> cyclicItems = parentByItemId.keySet()
             .stream()
             .filter(itemId -> hasParentCycle(itemId, parentByItemId))
@@ -518,9 +644,9 @@ public class EveCorporationAssetService {
             .forEach(asset -> assetNodes.put(asset.getItemId(), MutableTreeNode.asset(asset, typeReferences.get(asset
                 .getTypeId()))));
         parentByItemId.forEach((itemId, parentId) -> assetNodes.get(parentId).children.add(assetNodes.get(itemId)));
-        groupCorporationStructureChildren(assetNodes.values());
-        groupCorporationOfficeChildren(assetNodes.values());
-        groupAssetSafetyPackageChildren(assetNodes.values());
+        groupCorporationStructureChildren(assetNodes.values(), hangarNames);
+        groupCorporationOfficeChildren(assetNodes.values(), hangarNames);
+        groupAssetSafetyPackageChildren(assetNodes.values(), hangarNames);
         groupShipChildren(assetNodes.values());
 
         Map<String, MutableTreeNode> systems = new LinkedHashMap<>();
@@ -557,7 +683,7 @@ public class EveCorporationAssetService {
                 .findFirst()
                 .orElseGet(() -> {
                     MutableTreeNode created = MutableTreeNode.virtual(warehouseKey, localizeWarehouseName(asset
-                        .getLocationFlag()), "warehouse");
+                        .getLocationFlag(), hangarNames), "warehouse");
                     location.children.add(created);
                     return created;
                 });
@@ -572,35 +698,92 @@ public class EveCorporationAssetService {
     }
 
     /**
-     * 将军团自有建筑内的直属资产按游戏建筑分区分组。
+     * 补足空间站办公室在资产接口中的隐式归属关系。
+     *
+     * <p>国服会把空间站内军团机库资产的 {@code location_type} 直接返回为 {@code station}，
+     * 而非办公室物品 ID。若仅按 {@code item} 父子关系构树，同一批机库会同时出现在办公室和
+     * 空间站顶层。这里仅将同一空间站、尚无物品父级的军团机库挂到该军团办公室，避免重复，
+     * 不影响玩家建筑或已有容器层级。</p>
+     */
+    private static void linkStationHangarAssetsToOffice(Iterable<EveCorporationAssetDO> assets,
+                                                        Map<Long, Long> parentByItemId) {
+        Map<Long, Long> officeByStationId = new HashMap<>();
+        for (EveCorporationAssetDO asset : assets) {
+            if (Objects.equals(asset.getTypeId(), MutableTreeNode.CORPORATION_OFFICE_TYPE_ID) && "station".equals(asset
+                .getLocationType()) && asset.getLocationId() != null) {
+                officeByStationId.putIfAbsent(asset.getLocationId(), asset.getItemId());
+            }
+        }
+        for (EveCorporationAssetDO asset : assets) {
+            if (parentByItemId.containsKey(asset.getItemId()) || !"station".equals(asset
+                .getLocationType()) || !isCorporationHangarLocation(asset.getLocationFlag())) {
+                continue;
+            }
+            Long officeItemId = officeByStationId.get(asset.getLocationId());
+            if (officeItemId != null && !Objects.equals(officeItemId, asset.getItemId())) {
+                parentByItemId.put(asset.getItemId(), officeItemId);
+            }
+        }
+    }
+
+    /**
+     * 将军团自有建筑内的直属资产拆分为仓库、军团机库和建筑装备。
      *
      * <p>建筑自身的 {@code AutoFit} 表示它部署在太空中，不能被展示为建筑内部仓位；真正的仓位
-     * 以子资产的 {@code location_flag} 为准。</p>
+     * 以子资产的 {@code location_flag} 为准。燃料、量子核心、服务槽和改装件槽均属于建筑装备，
+     * 不能伪装成普通仓库。</p>
      */
-    private static void groupCorporationStructureChildren(Iterable<MutableTreeNode> assetNodes) {
+    private static void groupCorporationStructureChildren(Iterable<MutableTreeNode> assetNodes,
+                                                          Map<Integer, String> hangarNames) {
         for (MutableTreeNode structure : assetNodes) {
             if (!Boolean.TRUE.equals(structure.asset.getCorporationStructure()) || structure.children.isEmpty()) {
                 continue;
             }
             List<MutableTreeNode> directChildren = new ArrayList<>(structure.children);
             structure.children.clear();
-            MutableTreeNode compartmentGroup = MutableTreeNode
-                .virtual(structure.key + ":compartments", "建筑分区", "structure_compartment_group");
-            Map<String, MutableTreeNode> compartments = new LinkedHashMap<>();
+            Map<String, MutableTreeNode> storageCompartments = new LinkedHashMap<>();
+            Map<String, MutableTreeNode> corporationHangars = new LinkedHashMap<>();
+            Map<String, MutableTreeNode> fittingCompartments = new LinkedHashMap<>();
             for (MutableTreeNode child : directChildren) {
                 String locationFlag = nonBlankOr(child.asset.getLocationFlag(), "unclassified");
-                MutableTreeNode compartment = compartments.computeIfAbsent(locationFlag, ignored -> MutableTreeNode
-                    .virtual(structure.key + ":compartment:" + locationFlag, localizeWarehouseName(child.asset
-                        .getLocationFlag()), "structure_compartment"));
+                Map<String, MutableTreeNode> target = isCorporationHangarLocation(locationFlag)
+                    ? corporationHangars
+                    : isStructureFittingLocation(locationFlag) ? fittingCompartments : storageCompartments;
+                String groupKey = target == corporationHangars
+                    ? "corporation-hangar"
+                    : target == fittingCompartments ? "fitting" : "storage";
+                String compartmentKind = target == fittingCompartments
+                    ? "structure_fitting_slot"
+                    : target == corporationHangars ? "corporation_hangar" : "structure_storage";
+                MutableTreeNode compartment = target.computeIfAbsent(locationFlag, ignored -> MutableTreeNode
+                    .virtual(structure.key + ":" + groupKey + ":" + locationFlag, localizeWarehouseName(child.asset
+                        .getLocationFlag(), hangarNames), compartmentKind));
                 compartment.children.add(child);
             }
-            compartmentGroup.children.addAll(compartments.values());
-            structure.children.add(compartmentGroup);
+            addEmptyCorporationHangars(structure.key, corporationHangars, hangarNames);
+            addStructureGroup(structure, "仓库", "structure_storage_group", "storage", storageCompartments);
+            addStructureGroup(structure, "军团机库", "structure_corporation_hangar_group", "corporation-hangar", corporationHangars);
+            addStructureGroup(structure, "建筑装备", "structure_fitting_group", "fitting", fittingCompartments);
         }
     }
 
+    /** 仅在对应内容存在时创建建筑一级分区，避免展示空的游戏仓位。 */
+    private static void addStructureGroup(MutableTreeNode structure,
+                                          String title,
+                                          String kind,
+                                          String keySuffix,
+                                          Map<String, MutableTreeNode> compartments) {
+        if (compartments.isEmpty()) {
+            return;
+        }
+        MutableTreeNode group = MutableTreeNode.virtual(structure.key + ":" + keySuffix, title, kind);
+        group.children.addAll(compartments.values());
+        structure.children.add(group);
+    }
+
     /** 将军团办公室内的资产按实际军团机库归位，办公室不是物品箱。 */
-    private static void groupCorporationOfficeChildren(Iterable<MutableTreeNode> assetNodes) {
+    private static void groupCorporationOfficeChildren(Iterable<MutableTreeNode> assetNodes,
+                                                       Map<Integer, String> hangarNames) {
         for (MutableTreeNode office : assetNodes) {
             if (!office.isCorporationOffice() || office.children.isEmpty()) {
                 continue;
@@ -613,15 +796,36 @@ public class EveCorporationAssetService {
                 String locationFlag = nonBlankOr(child.asset.getLocationFlag(), "unclassified");
                 MutableTreeNode hangar = hangars.computeIfAbsent(locationFlag, ignored -> MutableTreeNode
                     .virtual(office.key + ":hangar:" + locationFlag, localizeWarehouseName(child.asset
-                        .getLocationFlag()), "corporation_hangar"));
+                        .getLocationFlag(), hangarNames), "corporation_hangar"));
                 hangar.children.add(child);
             }
+            addEmptyCorporationHangars(office.key, hangars, hangarNames);
             office.children.addAll(hangars.values());
         }
     }
 
+    /**
+     * 补全游戏内全部已配置的军团机库分区，使空分区也能按自定义名称显示。
+     *
+     * <p>资产快照只会返回有物品的 {@code CorpSAG} 分区；仅依赖快照会把空机库错误地隐藏起来。</p>
+     */
+    private static void addEmptyCorporationHangars(String ownerKey,
+                                                   Map<String, MutableTreeNode> hangars,
+                                                   Map<Integer, String> hangarNames) {
+        hangarNames.entrySet()
+            .stream()
+            .filter(item -> item.getKey() != null && item.getKey() >= 1 && item.getKey() <= 7)
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(item -> {
+                String locationFlag = "CorpSAG" + item.getKey();
+                hangars.computeIfAbsent(locationFlag, ignored -> MutableTreeNode
+                    .virtual(ownerKey + ":hangar:" + locationFlag, localizeWarehouseName(locationFlag, hangarNames), "corporation_hangar"));
+            });
+    }
+
     /** 将资产安全包裹中的资产按其上游保留的原军团机库标记分层。 */
-    private static void groupAssetSafetyPackageChildren(Iterable<MutableTreeNode> assetNodes) {
+    private static void groupAssetSafetyPackageChildren(Iterable<MutableTreeNode> assetNodes,
+                                                        Map<Integer, String> hangarNames) {
         for (MutableTreeNode packageNode : assetNodes) {
             if (!packageNode.isAssetSafetyPackage() || packageNode.children.isEmpty()) {
                 continue;
@@ -635,7 +839,7 @@ public class EveCorporationAssetService {
                 String locationFlag = nonBlankOr(child.asset.getLocationFlag(), "unclassified");
                 MutableTreeNode hangar = originalHangars.computeIfAbsent(locationFlag, ignored -> MutableTreeNode
                     .virtual(packageNode.key + ":original-hangar:" + locationFlag, localizeWarehouseName(child.asset
-                        .getLocationFlag()), "corporation_hangar"));
+                        .getLocationFlag(), hangarNames), "corporation_hangar"));
                 hangar.children.add(child);
             }
             originGroup.children.addAll(originalHangars.values());
@@ -644,10 +848,10 @@ public class EveCorporationAssetService {
     }
 
     /**
-     * 将舰船直属资产按实际舰船槽位或舱位分组，避免将装配模块与货仓物品混在同一层。
+     * 将舰船直属资产拆分为可浏览的仓舱和按需展开的装配。
      *
-     * <p>国服资产快照通过子资产的 {@code location_flag} 区分高、中、低、改装件槽以及货仓等位置，
-     * 该字段是展示舰船装配结构的唯一可靠依据。</p>
+     * <p>国服资产快照通过子资产的 {@code location_flag} 区分高、中、低、改装件槽以及货仓等位置。
+     * 货仓、无人机舱和铁骑无人机舱可直接浏览；槽位模块属于装配，必须先展开“装配”节点才会显示。</p>
      */
     private static void groupShipChildren(Iterable<MutableTreeNode> assetNodes) {
         for (MutableTreeNode ship : assetNodes) {
@@ -660,19 +864,60 @@ public class EveCorporationAssetService {
             }
             List<MutableTreeNode> directChildren = new ArrayList<>(ship.children);
             ship.children.clear();
-            MutableTreeNode compartmentGroup = MutableTreeNode
-                .virtual(ship.key + ":compartments", "舰船分区", "ship_compartment_group");
-            Map<String, MutableTreeNode> compartments = new LinkedHashMap<>();
+            Map<String, MutableTreeNode> storageCompartments = new LinkedHashMap<>();
+            Map<String, MutableTreeNode> fittingSlots = new LinkedHashMap<>();
             for (MutableTreeNode child : directChildren) {
                 String locationFlag = nonBlankOr(child.asset.getLocationFlag(), "unclassified");
-                MutableTreeNode compartment = compartments.computeIfAbsent(locationFlag, ignored -> MutableTreeNode
-                    .virtual(ship.key + ":compartment:" + locationFlag, localizeWarehouseName(child.asset
-                        .getLocationFlag()), "ship_compartment"));
+                Map<String, MutableTreeNode> target = isShipStorageLocation(locationFlag)
+                    ? storageCompartments
+                    : fittingSlots;
+                String groupKey = target == storageCompartments ? "storage" : "fitting";
+                String compartmentKind = target == storageCompartments ? "ship_storage" : "ship_fitting_slot";
+                MutableTreeNode compartment = target.computeIfAbsent(locationFlag, ignored -> MutableTreeNode
+                    .virtual(ship.key + ":" + groupKey + ":" + locationFlag, localizeWarehouseName(child.asset
+                        .getLocationFlag()), compartmentKind));
                 compartment.children.add(child);
             }
-            compartmentGroup.children.addAll(compartments.values());
-            ship.children.add(compartmentGroup);
+            addShipGroup(ship, "舰船仓舱", "ship_storage_group", "storage", storageCompartments);
+            addShipGroup(ship, "装配", "ship_fitting_group", "fitting", fittingSlots);
         }
+    }
+
+    /** 仅在舰船确有对应内容时创建仓舱或装配入口。 */
+    private static void addShipGroup(MutableTreeNode ship,
+                                     String title,
+                                     String kind,
+                                     String keySuffix,
+                                     Map<String, MutableTreeNode> compartments) {
+        if (compartments.isEmpty()) {
+            return;
+        }
+        MutableTreeNode group = MutableTreeNode.virtual(ship.key + ":" + keySuffix, title, kind);
+        group.children.addAll(compartments.values());
+        ship.children.add(group);
+    }
+
+    /** 判断位置是否为军团专用机库或军团交付机库。 */
+    private static boolean isCorporationHangarLocation(String locationFlag) {
+        return locationFlag.matches("CorpSAG[1-7]") || "CorpDeliveries".equals(locationFlag);
+    }
+
+    /**
+     * 判断建筑内部位置是否为装备分区。
+     *
+     * <p>国服对部分建筑沿用舰船槽位标记，例如高、中、低能量槽、货仓和铁骑发射管。它们在父项为
+     * 建筑时均表示建筑装备，不能因标记复用而被归入仓库。</p>
+     */
+    private static boolean isStructureFittingLocation(String locationFlag) {
+        return "StructureFuel".equals(locationFlag) || "QuantumCoreRoom".equals(locationFlag) || locationFlag
+            .matches("(?:HiSlot|MedSlot|LoSlot|RigSlot|ServiceSlot|SubsystemSlot|FighterTube)\\d+") || "Cargo"
+                .equals(locationFlag) || "DroneBay".equals(locationFlag) || "FighterBay".equals(locationFlag);
+    }
+
+    /** 判断舰船内部位置是否为可直接浏览的仓舱，而不是已装配的槽位。 */
+    private static boolean isShipStorageLocation(String locationFlag) {
+        return "Cargo".equals(locationFlag) || "DroneBay".equals(locationFlag) || "FighterBay"
+            .equals(locationFlag) || locationFlag.matches("FighterTube\\d+");
     }
 
     /** 判断给定父项链是否形成循环，避免异常上游数据导致树接口无限递归。 */
@@ -748,11 +993,17 @@ public class EveCorporationAssetService {
 
     /** 将游戏固定仓位标记显示为中文；未收录的标记保留原文以防产生错误含义。 */
     private static String localizeWarehouseName(String locationFlag) {
+        return localizeWarehouseName(locationFlag, Map.of());
+    }
+
+    /** 为军团机库优先使用玩家在游戏内配置的分区名称，其他固定仓位沿用中文名称。 */
+    private static String localizeWarehouseName(String locationFlag, Map<Integer, String> hangarNames) {
         if (locationFlag == null || locationFlag.isBlank()) {
             return "未分类仓位";
         }
         if (locationFlag.matches("CorpSAG[1-7]")) {
-            return "军团机库 " + locationFlag.substring(locationFlag.length() - 1);
+            int division = Integer.parseInt(locationFlag.substring(locationFlag.length() - 1));
+            return nonBlankOr(hangarNames.get(division), "军团机库 " + division);
         }
         return switch (locationFlag) {
             case "Hangar" -> "机库";

@@ -134,10 +134,10 @@ class EveAuthorizationTokenServiceTest {
         verify(mapper).update(isNull(), any(Wrapper.class));
     }
 
-    /** 永久失败必须原子清除令牌，不得影响本站登录会话。 */
+    /** 401 只代表当前请求被拒绝，不能据此删除仍可能可轮换的刷新令牌。 */
     @Test
     @SuppressWarnings("rawtypes")
-    void shouldRetainSiteSessionAfterPermanentFailure() {
+    void shouldKeepRefreshTokenAfterUnauthorizedFailure() {
         EveAuthorizationMapper mapper = mock(EveAuthorizationMapper.class);
         EveAuthorizationDO current = new EveAuthorizationDO();
         current.setFailureCount(0);
@@ -148,7 +148,9 @@ class EveAuthorizationTokenServiceTest {
 
         org.mockito.ArgumentCaptor<UpdateWrapper> captor = org.mockito.ArgumentCaptor.forClass(UpdateWrapper.class);
         verify(mapper).update(isNull(), captor.capture());
-        assertThat(captor.getValue().getSqlSet()).contains("access_token", "refresh_token");
+        assertThat(captor.getValue().getSqlSet()).doesNotContain("access_token", "refresh_token");
+        assertThat(captor.getValue().getParamNameValuePairs().values()).contains(EveAuthorizationStatus.ACTIVE)
+            .doesNotContain(EveAuthorizationStatus.REAUTH_REQUIRED);
     }
 
     /** 临时失败只累加分类并保持授权可重试，不得写成永久失败状态。 */

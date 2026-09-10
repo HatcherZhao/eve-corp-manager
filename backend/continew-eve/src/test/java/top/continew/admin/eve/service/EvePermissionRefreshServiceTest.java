@@ -19,12 +19,15 @@ package top.continew.admin.eve.service;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.MockedStatic;
 import org.redisson.api.RBucket;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import top.continew.admin.common.api.system.RoleApi;
+import top.continew.admin.common.context.UserContext;
+import top.continew.admin.common.context.UserContextHolder;
 import top.continew.admin.common.enums.DataScopeEnum;
 import top.continew.admin.common.model.dto.EveSiteRoleDTO;
 import top.continew.admin.eve.client.SerenityEsiClient;
@@ -58,6 +61,7 @@ import top.continew.admin.eve.model.serenity.SerenityEsiResponse;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -67,6 +71,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -225,23 +230,30 @@ class EvePermissionRefreshServiceTest {
         assertThat(response.reauthorizationPath()).isEqualTo("/eve/permissions/reauthorization/start");
         verify(lifecycleService, never()).ensureAccessToken(any());
         verify(esiClient, never()).getCharacter(anyLong());
+        verify(tokenService, never()).markReauthorizationRequired(any(), any(), any(), any());
     }
 
-    /** 已确认授权包不完整时，应直接提示一次性重新授权。 */
+    /** 新增业务 Scope 时应继续复核并保留原授权，不能清空仍可自动续期的刷新令牌。 */
     @Test
-    void shouldRequireScopeExpansionForIncompletePlannedBundle() {
+    void shouldKeepExistingGrantActiveWhenBusinessScopesNeedExpansion() {
         EveAuthorizationDO authorization = authorization();
-        authorization.setScopes(List.of("esi-characters.read_corporation_roles.v1"));
+        List<String> scopes = new ArrayList<>(scopePolicy.plannedScopes());
+        scopes.remove("esi-mail.read_mail.v1");
+        scopes.remove("esi-mail.organize_mail.v1");
+        authorization.setScopes(List.copyOf(scopes));
         when(authorizationMapper.selectByUserCharacter(10L, 20L, 100L)).thenReturn(List.of(authorization));
+        when(lifecycleService.ensureAccessToken(authorization)).thenReturn("access-token");
+        when(snapshotMapper.selectLatest(10L, 100L)).thenReturn(snapshot(false, List.of()));
+        stubUpstream(9001L, List.of("Director"), List.of(), List.of(), List.of());
 
         EvePermissionRefreshResp response = service.refresh(10L, 20L, false);
 
-        assertThat(response.status()).isEqualTo(EvePermissionRefreshStatus.REAUTHORIZATION_REQUIRED);
-        assertThat(response.missingScopes())
-            .contains("esi-assets.read_corporation_assets.v1", "esi-corporations.track_members.v1", "esi-mail.send_mail.v1");
+        assertThat(response.status()).isEqualTo(EvePermissionRefreshStatus.REFRESHED);
+        assertThat(response.missingScopes()).containsExactly("esi-mail.read_mail.v1", "esi-mail.organize_mail.v1");
         assertThat(response.reauthorizationPath()).isEqualTo("/eve/permissions/reauthorization/start");
-        verify(lifecycleService, never()).ensureAccessToken(any());
-        verify(tokenService).markReauthorizationRequired(eq(10L), eq(20L), eq(400L), eq(OAuthFailureCode.PERMANENT));
+        verify(lifecycleService).ensureAccessToken(authorization);
+        verify(esiClient).getCharacter(8001L);
+        verify(tokenService, never()).markReauthorizationRequired(any(), any(), any(), any());
     }
 
     /** 冷却期内重复请求不得触发任何上游调用。 */
@@ -254,6 +266,47 @@ class EvePermissionRefreshServiceTest {
 
         assertThat(response.status()).isEqualTo(EvePermissionRefreshStatus.COOLDOWN);
         verify(lifecycleService, never()).ensureAccessToken(any());
+    }
+
+    /** 工作台首屏发现游戏权限快照过期时，必须自动复核并恢复能力数据。 */
+    @Test
+    void shouldRefreshExpiredSnapshotWhenLoadingWorkspace() {
+        stubUpstream(9001L, List.of("Director"), List.of(), List.of(), List.of());
+        EveCharacterRoleSnapshotDO expired = snapshot(false, List.of());
+        expired.setSourceExpiresAt(LocalDateTime.now(ZoneOffset.UTC).minusMinutes(1));
+        when(snapshotMapper.selectLatest(10L, 100L)).thenReturn(expired);
+        UserContext context = new UserContext();
+        context.setTenantId(10L);
+        context.setId(20L);
+
+        try (MockedStatic<UserContextHolder> holder = mockStatic(UserContextHolder.class)) {
+            holder.when(UserContextHolder::getContext).thenReturn(context);
+            EvePermissionRefreshResp response = service.refreshIfSnapshotExpiredCurrent();
+
+            assertThat(response.status()).isEqualTo(EvePermissionRefreshStatus.REFRESHED);
+        }
+
+        verify(lifecycleService).ensureAccessToken(any(EveAuthorizationDO.class));
+        verify(derivedIdentityService).synchronize(10L, 20L);
+    }
+
+    /** 快照仍在国服有效期内时，工作台首屏不得重复请求上游。 */
+    @Test
+    void shouldReuseUnexpiredSnapshotWhenLoadingWorkspace() {
+        EveCharacterRoleSnapshotDO fresh = snapshot(false, List.of("Director"));
+        fresh.setSourceExpiresAt(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(30));
+        when(snapshotMapper.selectLatest(10L, 100L)).thenReturn(fresh);
+        UserContext context = new UserContext();
+        context.setTenantId(10L);
+        context.setId(20L);
+
+        try (MockedStatic<UserContextHolder> holder = mockStatic(UserContextHolder.class)) {
+            holder.when(UserContextHolder::getContext).thenReturn(context);
+            assertThat(service.refreshIfSnapshotExpiredCurrent()).isNull();
+        }
+
+        verify(lifecycleService, never()).ensureAccessToken(any());
+        verify(esiClient, never()).getCharacter(anyLong());
     }
 
     /** 并发锁未获取时应快速返回且不得重复请求国服。 */
@@ -357,6 +410,20 @@ class EvePermissionRefreshServiceTest {
         verify(tokenService).recordFailure(10L, 20L, 400L, OAuthFailureCode.TRANSIENT);
         verify(auditMapper, org.mockito.Mockito.atLeastOnce()).insert(any(EveAuthAuditDO.class));
         verify(derivedIdentityService, times(2)).synchronize(10L, 20L);
+    }
+
+    /** ESI 403 可能仅表示当前模块缺少游戏角色或 Scope，绝不能删除自动续期所需刷新令牌。 */
+    @Test
+    void shouldKeepAuthorizationAfterForbiddenEsiFailure() {
+        when(esiClient.getCharacter(8001L)).thenThrow(new SerenityEsiClientException(OAuthFailureCode.FORBIDDEN));
+
+        EvePermissionRefreshResp response = service.refresh(10L, 20L, false);
+
+        assertThat(response.status()).isEqualTo(EvePermissionRefreshStatus.UPSTREAM_UNAVAILABLE);
+        assertThat(response.reauthorizationPath()).isNull();
+        verify(tokenService).recordFailure(10L, 20L, 400L, OAuthFailureCode.FORBIDDEN);
+        verify(tokenService, never()).markReauthorizationRequired(any(), any(), any(), any());
+        verify(derivedIdentityService).synchronize(10L, 20L);
     }
 
     /** 离团或换军团必须清除派生角色并强制注销会话。 */

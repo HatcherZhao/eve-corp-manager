@@ -131,7 +131,7 @@ onMounted(loadTypes)
       <a-table :data="records" :loading="loading" :pagination="false" row-key="typeId" :scroll="{ x: 1260 }">
         <template #columns>
           <a-table-column title="类型 ID" :width="120"><template #cell="{ record }"><code>#{{ record.typeId }}</code></template></a-table-column>
-          <a-table-column title="物品名称" :width="220"><template #cell="{ record }"><strong>{{ record.typeName }}</strong></template></a-table-column>
+          <a-table-column title="物品名称" :width="220"><template #cell="{ record }"><div class="eve-static-types-page__type-identity"><EveTypeIcon :type-id="record.typeId" :size="32" :alt="`${record.typeName}图标`" /><strong>{{ record.typeName }}</strong></div></template></a-table-column>
           <a-table-column title="市场分类" :width="350"><template #cell="{ record }"><span class="eve-static-types-page__category-path">{{ categoryPath(record) }}</span></template></a-table-column>
           <a-table-column title="物品说明" :min-width="300" ellipsis tooltip><template #cell="{ record }">{{ record.typeDescription || '—' }}</template></a-table-column>
           <a-table-column title="资料更新时间" :width="170"><template #cell="{ record }">{{ formatTime(record.sourceUpdatedAt) }}</template></a-table-column>
@@ -158,5 +158,6 @@ onMounted(loadTypes)
 .eve-static-types-page__table-wrap .arco-pagination { justify-content: flex-end; margin-top: 16px; }
 .eve-static-types-page__table-wrap code { color: rgb(var(--arcoblue-6)); font-family: DINPro, monospace; }
 .eve-static-types-page__category-path { color: var(--color-text-2); font-size: 13px; }
+.eve-static-types-page__type-identity { display: flex; align-items: center; gap: 10px; }.eve-static-types-page__type-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 860px) { .eve-static-types-page__header { align-items: flex-start; flex-direction: column; } .eve-static-types-page__filter-bar { flex-wrap: wrap; } .eve-static-types-page__filter-bar .arco-input-wrapper { width: 100%; } .eve-static-types-page__result-count { width: 100%; margin-left: 0; } }
 </style>

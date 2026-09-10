@@ -41,7 +41,9 @@ public class EveSessionPermissionRefreshService {
     /** 刷新当前在线 EVE 军团成员的会话权限；非 EVE 会话不产生额外查询。 */
     public void refreshCurrentEveUser() {
         UserContext context = UserContextHolder.getContext();
-        if (context == null || context.getRoleCodes() == null || context.getRoleCodes().stream().noneMatch(EVE_ROLE_CODES::contains)) {
+        if (context == null || context.getRoleCodes() == null || context.getRoleCodes()
+            .stream()
+            .noneMatch(EVE_ROLE_CODES::contains)) {
             return;
         }
         Long userId = context.getId();

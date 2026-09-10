@@ -46,6 +46,10 @@ public class EveAuthorizationScopePolicy {
     private static final String UNIVERSE_STRUCTURES_SCOPE = "esi-universe.read_structures.v1";
     /** 游戏内邮件发送。 */
     private static final String MAIL_SEND_SCOPE = "esi-mail.send_mail.v1";
+    /** 游戏内邮件读取。 */
+    private static final String MAIL_READ_SCOPE = "esi-mail.read_mail.v1";
+    /** 游戏内邮件标签、已读状态和删除操作。 */
+    private static final String MAIL_ORGANIZE_SCOPE = "esi-mail.organize_mail.v1";
 
     private final SerenityProperties properties;
 
@@ -58,7 +62,9 @@ public class EveAuthorizationScopePolicy {
         scopes.add(CORPORATION_DIVISIONS_SCOPE);
         scopes.add(MEMBER_TRACKING_SCOPE);
         scopes.add(UNIVERSE_STRUCTURES_SCOPE);
+        scopes.add(MAIL_READ_SCOPE);
         scopes.add(MAIL_SEND_SCOPE);
+        scopes.add(MAIL_ORGANIZE_SCOPE);
         return Collections.unmodifiableSet(scopes);
     }
 
@@ -66,6 +72,17 @@ public class EveAuthorizationScopePolicy {
     public Set<String> identityScopes() {
         Set<String> scopes = properties.getSso().getRequiredScopes();
         return scopes == null ? Set.of() : Collections.unmodifiableSet(new LinkedHashSet<>(scopes));
+    }
+
+    /**
+     * 返回连身份与军团权限复核都无法进行时缺少的基础 Scope。
+     *
+     * <p>后续新增的业务 Scope 只能限制对应模块，不能被误判为网易撤销授权并清空原有刷新令牌。</p>
+     */
+    public List<String> missingIdentityScopes(List<String> currentScopes) {
+        Set<String> missing = new LinkedHashSet<>(identityScopes());
+        missing.removeAll(currentScopes == null ? List.of() : currentScopes);
+        return List.copyOf(missing);
     }
 
     /** 返回当前授权缺少的已确认功能 Scope，保持授权页中稳定的展示顺序。 */
