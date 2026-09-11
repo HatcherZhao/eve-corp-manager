@@ -16,16 +16,13 @@
 
 package top.continew.admin.eve.model;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 游戏通知列表安全响应。
+ * EVE 星域、星座和星系位置导航树节点。
  *
  * @author zhaoyuqing
  */
-public record EveGameNotificationResp(Long notificationId, Boolean read, String category, String type,
-                                      String senderName, String senderType, String content, String summary,
-                                      List<EveGameNotificationDetailItem> details, LocalDateTime sentAt,
-                                      LocalDateTime lastSeenAt, LocalDateTime sourceExpiresAt) {
+public record EveStaticLocationTreeNodeResp(String referenceType, Long referenceId, String referenceName,
+                                            long locationCount, List<EveStaticLocationTreeNodeResp> children) {
 }

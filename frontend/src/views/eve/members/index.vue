@@ -199,9 +199,9 @@ onMounted(async () => {
       <a-alert v-if="!canViewTracking" type="info" :show-icon="true">
         你可以查看基础名册。位置、舰船、最近登录/登出和基地需要军团管理员授予“成员追踪信息”权限。
       </a-alert>
-      <a-table :data="members" :loading="loading" row-key="characterId" :pagination="false" :scroll="{ x: canViewTracking ? 1470 : 900 }">
+      <a-table :data="members" :loading="loading" row-key="characterId" :pagination="false" :scroll="{ x: canViewTracking ? 860 : 520 }">
         <template #columns>
-          <a-table-column title="角色" :width="210">
+          <a-table-column title="角色" :width="180" ellipsis tooltip>
             <template #cell="{ record }">
               <div class="eve-members__member-identity">
                 <Avatar :src="memberPortraitUrl(record.characterId)" :name="record.characterName" :size="36" :alt="`${record.characterName || '成员'}游戏肖像`" />
@@ -209,17 +209,13 @@ onMounted(async () => {
               </div>
             </template>
           </a-table-column>
-          <a-table-column title="分组" :width="130"><template #cell="{ record }">{{ record.organizationGroup || '未分组' }}</template></a-table-column>
+          <a-table-column title="分组" :width="110" ellipsis tooltip><template #cell="{ record }">{{ record.organizationGroup || '未分组' }}</template></a-table-column>
           <a-table-column title="状态" :width="90"><template #cell="{ record }"><a-tag :color="record.status === 'ACTIVE' ? 'green' : 'gray'">{{ record.status === 'ACTIVE' ? '在团' : '已离团' }}</a-tag></template></a-table-column>
-          <a-table-column title="入团时间" :width="155"><template #cell="{ record }">{{ formatTime(record.joinedAt) }}</template></a-table-column>
           <template v-if="canViewTracking">
-            <a-table-column title="最近登录" :width="155"><template #cell="{ record }">{{ formatTime(record.tracking?.lastLogonAt) }}</template></a-table-column>
-            <a-table-column title="最近登出" :width="155"><template #cell="{ record }">{{ formatTime(record.tracking?.lastLogoffAt) }}</template></a-table-column>
-            <a-table-column title="位置" :width="180"><template #cell="{ record }">{{ resolvedName(record.tracking?.locationName, '位置') }}</template></a-table-column>
-            <a-table-column title="舰船" :width="180"><template #cell="{ record }"><span class="eve-members__ship-identity"><EveTypeIcon v-if="record.tracking?.shipTypeId" :type-id="record.tracking.shipTypeId" :size="24" :alt="`${record.tracking.shipTypeName || '舰船'}图标`" />{{ resolvedName(record.tracking?.shipTypeName, '舰船类型') }}</span></template></a-table-column>
+            <a-table-column title="最近活动" :width="145"><template #cell="{ record }"><strong>{{ formatTime(record.tracking?.lastLogonAt) }}</strong><small>登出：{{ formatTime(record.tracking?.lastLogoffAt) }}</small></template></a-table-column>
+            <a-table-column title="位置 / 舰船" :width="190" ellipsis tooltip><template #cell="{ record }"><strong>{{ resolvedName(record.tracking?.locationName, '位置') }}</strong><small class="eve-members__ship-identity"><EveTypeIcon v-if="record.tracking?.shipTypeId" :type-id="record.tracking.shipTypeId" :size="18" :alt="`${record.tracking.shipTypeName || '舰船'}图标`" />{{ resolvedName(record.tracking?.shipTypeName, '舰船类型') }}</small></template></a-table-column>
           </template>
-          <a-table-column title="最近同步" :width="155"><template #cell="{ record }">{{ formatTime(record.lastSeenAt) }}</template></a-table-column>
-          <a-table-column title="操作" :width="130" fixed="right"><template #cell="{ record }"><a-space><a-link @click="showDetail(record)">详情</a-link><a-link v-if="canOrganize" @click="openOrganization(record)">组织信息</a-link></a-space></template></a-table-column>
+          <a-table-column title="操作" :width="105" fixed="right"><template #cell="{ record }"><a-space><a-link @click="showDetail(record)">详情</a-link><a-link v-if="canOrganize" @click="openOrganization(record)">组织</a-link></a-space></template></a-table-column>
         </template>
       </a-table>
       <a-pagination v-if="total" v-model:current="query.page" v-model:page-size="query.size" :total="total" show-total show-page-size @change="loadMembers" @page-size-change="search" />
@@ -287,18 +283,18 @@ onMounted(async () => {
 
 <style scoped lang="scss">
 .eve-members { color: var(--color-text-1); }
-.eve-members__header { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 28px 30px; border: 1px solid rgba(var(--arcoblue-6), .18); border-radius: 16px; background: linear-gradient(125deg, rgba(var(--arcoblue-6), .12), transparent 55%), var(--color-bg-1); }
+.eve-members__header { display: flex; align-items: end; justify-content: space-between; gap: 16px; padding: 20px 22px; border: 1px solid rgba(var(--arcoblue-6), .18); border-radius: 14px; background: linear-gradient(125deg, rgba(var(--arcoblue-6), .12), transparent 55%), var(--color-bg-1); }
 .eve-members__eyebrow { color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; font-size: 11px; letter-spacing: .16em; }
-.eve-members h1 { margin: 8px 0; font-size: 30px; }
+.eve-members h1 { margin: 5px 0; font-size: 26px; }
 .eve-members__header p { margin: 0; color: var(--color-text-3); }
 .eve-members__header-tools { display: flex; align-self: flex-start; flex-direction: column; align-items: flex-end; gap: 10px; }
-.eve-members__filters { display: flex; gap: 10px; margin: 18px 0; }
+.eve-members__filters { display: flex; gap: 8px; margin: 12px 0; }
 .eve-members__member-identity { display: flex; align-items: center; min-width: 0; gap: 10px; }
 .eve-members__member-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .eve-members__ship-identity { display: inline-flex; align-items: center; gap: 8px; }
 .eve-members__filters .arco-input-wrapper { width: 280px; }
 .eve-members__filters .arco-select { width: 130px; }
-.eve-members__table-wrap { padding: 18px; border: 1px solid var(--color-border-2); border-radius: 14px; background: var(--color-bg-1); }
+.eve-members__table-wrap { padding: 12px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }
 .eve-members__table-wrap .arco-alert { margin-bottom: 14px; }
 .eve-members__table-wrap small { display: block; margin-top: 3px; color: var(--color-text-3); font-size: 11px; }
 .eve-members__table-wrap .arco-pagination { justify-content: flex-end; margin-top: 16px; }

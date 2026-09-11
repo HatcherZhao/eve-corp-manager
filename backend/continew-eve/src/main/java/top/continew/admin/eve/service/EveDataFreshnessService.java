@@ -53,7 +53,7 @@ public class EveDataFreshnessService {
     public static final String MEMBER_TRACKING = "MEMBER_TRACKING";
 
     private static final List<ModuleDefinition> MODULES = List
-        .of(new ModuleDefinition(ASSETS, "军团资产", "/eve/assets"), new ModuleDefinition(STRUCTURES, "军团建筑", "/eve/structures"), new ModuleDefinition(MOON_EXTRACTIONS, "月矿情报", "/eve/extractions"), new ModuleDefinition(MINING_LEDGER, "采矿账本", "/eve/mining"), new ModuleDefinition(MEMBER_ROSTER, "成员名册", "/eve/members"), new ModuleDefinition(MEMBER_TRACKING, "成员追踪", "/eve/members"));
+        .of(new ModuleDefinition(ASSETS, "军团资产", "/eve/assets"), new ModuleDefinition(STRUCTURES, "军团建筑", "/eve/structures"), new ModuleDefinition(MOON_EXTRACTIONS, "月矿情报", "/eve/extractions"), new ModuleDefinition(MINING_LEDGER, "月矿开采统计", "/eve/mining"), new ModuleDefinition(MEMBER_ROSTER, "成员名册", "/eve/members"), new ModuleDefinition(MEMBER_TRACKING, "成员追踪", "/eve/members"));
 
     private final EveDataSyncStatusMapper statusMapper;
 

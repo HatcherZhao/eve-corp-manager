@@ -19,7 +19,7 @@ const StatusCodeMessage: ICodeMessage = {
   202: '一个请求已经进入后台排队（异步任务）',
   204: '删除数据成功',
   400: '请求错误(400)',
-  401: '未授权，请重新登录(401)',
+  401: '登录已过期，请重新登录',
   403: '拒绝访问(403)',
   404: '请求出错(404)',
   408: '请求超时(408)',
@@ -45,6 +45,30 @@ const handleError = (msg: string) => {
   return messageErrorWrapper({
     content: msg || '服务器端错误',
     duration: 5 * 1000,
+  })
+}
+
+/** 统一引导已过期的本站会话重新登录，避免把认证问题误报为服务故障。 */
+let redirectingToLogin = false
+const handleLoginExpired = () => {
+  if (redirectingToLogin) return
+  redirectingToLogin = true
+  modalErrorWrapper({
+    title: '登录已过期',
+    content: '你已超过 6 小时未操作。重新登录后会回到当前页面。',
+    maskClosable: false,
+    escToClose: false,
+    okText: '重新登录',
+    async onOk() {
+      try {
+        const userStore = useUserStore()
+        await userStore.logoutCallBack()
+        const currentPath = router.currentRoute.value.fullPath
+        await router.replace(`/login?redirect=${encodeURIComponent(currentPath)}`)
+      } finally {
+        redirectingToLogin = false
+      }
+    },
   })
 }
 
@@ -98,19 +122,7 @@ http.interceptors.response.use(
 
     // Token 失效
     if (code === '401' && response.config.url !== '/auth/user/info') {
-      modalErrorWrapper({
-        title: '提示',
-        content: msg,
-        maskClosable: false,
-        escToClose: false,
-        okText: '重新登录',
-        async onOk() {
-          const userStore = useUserStore()
-          await userStore.logoutCallBack()
-          const currentPath = router.currentRoute.value.fullPath
-          await router.replace(`/login?redirect=${encodeURIComponent(currentPath)}`)
-        },
-      })
+      handleLoginExpired()
     } else {
       handleError(msg)
     }
@@ -122,6 +134,10 @@ http.interceptors.response.use(
       return Promise.reject(error)
     }
     const status = error.response?.status
+    if (status === 401) {
+      handleLoginExpired()
+      return Promise.reject(error)
+    }
     const errorMsg = StatusCodeMessage[status] || '服务器暂时未响应，请刷新页面并重试。若无法解决，请联系管理员'
     handleError(errorMsg)
     return Promise.reject(error)

@@ -274,19 +274,19 @@ onMounted(loadTree)
 .eve-permissions-page__header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
 .eve-permissions-page__back { display: flex; margin: 0 0 12px -12px; }
 .eve-permissions-page__eyebrow, .eve-permissions-page__section-heading span:first-child { color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; font-size: 11px; letter-spacing: 0.14em; }
-.eve-permissions-page__header h1 { margin: 6px 0 6px; font-size: 30px; }
+.eve-permissions-page__header h1 { margin: 4px 0; font-size: 26px; }
 .eve-permissions-page__header p { margin: 0; color: var(--color-text-2); }
 .eve-permissions-page__authorization-actions { min-width: 360px; }
-.eve-permissions-page__toolbar { display: flex; align-items: center; gap: 14px; margin: 24px 0 16px; padding: 14px 16px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }
+.eve-permissions-page__toolbar { display: flex; align-items: center; gap: 10px; margin: 14px 0 12px; padding: 10px 12px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }
 .eve-permissions-page__search { width: min(520px, 100%); margin-right: auto; }
 .eve-permissions-page__loading { display: block; min-height: 420px; }
 .eve-permissions-page__status-alert { margin-bottom: 16px; }
 .eve-permissions-page__summary-strip { display: grid; grid-template-columns: repeat(6, 1fr); overflow: hidden; border: 1px solid var(--color-border-2); border-radius: 14px; background: var(--color-bg-1); }
-.eve-permissions-page__summary-strip > div { display: flex; flex-direction: column; gap: 5px; padding: 16px 18px; border-right: 1px solid var(--color-border-2); }
+.eve-permissions-page__summary-strip > div { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-right: 1px solid var(--color-border-2); }
 .eve-permissions-page__summary-strip > div:last-child { border-right: 0; }
 .eve-permissions-page__summary-strip span { color: var(--color-text-3); font-size: 12px; }
 .eve-permissions-page__summary-strip strong { font-family: DINPro, sans-serif; font-size: 15px; }
-.eve-permissions-page__tree-section { margin-top: 18px; padding: 22px; border: 1px solid var(--color-border-2); border-radius: 14px; background: var(--color-bg-1); }
+.eve-permissions-page__tree-section { margin-top: 12px; padding: 16px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }
 .eve-permissions-page__section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 8px; }
 .eve-permissions-page__section-heading h2 { margin: 4px 0 0; font-size: 19px; }
 .eve-permissions-page__tree-guide { margin: 0 0 18px; color: var(--color-text-3); font-size: 13px; }

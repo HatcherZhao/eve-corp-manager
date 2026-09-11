@@ -1,13 +1,14 @@
 <template>
-  <img
-    v-if="iconUrl && !imageFailed"
-    class="eve-type-icon"
-    :src="iconUrl"
-    :alt="alt"
-    :style="{ width: `${size}px`, height: `${size}px` }"
-    loading="lazy"
-    @error="imageFailed = true"
-  />
+  <span class="eve-type-icon" :class="{ 'eve-type-icon--fallback': !iconUrl || imageFailed }" :style="{ width: `${size}px`, height: `${size}px` }">
+    <img
+      v-if="iconUrl && !imageFailed"
+      :src="iconUrl"
+      :alt="alt"
+      loading="lazy"
+      @error="imageFailed = true"
+    />
+    <icon-image v-else aria-hidden="true" />
+  </span>
 </template>
 
 <script setup lang="ts">
@@ -36,5 +37,7 @@ watch(() => props.typeId, () => {
 </script>
 
 <style scoped lang="scss">
-.eve-type-icon { display: block; flex: 0 0 auto; border-radius: 4px; object-fit: contain; }
+.eve-type-icon { display: grid; flex: 0 0 auto; place-items: center; overflow: hidden; border-radius: 4px; }
+.eve-type-icon img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.eve-type-icon--fallback { color: var(--color-text-3); background: var(--color-fill-2); }
 </style>

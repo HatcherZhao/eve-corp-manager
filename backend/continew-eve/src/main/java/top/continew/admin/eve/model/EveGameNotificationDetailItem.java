@@ -16,16 +16,10 @@
 
 package top.continew.admin.eve.model;
 
-import java.time.LocalDateTime;
-import java.util.List;
-
 /**
- * 游戏通知列表安全响应。
+ * 游戏通知中可直接面向玩家展示的一项详情。
  *
  * @author zhaoyuqing
  */
-public record EveGameNotificationResp(Long notificationId, Boolean read, String category, String type,
-                                      String senderName, String senderType, String content, String summary,
-                                      List<EveGameNotificationDetailItem> details, LocalDateTime sentAt,
-                                      LocalDateTime lastSeenAt, LocalDateTime sourceExpiresAt) {
+public record EveGameNotificationDetailItem(String label, String value) {
 }

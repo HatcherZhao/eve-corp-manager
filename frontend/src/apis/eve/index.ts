@@ -264,6 +264,8 @@ export interface EveCorporationStructure {
   status: 'ACTIVE' | 'MISSING'
   lastSeenAt: string
   sourceExpiresAt?: string
+  /** 同一月矿堡长期展示的军团内部备注。 */
+  structureNote?: string
   note?: string
 }
 
@@ -313,6 +315,34 @@ export interface EveMiningLedgerSummary {
   mineralTypeCount: number
   latestRecordedAt?: string
   latestSynchronizedAt?: string
+}
+
+/** 月矿开采统计页面的服务端聚合结果。 */
+export interface EveMiningAnalytics {
+  corporation: {
+    name?: string
+    ticker?: string
+    quantity: number
+    entryCount: number
+    observerCount: number
+    characterCount: number
+    mineralTypeCount: number
+  }
+  timeline: Array<{
+    recordedAt: string
+    quantity: number
+    entryCount: number
+  }>
+  observers: Array<{
+    observerName?: string
+    quantity: number
+    entryCount: number
+  }>
+  characters: Array<{
+    characterName?: string
+    quantity: number
+    entryCount: number
+  }>
 }
 
 export interface EveMiningSyncResult {
@@ -383,6 +413,22 @@ export interface EveStaticTypeReference {
 export interface EveStaticTypeReferenceQuery extends PageQuery {
   keyword?: string
   marketCategoryL1?: string
+  marketCategoryL2?: string
+  marketCategoryL3?: string
+  marketCategoryL4?: string
+  marketCategoryL5?: string
+  marketCategoryL6?: string
+  unclassified?: boolean
+}
+
+/** 游戏市场左侧导航使用的物品分类树节点。 */
+export interface EveStaticTypeCategoryNode {
+  name: string
+  path: string[]
+  directTypeCount: number
+  typeCount: number
+  unclassified: boolean
+  children: EveStaticTypeCategoryNode[]
 }
 
 export interface EveStaticLocationReference {
@@ -399,6 +445,17 @@ export interface EveStaticLocationReference {
 export interface EveStaticLocationReferenceQuery extends PageQuery {
   keyword?: string
   referenceType?: EveStaticLocationReference['referenceType']
+  hierarchyType?: 'REGION' | 'CONSTELLATION' | 'SOLAR_SYSTEM'
+  hierarchyId?: string
+}
+
+/** 星图式位置导航使用的星域、星座和星系树节点。 */
+export interface EveStaticLocationTreeNode {
+  referenceType: 'REGION' | 'CONSTELLATION' | 'SOLAR_SYSTEM'
+  referenceId: string
+  referenceName: string
+  locationCount: number
+  children: EveStaticLocationTreeNode[]
 }
 
 export interface EveMember {
@@ -550,9 +607,17 @@ export interface EveGameNotification {
   senderName?: string
   senderType?: string
   content?: string
+  summary?: string
+  details?: EveGameNotificationDetailItem[]
   sentAt?: string
   lastSeenAt?: string
   sourceExpiresAt?: string
+}
+
+/** 游戏通知详情中已脱敏并转换为中文的字段。 */
+export interface EveGameNotificationDetailItem {
+  label: string
+  value: string
 }
 
 export interface EveGameNotificationQuery extends PageQuery {
@@ -665,6 +730,11 @@ export function getEveMiningLedgerSummary(query: Omit<EveMiningLedgerQuery, 'pag
   return http.get<EveMiningLedgerSummary>('/eve/mining/summary', query)
 }
 
+/** 查询当前军团月矿开采的时间、建筑和成员聚合统计。 */
+export function getEveMiningAnalytics(query: Omit<EveMiningLedgerQuery, 'page' | 'size'>) {
+  return http.get<EveMiningAnalytics>('/eve/mining/analytics', query)
+}
+
 /** 请求后台同步当前军团的完整采矿账本。 */
 export function syncEveMiningLedger() {
   return http.post<EveSyncRequestResult>('/eve/mining/sync')
@@ -695,8 +765,13 @@ export function getEveStaticTypes(query: EveStaticTypeReferenceQuery) {
   return http.get<PageRes<EveStaticTypeReference[]>>('/eve/reference/types', query)
 }
 
+/** 查询由 evedata.xlsx 生成的完整游戏市场分类树。 */
+export function getEveStaticTypeCategories() {
+  return http.get<EveStaticTypeCategoryNode[]>('/eve/reference/types/categories')
+}
+
 /** 导出当前筛选条件下的物品类型资料。 */
-export function exportEveStaticTypes(query: Pick<EveStaticTypeReferenceQuery, 'keyword' | 'marketCategoryL1'>) {
+export function exportEveStaticTypes(query: Pick<EveStaticTypeReferenceQuery, 'keyword' | 'marketCategoryL1' | 'marketCategoryL2' | 'marketCategoryL3' | 'marketCategoryL4' | 'marketCategoryL5' | 'marketCategoryL6' | 'unclassified'>) {
   return http.download('/eve/reference/types/export', query)
 }
 
@@ -705,8 +780,13 @@ export function getEveStaticLocations(query: EveStaticLocationReferenceQuery) {
   return http.get<PageRes<EveStaticLocationReference[]>>('/eve/reference/locations', query)
 }
 
+/** 查询由 evedata.xlsx 生成的星域、星座和星系导航树。 */
+export function getEveStaticLocationTree() {
+  return http.get<EveStaticLocationTreeNode[]>('/eve/reference/locations/tree')
+}
+
 /** 导出当前筛选条件下的位置资料。 */
-export function exportEveStaticLocations(query: Pick<EveStaticLocationReferenceQuery, 'keyword' | 'referenceType'>) {
+export function exportEveStaticLocations(query: Pick<EveStaticLocationReferenceQuery, 'keyword' | 'referenceType' | 'hierarchyType' | 'hierarchyId'>) {
   return http.download('/eve/reference/locations/export', query)
 }
 

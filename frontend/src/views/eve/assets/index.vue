@@ -328,19 +328,19 @@ onMounted(loadTree)
 
 <style scoped lang="scss">
 .eve-assets-page { color: var(--color-text-1); }
-.eve-assets-page__header { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 28px 30px; border: 1px solid rgba(var(--arcoblue-6), .18); border-radius: 16px; background: linear-gradient(125deg, rgba(var(--arcoblue-6), .12), transparent 55%), var(--color-bg-1); }
+.eve-assets-page__header { display: flex; align-items: end; justify-content: space-between; gap: 16px; padding: 20px 22px; border: 1px solid rgba(var(--arcoblue-6), .18); border-radius: 14px; background: linear-gradient(125deg, rgba(var(--arcoblue-6), .12), transparent 55%), var(--color-bg-1); }
 .eve-assets-page__eyebrow, .eve-assets-page__detail-eyebrow, .eve-assets-page__panel-heading span { color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; font-size: 11px; letter-spacing: .15em; }
-.eve-assets-page h1 { margin: 8px 0; font-size: 30px; }
+.eve-assets-page h1 { margin: 5px 0; font-size: 26px; }
 .eve-assets-page__header p { margin: 0; color: var(--color-text-3); }
 .eve-assets-page__header-tools { display: flex; align-self: flex-start; flex-direction: column; align-items: flex-end; gap: 10px; }
 .eve-assets-page__action-bar { display: flex; flex-wrap: wrap; gap: 10px; }
-.eve-assets-page__filter-bar { display: flex; align-items: center; gap: 10px; margin: 18px 0; padding: 14px 16px; border: 1px solid var(--color-border-2); border-radius: 14px; background: var(--color-bg-1); }
+.eve-assets-page__filter-bar { display: flex; align-items: center; gap: 8px; margin: 12px 0; padding: 10px 12px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }
 .eve-assets-page__filter-bar .arco-input-wrapper { width: min(360px, 100%); }
 .eve-assets-page__count { margin-right: auto; color: var(--color-text-3); font-size: 13px; }
-.eve-assets-page__guide { margin-bottom: 16px; }
+.eve-assets-page__guide { margin-bottom: 12px; }
 .eve-assets-page__loading { display: block; min-height: 500px; }
-.eve-assets-page__workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 360px); gap: 18px; }
-.eve-assets-page__tree-panel, .eve-assets-page__asset-detail { min-width: 0; padding: 20px; border: 1px solid var(--color-border-2); border-radius: 14px; background: var(--color-bg-1); }
+.eve-assets-page__workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); gap: 12px; }
+.eve-assets-page__tree-panel, .eve-assets-page__asset-detail { min-width: 0; padding: 14px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }
 .eve-assets-page__panel-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .eve-assets-page__panel-heading h2 { margin: 4px 0 0; font-size: 19px; }
 .eve-assets-page__tree { padding: 8px; border: 1px solid var(--color-border-1); border-radius: 10px; background: linear-gradient(90deg, rgba(var(--arcoblue-6), .035), transparent 30%); }

@@ -1,0 +1,18 @@
+# 仅将生产镜像构建所需文件发送给 Docker 守护进程。
+.git
+.env
+.env.*
+!.env.example
+node_modules
+frontend/node_modules
+frontend/dist
+output
+tmp
+logs
+secrets
+private-data
+**/.DS_Store
+**/target/*
+!backend/continew-server/target/
+!backend/continew-server/target/continew-admin.jar
+

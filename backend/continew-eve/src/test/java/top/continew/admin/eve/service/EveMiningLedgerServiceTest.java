@@ -18,6 +18,8 @@ package top.continew.admin.eve.service;
 
 import org.junit.jupiter.api.Test;
 import org.redisson.api.RedissonClient;
+import top.continew.admin.common.context.UserContext;
+import top.continew.admin.common.context.UserContextHolder;
 import top.continew.admin.eve.client.SerenityEsiClient;
 import top.continew.admin.eve.mapper.EveAuthorizationMapper;
 import top.continew.admin.eve.mapper.EveCharacterRoleSnapshotMapper;
@@ -26,8 +28,11 @@ import top.continew.admin.eve.mapper.EveCorporationStructureMapper;
 import top.continew.admin.eve.mapper.EveMiningLedgerMapper;
 import top.continew.admin.eve.mapper.EveMiningObserverMapper;
 import top.continew.admin.eve.mapper.EveMiningSyncRunMapper;
+import top.continew.admin.eve.model.EveMeContextResp;
+import top.continew.admin.eve.model.EveMiningAnalyticsResp;
 import top.continew.admin.eve.model.entity.EveAuthorizationDO;
 import top.continew.admin.eve.model.entity.EveCharacterRoleSnapshotDO;
+import top.continew.admin.eve.model.entity.EveCorporationDO;
 import top.continew.admin.eve.model.enums.EveAuthorizationStatus;
 
 import java.lang.reflect.Method;
@@ -35,6 +40,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -56,6 +62,51 @@ class EveMiningLedgerServiceTest {
 
         assertThat(EveMiningLedgerService.toLocalDate(java.sql.Date.valueOf(date))).isEqualTo(date);
         assertThat(EveMiningLedgerService.toLocalDateTime(java.sql.Timestamp.valueOf(dateTime))).isEqualTo(dateTime);
+    }
+
+    /** 图表聚合必须限定当前租户军团，并且只返回业务名称而不暴露游戏内部 ID。 */
+    @Test
+    void shouldBuildCurrentCorporationAnalyticsWithoutInternalIds() {
+        EveContextService contextService = mock(EveContextService.class);
+        EveCorporationMapper corporationMapper = mock(EveCorporationMapper.class);
+        EveMiningLedgerMapper ledgerMapper = mock(EveMiningLedgerMapper.class);
+        EveMiningLedgerService service = new EveMiningLedgerService(contextService, corporationMapper, mock(EveCorporationStructureMapper.class), mock(EveMiningObserverMapper.class), ledgerMapper, mock(EveMiningSyncRunMapper.class), mock(EveAuthorizationMapper.class), mock(EveCharacterRoleSnapshotMapper.class), mock(EveAuthorizationLifecycleService.class), mock(EvePermissionRefreshService.class), mock(EveStaticReferenceService.class), mock(SerenityEsiClient.class), mock(RedissonClient.class), mock(EveDataFreshnessService.class));
+        UserContext userContext = new UserContext();
+        userContext.setTenantId(10L);
+        EveCorporationDO corporation = new EveCorporationDO();
+        corporation.setId(20L);
+        corporation.setTenantId(10L);
+        corporation.setCorporationId(30L);
+        corporation.setName("测试军团");
+        corporation.setTicker("TEST");
+        LocalDate fromDate = LocalDate.of(2026, 9, 1);
+        LocalDate toDate = LocalDate.of(2026, 9, 12);
+        when(contextService.getCurrentContext())
+            .thenReturn(new EveMeContextResp(10L, null, new EveMeContextResp.CorporationInfo(30L, "测试军团", "TEST"), null, null, List
+                .of(), null, List.of()));
+        when(corporationMapper.selectByTenantAndCorporationId(10L, 30L)).thenReturn(corporation);
+        when(ledgerMapper.summarize(10L, 20L, null, null, null, fromDate, toDate, "铁")).thenReturn(Map
+            .of("quantity", 1200L, "entryCount", 12L, "observerCount", 2L, "characterCount", 3L, "mineralTypeCount", 4L));
+        when(ledgerMapper.summarizeTimeline(10L, 20L, fromDate, toDate, "铁")).thenReturn(List.of(Map
+            .of("recordedAt", java.sql.Date.valueOf(fromDate), "quantity", 800L, "entryCount", 8L)));
+        when(ledgerMapper.summarizeObservers(10L, 20L, fromDate, toDate, "铁", 10)).thenReturn(List.of(Map
+            .of("observerName", "月矿堡", "quantity", 900L, "entryCount", 9L)));
+        when(ledgerMapper.summarizeCharacters(10L, 20L, fromDate, toDate, "铁", 10)).thenReturn(List.of(Map
+            .of("characterName", "矿工甲", "quantity", 700L, "entryCount", 7L)));
+
+        UserContextHolder.setContext(userContext, false);
+        try {
+            EveMiningAnalyticsResp result = service.analytics(fromDate, toDate, " 铁 ");
+
+            assertThat(result.corporation().name()).isEqualTo("测试军团");
+            assertThat(result.corporation().quantity()).isEqualTo(1200L);
+            assertThat(result.timeline()).containsExactly(new EveMiningAnalyticsResp.TimelinePoint(fromDate, 800L, 8L));
+            assertThat(result.observers()).containsExactly(new EveMiningAnalyticsResp.ObserverRanking("月矿堡", 900L, 9L));
+            assertThat(result.characters())
+                .containsExactly(new EveMiningAnalyticsResp.CharacterRanking("矿工甲", 700L, 7L));
+        } finally {
+            UserContextHolder.clearContext();
+        }
     }
 
     /** 角色缓存过期时应主动复核，且只有 Accountant 能成为观察者账本数据源。 */

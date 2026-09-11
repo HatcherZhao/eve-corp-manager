@@ -17,6 +17,7 @@
 package top.continew.admin.eve.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +33,8 @@ import top.continew.admin.eve.mapper.EveStaticReferenceImportMapper;
 import top.continew.admin.eve.mapper.EveStaticTypeReferenceMapper;
 import top.continew.admin.eve.model.EveStaticReferenceImportResp;
 import top.continew.admin.eve.model.EveStaticLocationReferenceResp;
+import top.continew.admin.eve.model.EveStaticLocationTreeNodeResp;
+import top.continew.admin.eve.model.EveStaticTypeCategoryNodeResp;
 import top.continew.admin.eve.model.EveStaticTypeReferenceResp;
 import top.continew.admin.eve.model.entity.EveStaticLocationReferenceDO;
 import top.continew.admin.eve.model.entity.EveStaticReferenceImportDO;
@@ -61,6 +64,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
@@ -87,6 +91,11 @@ public class EveStaticReferenceService {
     private final EveStaticLocationReferenceMapper locationReferenceMapper;
     private final EveStaticReferenceImportMapper importMapper;
     private final JdbcTemplate jdbcTemplate;
+
+    /** 分类树只会在资料导入后发生变化，缓存避免每次打开资料页都读取全部类型。 */
+    private volatile List<EveStaticTypeCategoryNodeResp> typeCategoryTreeCache;
+    /** 星域导航树只会在资料导入后发生变化，缓存避免逐页重复聚合位置资料。 */
+    private volatile List<EveStaticLocationTreeNodeResp> locationTreeCache;
 
     @Value("${eve.reference.workbook-path:docs/evedata.xlsx}")
     private String workbookPath;
@@ -158,6 +167,8 @@ public class EveStaticReferenceService {
         } else {
             importMapper.updateById(imported);
         }
+        typeCategoryTreeCache = null;
+        locationTreeCache = null;
         return new EveStaticReferenceImportResp(workbook.sourceFileName(), workbook.sourceUpdatedAt(), workbook.types()
             .size(), workbook.locations().size(), true);
     }
@@ -199,29 +210,58 @@ public class EveStaticReferenceService {
         return result;
     }
 
-    /** 分页查询静态物品类型资料，供基础信息菜单展示。 */
-    public PageResp<EveStaticTypeReferenceResp> pageTypes(int page, int size, String keyword, String marketCategoryL1) {
+    /** 分页查询静态物品类型资料，支持按市场分类树节点过滤。 */
+    public PageResp<EveStaticTypeReferenceResp> pageTypes(int page,
+                                                          int size,
+                                                          String keyword,
+                                                          List<String> marketCategoryPath,
+                                                          boolean unclassified) {
         Page<EveStaticTypeReferenceDO> result = typeReferenceMapper
-            .selectPage(new Page<>(page, size), buildTypeQuery(keyword, marketCategoryL1));
+            .selectPage(new Page<>(page, size), buildTypeQuery(keyword, marketCategoryPath, unclassified));
         return new PageResp<>(result.getRecords().stream().map(EveStaticReferenceService::toTypeResp).toList(), result
             .getTotal());
     }
 
-    /** 导出筛选后的完整静态物品类型资料。 */
-    public List<EveStaticTypeReferenceResp> listTypesForExport(String keyword, String marketCategoryL1) {
-        return typeReferenceMapper.selectList(buildTypeQuery(keyword, marketCategoryL1))
+    /** 导出当前关键词与分类树节点筛选后的完整静态物品类型资料。 */
+    public List<EveStaticTypeReferenceResp> listTypesForExport(String keyword,
+                                                               List<String> marketCategoryPath,
+                                                               boolean unclassified) {
+        return typeReferenceMapper.selectList(buildTypeQuery(keyword, marketCategoryPath, unclassified))
             .stream()
             .map(EveStaticReferenceService::toTypeResp)
             .toList();
+    }
+
+    /**
+     * 返回游戏市场使用的完整物品分类树。
+     *
+     * <p>分类节点只携带分类名称、路径和数量；实际物品继续按右侧分页列表加载，避免将两万余个物品
+     * 作为树叶节点下发至浏览器。</p>
+     *
+     * @return 六级市场分类树及资料源未分类节点
+     */
+    public List<EveStaticTypeCategoryNodeResp> listTypeCategories() {
+        List<EveStaticTypeCategoryNodeResp> cached = typeCategoryTreeCache;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (this) {
+            if (typeCategoryTreeCache == null) {
+                typeCategoryTreeCache = buildTypeCategoryTree();
+            }
+            return typeCategoryTreeCache;
+        }
     }
 
     /** 分页查询星域、星座、星系与建筑位置资料。 */
     public PageResp<EveStaticLocationReferenceResp> pageLocations(int page,
                                                                   int size,
                                                                   String keyword,
-                                                                  String referenceType) {
+                                                                  String referenceType,
+                                                                  String hierarchyType,
+                                                                  Long hierarchyId) {
         Page<EveStaticLocationReferenceDO> result = locationReferenceMapper
-            .selectPage(new Page<>(page, size), buildLocationQuery(keyword, referenceType));
+            .selectPage(new Page<>(page, size), buildLocationQuery(keyword, referenceType, hierarchyType, hierarchyId));
         return new PageResp<>(result.getRecords()
             .stream()
             .map(EveStaticReferenceService::toLocationResp)
@@ -229,16 +269,35 @@ public class EveStaticReferenceService {
     }
 
     /** 导出筛选后的完整静态位置资料。 */
-    public List<EveStaticLocationReferenceResp> listLocationsForExport(String keyword, String referenceType) {
-        return locationReferenceMapper.selectList(buildLocationQuery(keyword, referenceType))
+    public List<EveStaticLocationReferenceResp> listLocationsForExport(String keyword,
+                                                                       String referenceType,
+                                                                       String hierarchyType,
+                                                                       Long hierarchyId) {
+        return locationReferenceMapper
+            .selectList(buildLocationQuery(keyword, referenceType, hierarchyType, hierarchyId))
             .stream()
             .map(EveStaticReferenceService::toLocationResp)
             .toList();
     }
 
+    /** 返回按星域、星座、星系组织的位置导航树，空间站和公开建筑在右侧列表按需展示。 */
+    public List<EveStaticLocationTreeNodeResp> listLocationTree() {
+        List<EveStaticLocationTreeNodeResp> cached = locationTreeCache;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (this) {
+            if (locationTreeCache == null) {
+                locationTreeCache = buildLocationTree();
+            }
+            return locationTreeCache;
+        }
+    }
+
     /** 生成物品类型查询条件，关键字覆盖 ID、名称、说明与六级市场分类。 */
     private static LambdaQueryWrapper<EveStaticTypeReferenceDO> buildTypeQuery(String keyword,
-                                                                               String marketCategoryL1) {
+                                                                               List<String> marketCategoryPath,
+                                                                               boolean unclassified) {
         LambdaQueryWrapper<EveStaticTypeReferenceDO> query = new LambdaQueryWrapper<EveStaticTypeReferenceDO>()
             .orderByAsc(EveStaticTypeReferenceDO::getMarketCategoryL1, EveStaticTypeReferenceDO::getMarketCategoryL2, EveStaticTypeReferenceDO::getTypeName, EveStaticTypeReferenceDO::getTypeId);
         if (keyword != null && !keyword.isBlank()) {
@@ -261,15 +320,145 @@ public class EveStaticReferenceService {
                 .or()
                 .like(EveStaticTypeReferenceDO::getMarketCategoryL6, value));
         }
-        if (marketCategoryL1 != null && !marketCategoryL1.isBlank()) {
-            query.eq(EveStaticTypeReferenceDO::getMarketCategoryL1, marketCategoryL1.trim());
+        if (unclassified) {
+            query.eq(EveStaticTypeReferenceDO::getMarketCategoryL1, "");
+            return query;
+        }
+        List<String> path = marketCategoryPath == null ? List.of() : marketCategoryPath;
+        if (path.size() > 0 && !path.get(0).isBlank()) {
+            query.eq(EveStaticTypeReferenceDO::getMarketCategoryL1, path.get(0).trim());
+        }
+        if (path.size() > 1 && !path.get(1).isBlank()) {
+            query.eq(EveStaticTypeReferenceDO::getMarketCategoryL2, path.get(1).trim());
+        }
+        if (path.size() > 2 && !path.get(2).isBlank()) {
+            query.eq(EveStaticTypeReferenceDO::getMarketCategoryL3, path.get(2).trim());
+        }
+        if (path.size() > 3 && !path.get(3).isBlank()) {
+            query.eq(EveStaticTypeReferenceDO::getMarketCategoryL4, path.get(3).trim());
+        }
+        if (path.size() > 4 && !path.get(4).isBlank()) {
+            query.eq(EveStaticTypeReferenceDO::getMarketCategoryL5, path.get(4).trim());
+        }
+        if (path.size() > 5 && !path.get(5).isBlank()) {
+            query.eq(EveStaticTypeReferenceDO::getMarketCategoryL6, path.get(5).trim());
         }
         return query;
     }
 
+    /** 读取全部分类列并构造轻量分类树，物品本身仍由分页接口按需返回。 */
+    private List<EveStaticTypeCategoryNodeResp> buildTypeCategoryTree() {
+        QueryWrapper<EveStaticTypeReferenceDO> query = new QueryWrapper<EveStaticTypeReferenceDO>()
+            .select("market_category_l1", "market_category_l2", "market_category_l3", "market_category_l4", "market_category_l5", "market_category_l6")
+            .orderByAsc("market_category_l1", "market_category_l2", "market_category_l3", "market_category_l4", "market_category_l5", "market_category_l6");
+        List<EveStaticTypeReferenceDO> references = typeReferenceMapper.selectList(query);
+        Map<String, MutableTypeCategoryNode> roots = new LinkedHashMap<>();
+        MutableTypeCategoryNode unclassified = new MutableTypeCategoryNode("未分类", List.of(), true);
+        for (EveStaticTypeReferenceDO reference : references) {
+            List<String> path = marketCategoryPath(reference);
+            if (path.isEmpty()) {
+                unclassified.directTypeCount++;
+                unclassified.typeCount++;
+                continue;
+            }
+            Map<String, MutableTypeCategoryNode> siblings = roots;
+            List<String> traversedPath = new ArrayList<>();
+            MutableTypeCategoryNode current = null;
+            for (String segment : path) {
+                traversedPath.add(segment);
+                current = siblings.computeIfAbsent(segment, name -> new MutableTypeCategoryNode(name, List
+                    .copyOf(traversedPath), false));
+                current.typeCount++;
+                siblings = current.children;
+            }
+            current.directTypeCount++;
+        }
+        List<EveStaticTypeCategoryNodeResp> result = new ArrayList<>();
+        roots.values().forEach(node -> result.add(node.toResponse()));
+        if (unclassified.typeCount > 0) {
+            result.add(unclassified.toResponse());
+        }
+        return List.copyOf(result);
+    }
+
+    /** 将类型资料的连续非空分类列转换为树节点路径。 */
+    private static List<String> marketCategoryPath(EveStaticTypeReferenceDO reference) {
+        List<String> path = new ArrayList<>(6);
+        String[] categories = {reference.getMarketCategoryL1(), reference.getMarketCategoryL2(), reference
+            .getMarketCategoryL3(), reference.getMarketCategoryL4(), reference.getMarketCategoryL5(), reference
+                .getMarketCategoryL6()};
+        for (String category : categories) {
+            if (category == null || category.isBlank()) {
+                break;
+            }
+            path.add(category);
+        }
+        return path;
+    }
+
+    /** 构建星域、星座、星系三级导航树，并将空间站与公开建筑计入所属星系数量。 */
+    private List<EveStaticLocationTreeNodeResp> buildLocationTree() {
+        QueryWrapper<EveStaticLocationReferenceDO> query = new QueryWrapper<EveStaticLocationReferenceDO>()
+            .select("reference_type", "reference_id", "reference_name", "solar_system_id", "constellation_id", "region_id")
+            .orderByAsc("reference_type", "reference_name", "reference_id");
+        List<EveStaticLocationReferenceDO> references = locationReferenceMapper.selectList(query);
+        Map<Long, MutableLocationTreeNode> regions = new LinkedHashMap<>();
+        Map<Long, MutableLocationTreeNode> constellations = new LinkedHashMap<>();
+        Map<Long, MutableLocationTreeNode> solarSystems = new LinkedHashMap<>();
+        for (EveStaticLocationReferenceDO reference : references) {
+            if ("REGION".equals(reference.getReferenceType())) {
+                regions.put(reference.getReferenceId(), MutableLocationTreeNode.from(reference));
+            }
+        }
+        for (EveStaticLocationReferenceDO reference : references) {
+            if (!"CONSTELLATION".equals(reference.getReferenceType())) {
+                continue;
+            }
+            MutableLocationTreeNode constellation = MutableLocationTreeNode.from(reference);
+            constellations.put(reference.getReferenceId(), constellation);
+            MutableLocationTreeNode region = regions.get(reference.getRegionId());
+            if (region != null) {
+                region.children.add(constellation);
+            }
+        }
+        for (EveStaticLocationReferenceDO reference : references) {
+            if (!"SOLAR_SYSTEM".equals(reference.getReferenceType())) {
+                continue;
+            }
+            MutableLocationTreeNode solarSystem = MutableLocationTreeNode.from(reference);
+            solarSystems.put(reference.getReferenceId(), solarSystem);
+            MutableLocationTreeNode constellation = constellations.get(reference.getConstellationId());
+            if (constellation != null) {
+                constellation.children.add(solarSystem);
+            }
+        }
+        for (EveStaticLocationReferenceDO reference : references) {
+            MutableLocationTreeNode region = regions.get("REGION".equals(reference.getReferenceType())
+                ? reference.getReferenceId()
+                : reference.getRegionId());
+            MutableLocationTreeNode constellation = constellations.get("CONSTELLATION".equals(reference
+                .getReferenceType()) ? reference.getReferenceId() : reference.getConstellationId());
+            MutableLocationTreeNode solarSystem = solarSystems.get("SOLAR_SYSTEM".equals(reference.getReferenceType())
+                ? reference.getReferenceId()
+                : reference.getSolarSystemId());
+            if (region != null) {
+                region.locationCount++;
+            }
+            if (constellation != null) {
+                constellation.locationCount++;
+            }
+            if (solarSystem != null) {
+                solarSystem.locationCount++;
+            }
+        }
+        return regions.values().stream().map(MutableLocationTreeNode::toResponse).toList();
+    }
+
     /** 生成位置查询条件，关键字覆盖位置 ID、名称与所属层级 ID。 */
     private static LambdaQueryWrapper<EveStaticLocationReferenceDO> buildLocationQuery(String keyword,
-                                                                                       String referenceType) {
+                                                                                       String referenceType,
+                                                                                       String hierarchyType,
+                                                                                       Long hierarchyId) {
         LambdaQueryWrapper<EveStaticLocationReferenceDO> query = new LambdaQueryWrapper<EveStaticLocationReferenceDO>()
             .orderByAsc(EveStaticLocationReferenceDO::getReferenceType, EveStaticLocationReferenceDO::getReferenceName, EveStaticLocationReferenceDO::getReferenceId);
         if (keyword != null && !keyword.isBlank()) {
@@ -287,7 +476,34 @@ public class EveStaticReferenceService {
         if (referenceType != null && !referenceType.isBlank()) {
             query.eq(EveStaticLocationReferenceDO::getReferenceType, referenceType.trim());
         }
+        applyLocationHierarchyFilter(query, hierarchyType, hierarchyId);
         return query;
+    }
+
+    /** 依据左侧导航选择的星域、星座或星系筛选右侧所有下级位置。 */
+    private static void applyLocationHierarchyFilter(LambdaQueryWrapper<EveStaticLocationReferenceDO> query,
+                                                     String hierarchyType,
+                                                     Long hierarchyId) {
+        if (hierarchyType == null || hierarchyType.isBlank() || hierarchyId == null) {
+            return;
+        }
+        switch (hierarchyType) {
+            case "REGION" -> query.and(item -> item.eq(EveStaticLocationReferenceDO::getRegionId, hierarchyId)
+                .or()
+                .eq(EveStaticLocationReferenceDO::getReferenceType, "REGION")
+                .eq(EveStaticLocationReferenceDO::getReferenceId, hierarchyId));
+            case "CONSTELLATION" -> query.and(item -> item
+                .eq(EveStaticLocationReferenceDO::getConstellationId, hierarchyId)
+                .or()
+                .eq(EveStaticLocationReferenceDO::getReferenceType, "CONSTELLATION")
+                .eq(EveStaticLocationReferenceDO::getReferenceId, hierarchyId));
+            case "SOLAR_SYSTEM" -> query.and(item -> item
+                .eq(EveStaticLocationReferenceDO::getSolarSystemId, hierarchyId)
+                .or()
+                .eq(EveStaticLocationReferenceDO::getReferenceType, "SOLAR_SYSTEM")
+                .eq(EveStaticLocationReferenceDO::getReferenceId, hierarchyId));
+            default -> throw new BusinessException("位置树节点类型无效");
+        }
     }
 
     /** 将物品资料实体转换为不会暴露数据库主键的列表响应。 */
@@ -638,6 +854,64 @@ public class EveStaticReferenceService {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    /** 构建分类树期间使用的可变节点，完成后转换为不可变接口响应。 */
+    private static final class MutableTypeCategoryNode {
+
+        private final String name;
+        private final List<String> path;
+        private final boolean unclassified;
+        private final Map<String, MutableTypeCategoryNode> children = new LinkedHashMap<>();
+        private long directTypeCount;
+        private long typeCount;
+
+        /** 创建分类树节点。 */
+        private MutableTypeCategoryNode(String name, List<String> path, boolean unclassified) {
+            this.name = name;
+            this.path = path;
+            this.unclassified = unclassified;
+        }
+
+        /** 递归转换为供接口返回的不可变树节点。 */
+        private EveStaticTypeCategoryNodeResp toResponse() {
+            return new EveStaticTypeCategoryNodeResp(name, path, directTypeCount, typeCount, unclassified, children
+                .values()
+                .stream()
+                .map(MutableTypeCategoryNode::toResponse)
+                .toList());
+        }
+    }
+
+    /** 构建位置导航树期间使用的可变节点，完成后转换为不可变接口响应。 */
+    private static final class MutableLocationTreeNode {
+
+        private final String referenceType;
+        private final Long referenceId;
+        private final String referenceName;
+        private final List<MutableLocationTreeNode> children = new ArrayList<>();
+        private long locationCount;
+
+        /** 创建位置导航树节点。 */
+        private MutableLocationTreeNode(String referenceType, Long referenceId, String referenceName) {
+            this.referenceType = referenceType;
+            this.referenceId = referenceId;
+            this.referenceName = referenceName;
+        }
+
+        /** 用一条星域、星座或星系资料构建对应的导航节点。 */
+        private static MutableLocationTreeNode from(EveStaticLocationReferenceDO source) {
+            return new MutableLocationTreeNode(source.getReferenceType(), source.getReferenceId(), source
+                .getReferenceName());
+        }
+
+        /** 递归转换为供接口返回的不可变树节点。 */
+        private EveStaticLocationTreeNodeResp toResponse() {
+            return new EveStaticLocationTreeNodeResp(referenceType, referenceId, referenceName, locationCount, children
+                .stream()
+                .map(MutableLocationTreeNode::toResponse)
+                .toList());
+        }
     }
 
     /** 解析完成但尚未落库的工作簿快照。 */

@@ -5,6 +5,21 @@ application:
   # 是否为生产环境
   production: true
 
+eve:
+  serenity:
+    sso:
+      # 国服未开放独立应用注册，生产环境复用国服 Swagger UI 公共客户端并手动粘贴回调地址。
+      enabled: true
+      client-id: ${EVE_SERENITY_CLIENT_ID:bc90aa496a404724a93f41b4f4e97761}
+      client-secret: ${EVE_SERENITY_CLIENT_SECRET:}
+      device-id: eve-corp-manager
+      callback-url: https://ali-esi.evepc.163.com/ui/oauth2-redirect.html
+      allowed-callback-uris:
+        - https://ali-esi.evepc.163.com/ui/oauth2-redirect.html
+      subject-pattern: 'CHARACTER:EVE:[0-9]+'
+      scope-claim: scp
+      scope-value-pattern: 'esi-[a-z0-9._-]+'
+
 --- ### 服务器配置
 server:
   # HTTP 端口（默认 8080）
@@ -240,7 +255,12 @@ sa-token.extension:
 justauth:
   enabled: false
   cache:
-    type: REDIS
+    # 本站不启用第三方登录；避免 JustAuth Redis 缓存与 Redisson 模板重复注册。
+    type: DEFAULT
+
+# 本项目使用 Spring 定时任务执行数据同步，不接入上游 Snail Job 调度中心。
+snail-job:
+  enabled: false
 
 --- ### Snail Job 配置
 snail-job:

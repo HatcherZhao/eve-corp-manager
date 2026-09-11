@@ -142,16 +142,14 @@ onMounted(loadStructures)
     </section>
 
     <section class="eve-structures-page__table-wrap">
-      <a-table :data="records" :loading="loading" :pagination="false" row-key="structureId" :scroll="{ x: 1380 }">
+      <a-table :data="records" :loading="loading" :pagination="false" row-key="structureId" :scroll="{ x: 920 }">
         <template #columns>
-          <a-table-column title="建筑" :width="250"><template #cell="{ record }"><div class="eve-structures-page__structure-identity"><EveTypeIcon :type-id="record.typeId" :size="36" :alt="`${record.typeName || record.structureName || '建筑'}图标`" /><div><strong>{{ record.structureName || '建筑名称待补齐' }}</strong><small>{{ record.typeName || '建筑类型待补齐' }}</small></div></div></template></a-table-column>
-          <a-table-column title="所在星系" :width="180"><template #cell="{ record }">{{ record.solarSystemName || '星系名称待补齐' }}</template></a-table-column>
-          <a-table-column title="状态" :width="160"><template #cell="{ record }"><a-tag :color="stateColor(record.state)">{{ stateLabel(record.state) }}</a-tag></template></a-table-column>
-          <a-table-column title="燃料到期" :width="180"><template #cell="{ record }"><a-tag :color="fuelColor(record)">{{ fuelRisk(record) }}</a-tag></template></a-table-column>
-          <a-table-column title="在线服务" :width="260"><template #cell="{ record }"><div class="eve-structures-page__services"><a-tag v-for="service in record.services" :key="service.name" :color="service.state === 'online' ? 'green' : 'gray'">{{ serviceLabel(service.name) }} · {{ service.state === 'online' ? '在线' : service.state }}</a-tag><span v-if="!record.services.length">上游未提供</span></div></template></a-table-column>
-          <a-table-column title="状态计时结束" :width="180"><template #cell="{ record }">{{ formatTime(record.stateTimerEndAt) }}</template></a-table-column>
-          <a-table-column title="拆锚时间" :width="180"><template #cell="{ record }">{{ formatTime(record.unanchorsAt) }}</template></a-table-column>
-          <a-table-column title="快照时间" :width="180"><template #cell="{ record }">{{ formatTime(record.lastSeenAt) }}</template></a-table-column>
+          <a-table-column title="建筑" :width="210" ellipsis tooltip><template #cell="{ record }"><div class="eve-structures-page__structure-identity"><EveTypeIcon :type-id="record.typeId" :size="30" :alt="`${record.typeName || record.structureName || '建筑'}图标`" /><div><strong>{{ record.structureName || '建筑名称待补齐' }}</strong><small>{{ record.typeName || '建筑类型待补齐' }}</small></div></div></template></a-table-column>
+          <a-table-column title="星系" :width="125" ellipsis tooltip><template #cell="{ record }">{{ record.solarSystemName || '星系名称待补齐' }}</template></a-table-column>
+          <a-table-column title="状态" :width="105"><template #cell="{ record }"><a-tag :color="stateColor(record.state)">{{ stateLabel(record.state) }}</a-tag></template></a-table-column>
+          <a-table-column title="燃料" :width="135"><template #cell="{ record }"><a-tag :color="fuelColor(record)">{{ fuelRisk(record) }}</a-tag></template></a-table-column>
+          <a-table-column title="在线服务" :width="185"><template #cell="{ record }"><div class="eve-structures-page__services"><a-tag v-for="service in record.services" :key="service.name" :color="service.state === 'online' ? 'green' : 'gray'">{{ serviceLabel(service.name) }} · {{ service.state === 'online' ? '在线' : service.state }}</a-tag><span v-if="!record.services.length">上游未提供</span></div></template></a-table-column>
+          <a-table-column title="计时" :width="160"><template #cell="{ record }"><strong>{{ formatTime(record.stateTimerEndAt) }}</strong><small v-if="record.unanchorsAt">拆锚：{{ formatTime(record.unanchorsAt) }}</small></template></a-table-column>
         </template>
       </a-table>
       <a-pagination v-if="total" v-model:current="query.page" v-model:page-size="query.size" :total="total" show-total show-page-size @change="loadStructures" @page-size-change="search" />
@@ -161,13 +159,13 @@ onMounted(loadStructures)
 
 <style scoped lang="scss">
 .eve-structures-page { color: var(--color-text-1); }
-.eve-structures-page__header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 26px 30px; border: 1px solid rgba(var(--arcoblue-6), .18); border-radius: 16px; background: linear-gradient(125deg, rgba(var(--arcoblue-6), .12), transparent 55%), var(--color-bg-1); }
+.eve-structures-page__header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 20px 22px; border: 1px solid rgba(var(--arcoblue-6), .18); border-radius: 14px; background: linear-gradient(125deg, rgba(var(--arcoblue-6), .12), transparent 55%), var(--color-bg-1); }
 .eve-structures-page__header-tools { display: flex; align-self: flex-start; flex-direction: column; align-items: flex-end; gap: 10px; }
 .eve-structures-page__eyebrow { color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; font-size: 11px; letter-spacing: .15em; }
-.eve-structures-page h1 { margin: 8px 0; font-size: 30px; }.eve-structures-page__header p { max-width: 720px; margin: 0; color: var(--color-text-3); }
-.eve-structures-page__guide { margin-top: 18px; }.eve-structures-page__filter-bar { display: flex; align-items: center; gap: 10px; margin: 18px 0; padding: 14px 16px; border: 1px solid var(--color-border-2); border-radius: 14px; background: var(--color-bg-1); }
+.eve-structures-page h1 { margin: 5px 0; font-size: 26px; }.eve-structures-page__header p { max-width: 720px; margin: 0; color: var(--color-text-3); }
+.eve-structures-page__guide { margin-top: 12px; }.eve-structures-page__filter-bar { display: flex; align-items: center; gap: 8px; margin: 12px 0; padding: 10px 12px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }
 .eve-structures-page__filter-bar .arco-input-wrapper { width: min(340px, 100%); }.eve-structures-page__filter-bar .arco-select { width: 180px; }.eve-structures-page__count { margin-left: auto; color: var(--color-text-3); font-size: 13px; }
-.eve-structures-page__table-wrap { padding: 18px; border: 1px solid var(--color-border-2); border-radius: 14px; background: var(--color-bg-1); }.eve-structures-page__table-wrap .arco-pagination { justify-content: flex-end; margin-top: 16px; }.eve-structures-page__table-wrap small { display: block; margin-top: 4px; color: var(--color-text-3); }.eve-structures-page__services { display: flex; flex-wrap: wrap; gap: 4px; }.eve-structures-page__services span { color: var(--color-text-3); }
+.eve-structures-page__table-wrap { padding: 12px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }.eve-structures-page__table-wrap .arco-pagination { justify-content: flex-end; margin-top: 12px; }.eve-structures-page__table-wrap small { display: block; margin-top: 3px; color: var(--color-text-3); }.eve-structures-page__services { display: flex; flex-wrap: wrap; gap: 3px; }.eve-structures-page__services span { color: var(--color-text-3); }
 .eve-structures-page__structure-identity { display: flex; align-items: center; gap: 10px; }.eve-structures-page__structure-identity > div { min-width: 0; }.eve-structures-page__structure-identity strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 860px) { .eve-structures-page__header { align-items: flex-start; flex-direction: column; }.eve-structures-page__header-tools { align-items: flex-start; }.eve-structures-page__filter-bar { flex-wrap: wrap; }.eve-structures-page__filter-bar .arco-input-wrapper, .eve-structures-page__filter-bar .arco-select { width: 100%; }.eve-structures-page__count { width: 100%; margin-left: 0; } }
 </style>

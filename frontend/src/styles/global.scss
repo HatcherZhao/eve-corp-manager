@@ -276,6 +276,23 @@
   overflow-x: hidden;
 }
 
+// EVE 运营页面以高频浏览和处理事项为主，统一降低表格密度，避免为次要字段浪费屏幕宽度。
+.gi_page[class*='eve-'] {
+  .arco-table-th,
+  .arco-table-td {
+    padding: 8px 10px;
+  }
+
+  .arco-table-th-title,
+  .arco-table-td {
+    font-size: 13px;
+  }
+
+  .arco-table .arco-tag {
+    margin: 0;
+  }
+}
+
 // 表格页面
 .gi_table_page {
   flex: 1;

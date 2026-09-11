@@ -443,20 +443,19 @@ watch(() => route.path, async () => {
         <a-button type="primary" :loading="syncing" @click="sync">立即同步</a-button>
       </a-empty>
       <template v-else>
-        <a-table :data="records" :loading="loading" :pagination="false" row-key="mailId" :scroll="{ x: 1080 }">
+        <a-table :data="records" :loading="loading" :pagination="false" row-key="mailId" :scroll="{ x: 885 }">
           <template #columns>
-            <a-table-column title="状态" :width="90">
+            <a-table-column title="状态" :width="70">
               <template #cell="{ record }"><a-tag :color="record.read ? 'gray' : 'arcoblue'">{{ record.read ? '已读' : '未读' }}</a-tag></template>
             </a-table-column>
-            <a-table-column title="主题" :width="300" ellipsis tooltip>
+            <a-table-column title="主题" :width="250" ellipsis tooltip>
               <template #cell="{ record }"><strong>{{ record.subject || '（无主题）' }}</strong></template>
             </a-table-column>
-            <a-table-column title="发件人" :width="220" ellipsis tooltip><template #cell="{ record }">{{ partyText(record.from) }}</template></a-table-column>
-            <a-table-column title="收件范围" :width="130"><template #cell="{ record }">{{ record.recipients.length }} 名收件人</template></a-table-column>
-            <a-table-column title="标签" :width="170" ellipsis tooltip><template #cell="{ record }">{{ labelText(record.labels) }}</template></a-table-column>
-            <a-table-column title="接收时间" :width="180"><template #cell="{ record }">{{ formatTime(record.sentAt) }}</template></a-table-column>
-            <a-table-column title="正文" :width="100"><template #cell="{ record }"><a-tag :color="record.bodyAvailable ? 'green' : 'orange'">{{ record.bodyAvailable ? '已缓存' : '按需读取' }}</a-tag></template></a-table-column>
-            <a-table-column title="操作" :width="100" fixed="right"><template #cell="{ record }"><a-button type="text" @click="openDetail(record)">查看邮件</a-button></template></a-table-column>
+            <a-table-column title="发件人" :width="150" ellipsis tooltip><template #cell="{ record }">{{ partyText(record.from) }}</template></a-table-column>
+            <a-table-column title="收件人" :width="80"><template #cell="{ record }">{{ record.recipients.length }} 人</template></a-table-column>
+            <a-table-column title="分类" :width="120" ellipsis tooltip><template #cell="{ record }">{{ labelText(record.labels) }}</template></a-table-column>
+            <a-table-column title="时间" :width="135"><template #cell="{ record }">{{ formatTime(record.sentAt) }}</template></a-table-column>
+            <a-table-column title="操作" :width="80" fixed="right"><template #cell="{ record }"><a-button type="text" @click="openDetail(record)">查看</a-button></template></a-table-column>
           </template>
         </a-table>
         <a-pagination v-if="total" v-model:current="query.page" v-model:page-size="query.size" :total="total" show-total show-page-size @change="loadMails" @page-size-change="search" />
@@ -538,19 +537,19 @@ watch(() => route.path, async () => {
 
 <style scoped lang="scss">
 .eve-mail-page { color: var(--color-text-1); }
-.eve-mail-page__header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 26px 30px; border: 1px solid rgba(var(--arcoblue-6), .18); border-radius: 16px; background: linear-gradient(125deg, rgba(var(--arcoblue-6), .12), transparent 55%), var(--color-bg-1); }
+.eve-mail-page__header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 20px 22px; border: 1px solid rgba(var(--arcoblue-6), .18); border-radius: 14px; background: linear-gradient(125deg, rgba(var(--arcoblue-6), .12), transparent 55%), var(--color-bg-1); }
 .eve-mail-page__eyebrow { color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; font-size: 11px; letter-spacing: .15em; }
-.eve-mail-page h1 { margin: 8px 0; font-size: 30px; }
+.eve-mail-page h1 { margin: 5px 0; font-size: 26px; }
 .eve-mail-page__header p { max-width: 720px; margin: 0; color: var(--color-text-3); }
 .eve-mail-page__actions { display: flex; gap: 10px; flex-shrink: 0; }
-.eve-mail-page__guide { margin-top: 18px; }
-.eve-mail-page__filter-bar { display: flex; align-items: center; gap: 10px; margin: 18px 0; padding: 14px 16px; border: 1px solid var(--color-border-2); border-radius: 14px; background: var(--color-bg-1); }
+.eve-mail-page__guide { margin-top: 12px; }
+.eve-mail-page__filter-bar { display: flex; align-items: center; gap: 8px; margin: 12px 0; padding: 10px 12px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }
 .eve-mail-page__filter-bar .arco-input-wrapper:first-child { width: min(340px, 100%); }
 .eve-mail-page__filter-bar .arco-input-wrapper:nth-child(2) { width: 220px; }
 .eve-mail-page__count { margin-left: auto; color: var(--color-text-3); font-size: 13px; }
-.eve-mail-page__table-wrap { min-height: 300px; padding: 18px; border: 1px solid var(--color-border-2); border-radius: 14px; background: var(--color-bg-1); }
-.eve-mail-page__table-wrap small { display: block; margin-top: 4px; color: var(--color-text-3); }
-.eve-mail-page__table-wrap .arco-pagination { justify-content: flex-end; margin-top: 16px; }
+.eve-mail-page__table-wrap { min-height: 240px; padding: 12px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }
+.eve-mail-page__table-wrap small { display: block; margin-top: 3px; color: var(--color-text-3); }
+.eve-mail-page__table-wrap .arco-pagination { justify-content: flex-end; margin-top: 12px; }
 .eve-mail-page__table-wrap > .arco-empty, .eve-mail-page__table-wrap > .arco-result { padding: 68px 0; }
 .eve-mail-page__detail-loading { display: block; min-height: 320px; }
 .eve-mail-page__detail-heading { padding-bottom: 18px; border-bottom: 1px solid var(--color-border-2); }

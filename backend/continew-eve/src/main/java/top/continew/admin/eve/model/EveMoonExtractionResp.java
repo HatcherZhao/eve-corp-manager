@@ -27,5 +27,5 @@ public record EveMoonExtractionResp(Long id, Long structureId, String structureN
                                     Long moonId, String moonName, Long solarSystemId, String solarSystemName,
                                     LocalDateTime extractionStartAt, LocalDateTime chunkArrivalAt,
                                     LocalDateTime naturalDecayAt, String status, LocalDateTime lastSeenAt,
-                                    LocalDateTime sourceExpiresAt, String note) {
+                                    LocalDateTime sourceExpiresAt, String note, String structureNote) {
 }

@@ -91,7 +91,7 @@ function notificationTitle(record: EveGameNotification) {
   return notificationTypeLabels[record.type || ''] || '其他游戏通知'
 }
 
-/** 将国服通知中的转义文本和键值数据转换成阅读友好的摘要，原文仍在详情中保留。 */
+/** 解码原始国服报文，供默认折叠的诊断区使用。 */
 function readableContent(value?: string) {
   return (value || '')
     .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
@@ -99,6 +99,7 @@ function readableContent(value?: string) {
     .replace(/\\n/g, '\n')
 }
 
+/** 兼容服务端尚未升级时的旧通知响应，确保列表至少保留简短摘要。 */
 function fieldValue(value: string | undefined, field: string) {
   const text = readableContent(value)
   const match = text.match(new RegExp(`(?:^|\\s)${field}:\\s*(?:"([^"\\n]+)"|([^\\s]+))`))
@@ -106,6 +107,7 @@ function fieldValue(value: string | undefined, field: string) {
 }
 
 function notificationSummary(record: EveGameNotification) {
+  if (record.summary) return record.summary
   const structureName = fieldValue(record.content, 'structureName')
   const structure = structureName ? `建筑「${structureName}」` : '该建筑'
   switch (record.type) {
@@ -229,22 +231,22 @@ onMounted(loadNotifications)
         <a-button type="primary" :loading="syncing" @click="sync">立即同步</a-button>
       </a-empty>
       <template v-else>
-        <a-table :data="records" :loading="loading" :pagination="false" row-key="notificationId" :scroll="{ x: 1000 }">
+        <a-table :data="records" :loading="loading" :pagination="false" row-key="notificationId" :scroll="{ x: 820 }">
           <template #columns>
-            <a-table-column title="状态" :width="90">
+            <a-table-column title="状态" :width="70">
               <template #cell="{ record }"><a-tag :color="record.read ? 'gray' : 'arcoblue'">{{ record.read ? '已读' : '未读' }}</a-tag></template>
             </a-table-column>
-            <a-table-column title="通知类型" :width="220" ellipsis tooltip>
+            <a-table-column title="通知类型" :width="150" ellipsis tooltip>
               <template #cell="{ record }">{{ notificationTitle(record) }}</template>
             </a-table-column>
-            <a-table-column title="发送方" :width="180" ellipsis tooltip>
+            <a-table-column title="发送方" :width="130" ellipsis tooltip>
               <template #cell="{ record }">{{ senderText(record) }}</template>
             </a-table-column>
-            <a-table-column title="内容摘要" :min-width="320" ellipsis tooltip>
+            <a-table-column title="内容摘要" :min-width="220" ellipsis tooltip>
               <template #cell="{ record }">{{ notificationSummary(record) }}</template>
             </a-table-column>
-            <a-table-column title="发生时间" :width="180"><template #cell="{ record }">{{ formatTime(record.sentAt) }}</template></a-table-column>
-            <a-table-column title="操作" :width="100" fixed="right"><template #cell="{ record }"><a-button type="text" @click="openDetail(record)">查看详情</a-button></template></a-table-column>
+            <a-table-column title="时间" :width="135"><template #cell="{ record }">{{ formatTime(record.sentAt) }}</template></a-table-column>
+            <a-table-column title="操作" :width="80" fixed="right"><template #cell="{ record }"><a-button type="text" @click="openDetail(record)">查看</a-button></template></a-table-column>
           </template>
         </a-table>
         <a-pagination v-if="total" v-model:current="query.page" v-model:page-size="query.size" :total="total" show-total show-page-size @change="loadNotifications" @page-size-change="search" />
@@ -261,8 +263,19 @@ onMounted(loadNotifications)
         <section class="eve-notifications-page__content">
           <h3>通知摘要</h3>
           <p>{{ notificationSummary(detail) }}</p>
-          <h3>原始通知内容</h3>
-          <pre>{{ readableContent(detail.content) || '上游未提供通知正文' }}</pre>
+          <template v-if="detail.details?.length">
+            <h3>详细信息</h3>
+            <a-descriptions :column="1" bordered size="small">
+              <a-descriptions-item v-for="item in detail.details" :key="item.label" :label="item.label">
+                {{ item.value }}
+              </a-descriptions-item>
+            </a-descriptions>
+          </template>
+          <a-collapse v-if="detail.content" class="eve-notifications-page__raw-content">
+            <a-collapse-item key="raw" header="技术原文（仅供排查通知类型）">
+              <pre>{{ readableContent(detail.content) }}</pre>
+            </a-collapse-item>
+          </a-collapse>
         </section>
         <footer class="eve-notifications-page__detail-meta">
           <span>系统分类：{{ categoryMeta[detail.category].title }}</span>
@@ -274,22 +287,23 @@ onMounted(loadNotifications)
 </template>
 
 <style scoped lang="scss">
-.eve-notifications-page { display: grid; gap: 18px; }
+.eve-notifications-page { display: grid; gap: 12px; }
 .eve-notifications-page__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
 .eve-notifications-page__eyebrow { color: rgb(var(--primary-6)); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
 .eve-notifications-page__header h1 { margin: 6px 0; font-size: 26px; }
 .eve-notifications-page__header p { margin: 0; color: var(--color-text-2); }
-.eve-notifications-page__actions, .eve-notifications-page__filter-bar { display: flex; align-items: center; gap: 12px; }
-.eve-notifications-page__filter-bar { flex-wrap: wrap; padding: 16px; border: 1px solid var(--color-neutral-3); border-radius: 8px; background: var(--color-bg-2); }
+.eve-notifications-page__actions, .eve-notifications-page__filter-bar { display: flex; align-items: center; gap: 8px; }
+.eve-notifications-page__filter-bar { flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--color-neutral-3); border-radius: 8px; background: var(--color-bg-2); }
 .eve-notifications-page__filter-bar :deep(.arco-input-wrapper) { width: min(400px, 100%); }
 .eve-notifications-page__count { margin-left: auto; color: var(--color-text-3); font-size: 13px; }
 .eve-notifications-page__table-wrap { overflow: hidden; border: 1px solid var(--color-neutral-3); border-radius: 8px; background: var(--color-bg-2); }
-.eve-notifications-page__table-wrap :deep(.arco-pagination) { justify-content: flex-end; padding: 16px; }
+.eve-notifications-page__table-wrap :deep(.arco-pagination) { justify-content: flex-end; padding: 12px; }
 .eve-notifications-page__detail-heading { display: grid; gap: 8px; }
 .eve-notifications-page__detail-heading h2 { margin: 0; font-size: 20px; word-break: break-word; }
 .eve-notifications-page__detail-heading span, .eve-notifications-page__detail-meta { color: var(--color-text-3); font-size: 13px; }
 .eve-notifications-page__content { margin-top: 24px; }
 .eve-notifications-page__content h3 { margin-bottom: 10px; }
+.eve-notifications-page__raw-content { margin-top: 18px; }
 .eve-notifications-page__content pre { margin: 0; padding: 14px; overflow: auto; white-space: pre-wrap; word-break: break-word; border-radius: 6px; background: var(--color-fill-2); color: var(--color-text-1); font-family: inherit; line-height: 1.7; }
 .eve-notifications-page__detail-meta { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 20px; }
 @media (max-width: 760px) { .eve-notifications-page__header { flex-direction: column; } .eve-notifications-page__count { width: 100%; margin-left: 0; } }

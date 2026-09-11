@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import top.continew.admin.eve.model.EveMiningAnalyticsResp;
 import top.continew.admin.eve.model.EveMiningLedgerResp;
 import top.continew.admin.eve.model.EveMiningLedgerSummaryResp;
 import top.continew.admin.eve.model.EveSyncRequestResp;
@@ -39,11 +40,11 @@ import top.continew.starter.extension.crud.model.resp.PageResp;
 import java.time.LocalDate;
 
 /**
- * EVE 军团采矿账本查询、汇总与同步接口。
+ * EVE 军团月矿开采统计查询、分析与同步接口。
  *
  * @author zhaoyuqing
  */
-@Tag(name = "EVE 军团采矿账本")
+@Tag(name = "EVE 军团月矿开采统计")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/eve/mining")
@@ -52,9 +53,9 @@ public class EveMiningLedgerController {
     private final EveMiningLedgerService miningLedgerService;
     private final EveManualSyncRequestService manualSyncRequestService;
 
-    /** 分页查询当前军团已发布的观察者采矿账本。 */
+    /** 分页查询当前军团已发布的月矿开采明细。 */
     @GetMapping
-    @Operation(summary = "查询当前军团采矿账本")
+    @Operation(summary = "查询当前军团月矿开采明细")
     @SaCheckPermission("eve:mining:view")
     public PageResp<EveMiningLedgerResp> page(@RequestParam(defaultValue = "1") @Min(1) int page,
                                               @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
@@ -67,9 +68,9 @@ public class EveMiningLedgerController {
         return miningLedgerService.page(page, size, observerId, characterId, typeId, fromDate, toDate, keyword);
     }
 
-    /** 汇总当前筛选条件下的账本数量、成员、矿物和最近数据时间。 */
+    /** 汇总当前筛选条件下的开采数量、成员、矿物和最近数据时间。 */
     @GetMapping("/summary")
-    @Operation(summary = "汇总当前军团采矿账本")
+    @Operation(summary = "汇总当前军团月矿开采数据")
     @SaCheckPermission("eve:mining:view")
     public EveMiningLedgerSummaryResp summary(@RequestParam(required = false) Long observerId,
                                               @RequestParam(required = false) Long characterId,
@@ -80,9 +81,19 @@ public class EveMiningLedgerController {
         return miningLedgerService.summary(observerId, characterId, typeId, fromDate, toDate, keyword);
     }
 
-    /** 请求后台同步当前军团完整观察者账本。 */
+    /** 查询当前军团的开采趋势、建筑排名、玩家排名和总体概览。 */
+    @GetMapping("/analytics")
+    @Operation(summary = "分析当前军团月矿开采数据")
+    @SaCheckPermission("eve:mining:view")
+    public EveMiningAnalyticsResp analytics(@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+                                            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+                                            @RequestParam(required = false) String keyword) {
+        return miningLedgerService.analytics(fromDate, toDate, keyword);
+    }
+
+    /** 请求后台同步当前军团完整月矿开采数据。 */
     @PostMapping("/sync")
-    @Operation(summary = "同步当前军团采矿账本")
+    @Operation(summary = "同步当前军团月矿开采数据")
     @SaCheckPermission("eve:mining:sync")
     public EveSyncRequestResp sync() {
         return manualSyncRequestService.requestCurrentCorporation(EveSyncModule.MINING_LEDGER);

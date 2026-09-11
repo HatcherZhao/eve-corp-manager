@@ -69,7 +69,7 @@ public class EveRbacApiImpl implements EveRbacApi {
         ALLOWED_PERMISSIONS.put("eve:assets:view", "军团资产");
         ALLOWED_PERMISSIONS.put("eve:structures:view", "建筑设施");
         ALLOWED_PERMISSIONS.put("eve:extractions:view", "月矿计划");
-        ALLOWED_PERMISSIONS.put("eve:mining:view", "采矿账本");
+        ALLOWED_PERMISSIONS.put("eve:mining:view", "月矿开采统计");
         ALLOWED_PERMISSIONS.put("eve:members:view", "军团人员");
         ALLOWED_PERMISSIONS.put("eve:members:track:view", "成员追踪信息");
         ALLOWED_PERMISSIONS.put("eve:members:organize", "成员分组与备注");

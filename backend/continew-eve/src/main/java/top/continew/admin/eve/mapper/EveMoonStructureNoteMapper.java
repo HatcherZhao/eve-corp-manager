@@ -14,18 +14,17 @@
  * limitations under the License.
  */
 
-package top.continew.admin.eve.model;
+package top.continew.admin.eve.mapper;
 
-import java.time.LocalDateTime;
-import java.util.List;
+import org.apache.ibatis.annotations.Mapper;
+import top.continew.admin.eve.model.entity.EveMoonStructureNoteDO;
+import top.continew.starter.data.mapper.BaseMapper;
 
 /**
- * 游戏通知列表安全响应。
+ * 月矿堡长期备注 Mapper。
  *
  * @author zhaoyuqing
  */
-public record EveGameNotificationResp(Long notificationId, Boolean read, String category, String type,
-                                      String senderName, String senderType, String content, String summary,
-                                      List<EveGameNotificationDetailItem> details, LocalDateTime sentAt,
-                                      LocalDateTime lastSeenAt, LocalDateTime sourceExpiresAt) {
+@Mapper
+public interface EveMoonStructureNoteMapper extends BaseMapper<EveMoonStructureNoteDO> {
 }

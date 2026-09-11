@@ -16,16 +16,13 @@
 
 package top.continew.admin.eve.model;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 游戏通知列表安全响应。
+ * EVE 市场分类树节点，用于按游戏分类层级浏览物品资料。
  *
  * @author zhaoyuqing
  */
-public record EveGameNotificationResp(Long notificationId, Boolean read, String category, String type,
-                                      String senderName, String senderType, String content, String summary,
-                                      List<EveGameNotificationDetailItem> details, LocalDateTime sentAt,
-                                      LocalDateTime lastSeenAt, LocalDateTime sourceExpiresAt) {
+public record EveStaticTypeCategoryNodeResp(String name, List<String> path, long directTypeCount, long typeCount,
+                                            boolean unclassified, List<EveStaticTypeCategoryNodeResp> children) {
 }

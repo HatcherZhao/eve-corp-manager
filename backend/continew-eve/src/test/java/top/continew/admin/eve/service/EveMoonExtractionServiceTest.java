@@ -27,11 +27,13 @@ import top.continew.admin.eve.mapper.EveCharacterRoleSnapshotMapper;
 import top.continew.admin.eve.mapper.EveCorporationMapper;
 import top.continew.admin.eve.mapper.EveCorporationStructureMapper;
 import top.continew.admin.eve.mapper.EveMoonExtractionMapper;
+import top.continew.admin.eve.mapper.EveMoonStructureNoteMapper;
 import top.continew.admin.eve.model.EveMeContextResp;
 import top.continew.admin.eve.model.entity.EveAuthorizationDO;
 import top.continew.admin.eve.model.entity.EveCharacterRoleSnapshotDO;
 import top.continew.admin.eve.model.entity.EveCorporationDO;
 import top.continew.admin.eve.model.entity.EveMoonExtractionDO;
+import top.continew.admin.eve.model.entity.EveMoonStructureNoteDO;
 import top.continew.admin.eve.model.enums.EveAuthorizationStatus;
 
 import java.lang.reflect.Method;
@@ -46,6 +48,7 @@ import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.argThat;
 
 /**
  * 月矿同步数据源选择测试。
@@ -60,7 +63,7 @@ class EveMoonExtractionServiceTest {
         EveAuthorizationMapper authorizationMapper = mock(EveAuthorizationMapper.class);
         EveCharacterRoleSnapshotMapper roleSnapshotMapper = mock(EveCharacterRoleSnapshotMapper.class);
         EvePermissionRefreshService permissionRefreshService = mock(EvePermissionRefreshService.class);
-        EveMoonExtractionService service = new EveMoonExtractionService(mock(EveContextService.class), mock(EveCorporationMapper.class), mock(EveCorporationStructureMapper.class), mock(EveMoonExtractionMapper.class), authorizationMapper, roleSnapshotMapper, mock(EveAuthorizationLifecycleService.class), permissionRefreshService, mock(EveStaticReferenceService.class), mock(SerenityEsiClient.class), mock(RedissonClient.class), mock(EveDataFreshnessService.class));
+        EveMoonExtractionService service = new EveMoonExtractionService(mock(EveContextService.class), mock(EveCorporationMapper.class), mock(EveCorporationStructureMapper.class), mock(EveMoonExtractionMapper.class), mock(EveMoonStructureNoteMapper.class), authorizationMapper, roleSnapshotMapper, mock(EveAuthorizationLifecycleService.class), permissionRefreshService, mock(EveStaticReferenceService.class), mock(SerenityEsiClient.class), mock(RedissonClient.class), mock(EveDataFreshnessService.class));
         EveAuthorizationDO authorization = authorization();
         when(authorizationMapper.selectTenantCandidates(10L)).thenReturn(List.of(authorization));
         when(roleSnapshotMapper.selectLatest(10L, 100L)).thenReturn(snapshot(LocalDateTime.now(ZoneOffset.UTC)
@@ -74,13 +77,14 @@ class EveMoonExtractionServiceTest {
         verify(permissionRefreshService).reviewAuthorization(authorization);
     }
 
-    /** 月矿备注必须直接保存到快照记录，并清理首尾空白。 */
+    /** 月矿堡备注必须按建筑保存，并清理首尾空白。 */
     @Test
     void shouldSaveNoteOnActiveMoonExtraction() {
         EveContextService contextService = mock(EveContextService.class);
         EveCorporationMapper corporationMapper = mock(EveCorporationMapper.class);
         EveMoonExtractionMapper extractionMapper = mock(EveMoonExtractionMapper.class);
-        EveMoonExtractionService service = new EveMoonExtractionService(contextService, corporationMapper, mock(EveCorporationStructureMapper.class), extractionMapper, mock(EveAuthorizationMapper.class), mock(EveCharacterRoleSnapshotMapper.class), mock(EveAuthorizationLifecycleService.class), mock(EvePermissionRefreshService.class), mock(EveStaticReferenceService.class), mock(SerenityEsiClient.class), mock(RedissonClient.class), mock(EveDataFreshnessService.class));
+        EveMoonStructureNoteMapper structureNoteMapper = mock(EveMoonStructureNoteMapper.class);
+        EveMoonExtractionService service = new EveMoonExtractionService(contextService, corporationMapper, mock(EveCorporationStructureMapper.class), extractionMapper, structureNoteMapper, mock(EveAuthorizationMapper.class), mock(EveCharacterRoleSnapshotMapper.class), mock(EveAuthorizationLifecycleService.class), mock(EvePermissionRefreshService.class), mock(EveStaticReferenceService.class), mock(SerenityEsiClient.class), mock(RedissonClient.class), mock(EveDataFreshnessService.class));
         UserContext context = new UserContext();
         context.setId(20L);
         context.setTenantId(10L);
@@ -91,6 +95,7 @@ class EveMoonExtractionServiceTest {
         extraction.setId(1L);
         extraction.setTenantId(10L);
         extraction.setCorporationRefId(30L);
+        extraction.setStructureId(40L);
         extraction.setStatus("ACTIVE");
         extraction.setDeleted(0L);
         when(contextService.getCurrentContext())
@@ -101,12 +106,13 @@ class EveMoonExtractionServiceTest {
 
         try (MockedStatic<UserContextHolder> holder = mockStatic(UserContextHolder.class)) {
             holder.when(UserContextHolder::getContext).thenReturn(context);
-            assertThat(service.saveNote(1L, "  今晚优先高价值矿种  ").note()).isEqualTo("今晚优先高价值矿种");
+            assertThat(service.saveNote(1L, "  今晚优先高价值矿种  ").structureNote()).isEqualTo("今晚优先高价值矿种");
         }
 
-        assertThat(extraction.getNote()).isEqualTo("今晚优先高价值矿种");
-        assertThat(extraction.getUpdateUser()).isEqualTo(20L);
-        verify(extractionMapper).updateById(extraction);
+        verify(structureNoteMapper).insert(argThat((EveMoonStructureNoteDO item) -> item.getTenantId()
+            .equals(10L) && item.getCorporationRefId().equals(30L) && item.getStructureId().equals(40L) && "今晚优先高价值矿种"
+                .equals(item.getNote()) && item.getCreateUser().equals(20L)));
+        verify(extractionMapper, never()).updateById(extraction);
     }
 
     /** 维护备注时必须拒绝其他租户的月矿快照。 */
@@ -115,7 +121,8 @@ class EveMoonExtractionServiceTest {
         EveContextService contextService = mock(EveContextService.class);
         EveCorporationMapper corporationMapper = mock(EveCorporationMapper.class);
         EveMoonExtractionMapper extractionMapper = mock(EveMoonExtractionMapper.class);
-        EveMoonExtractionService service = new EveMoonExtractionService(contextService, corporationMapper, mock(EveCorporationStructureMapper.class), extractionMapper, mock(EveAuthorizationMapper.class), mock(EveCharacterRoleSnapshotMapper.class), mock(EveAuthorizationLifecycleService.class), mock(EvePermissionRefreshService.class), mock(EveStaticReferenceService.class), mock(SerenityEsiClient.class), mock(RedissonClient.class), mock(EveDataFreshnessService.class));
+        EveMoonStructureNoteMapper structureNoteMapper = mock(EveMoonStructureNoteMapper.class);
+        EveMoonExtractionService service = new EveMoonExtractionService(contextService, corporationMapper, mock(EveCorporationStructureMapper.class), extractionMapper, structureNoteMapper, mock(EveAuthorizationMapper.class), mock(EveCharacterRoleSnapshotMapper.class), mock(EveAuthorizationLifecycleService.class), mock(EvePermissionRefreshService.class), mock(EveStaticReferenceService.class), mock(SerenityEsiClient.class), mock(RedissonClient.class), mock(EveDataFreshnessService.class));
         UserContext context = new UserContext();
         context.setId(20L);
         context.setTenantId(10L);
@@ -140,6 +147,7 @@ class EveMoonExtractionServiceTest {
         }
 
         verify(extractionMapper, never()).updateById(extraction);
+        verify(structureNoteMapper, never()).insert(org.mockito.ArgumentMatchers.any(EveMoonStructureNoteDO.class));
     }
 
     /** 构造最小可用的月矿读取授权。 */

@@ -31,7 +31,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import top.continew.admin.eve.model.EveStaticLocationReferenceResp;
+import top.continew.admin.eve.model.EveStaticLocationTreeNodeResp;
 import top.continew.admin.eve.model.EveStaticReferenceImportResp;
+import top.continew.admin.eve.model.EveStaticTypeCategoryNodeResp;
 import top.continew.admin.eve.model.EveStaticTypeReferenceResp;
 import top.continew.admin.eve.service.EveStaticReferenceService;
 import top.continew.starter.core.exception.BusinessException;
@@ -41,6 +43,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 /**
  * EVE 静态基础资料查询、导出与全量更新接口。
@@ -62,8 +65,24 @@ public class EveStaticReferenceController {
     public PageResp<EveStaticTypeReferenceResp> pageTypes(@RequestParam(defaultValue = "1") @Min(1) int page,
                                                           @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
                                                           @RequestParam(required = false) String keyword,
-                                                          @RequestParam(required = false) String marketCategoryL1) {
-        return staticReferenceService.pageTypes(page, size, keyword, marketCategoryL1);
+                                                          @RequestParam(required = false) String marketCategoryL1,
+                                                          @RequestParam(required = false) String marketCategoryL2,
+                                                          @RequestParam(required = false) String marketCategoryL3,
+                                                          @RequestParam(required = false) String marketCategoryL4,
+                                                          @RequestParam(required = false) String marketCategoryL5,
+                                                          @RequestParam(required = false) String marketCategoryL6,
+                                                          @RequestParam(required = false) Boolean unclassified) {
+        return staticReferenceService
+            .pageTypes(page, size, keyword, categoryPath(marketCategoryL1, marketCategoryL2, marketCategoryL3, marketCategoryL4, marketCategoryL5, marketCategoryL6), Boolean.TRUE
+                .equals(unclassified));
+    }
+
+    /** 查询供游戏式左侧导航使用的完整市场分类树。 */
+    @GetMapping("/types/categories")
+    @Operation(summary = "查询 EVE 静态物品市场分类树")
+    @SaCheckPermission("eve:reference:view")
+    public List<EveStaticTypeCategoryNodeResp> listTypeCategories() {
+        return staticReferenceService.listTypeCategories();
     }
 
     /** 分页查询 evedata.xlsx 中的星域、星座、星系和建筑位置资料。 */
@@ -73,8 +92,18 @@ public class EveStaticReferenceController {
     public PageResp<EveStaticLocationReferenceResp> pageLocations(@RequestParam(defaultValue = "1") @Min(1) int page,
                                                                   @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
                                                                   @RequestParam(required = false) String keyword,
-                                                                  @RequestParam(required = false) String referenceType) {
-        return staticReferenceService.pageLocations(page, size, keyword, referenceType);
+                                                                  @RequestParam(required = false) String referenceType,
+                                                                  @RequestParam(required = false) String hierarchyType,
+                                                                  @RequestParam(required = false) Long hierarchyId) {
+        return staticReferenceService.pageLocations(page, size, keyword, referenceType, hierarchyType, hierarchyId);
+    }
+
+    /** 查询供星图式导航使用的星域、星座和星系层级树。 */
+    @GetMapping("/locations/tree")
+    @Operation(summary = "查询 EVE 静态位置层级树")
+    @SaCheckPermission("eve:reference:view")
+    public List<EveStaticLocationTreeNodeResp> listLocationTree() {
+        return staticReferenceService.listLocationTree();
     }
 
     /** 导出筛选后的物品类型资料，CSV 可直接由 Excel 打开。 */
@@ -84,12 +113,20 @@ public class EveStaticReferenceController {
     @SaCheckPermission("eve:reference:export")
     public void exportTypes(@RequestParam(required = false) String keyword,
                             @RequestParam(required = false) String marketCategoryL1,
+                            @RequestParam(required = false) String marketCategoryL2,
+                            @RequestParam(required = false) String marketCategoryL3,
+                            @RequestParam(required = false) String marketCategoryL4,
+                            @RequestParam(required = false) String marketCategoryL5,
+                            @RequestParam(required = false) String marketCategoryL6,
+                            @RequestParam(required = false) Boolean unclassified,
                             HttpServletResponse response) throws IOException {
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType("text/csv;charset=UTF-8");
         response.setHeader("Content-Disposition", "attachment; filename=eve-static-types.csv");
         StringBuilder csv = new StringBuilder("\uFEFF物品类型ID,物品名称,物品说明,一级市场分类,二级市场分类,三级市场分类,四级市场分类,五级市场分类,六级市场分类,资料更新时间\n");
-        for (EveStaticTypeReferenceResp item : staticReferenceService.listTypesForExport(keyword, marketCategoryL1)) {
+        for (EveStaticTypeReferenceResp item : staticReferenceService
+            .listTypesForExport(keyword, categoryPath(marketCategoryL1, marketCategoryL2, marketCategoryL3, marketCategoryL4, marketCategoryL5, marketCategoryL6), Boolean.TRUE
+                .equals(unclassified))) {
             csv.append(csv(item.typeId()))
                 .append(',')
                 .append(csv(item.typeName()))
@@ -121,13 +158,15 @@ public class EveStaticReferenceController {
     @SaCheckPermission("eve:reference:export")
     public void exportLocations(@RequestParam(required = false) String keyword,
                                 @RequestParam(required = false) String referenceType,
+                                @RequestParam(required = false) String hierarchyType,
+                                @RequestParam(required = false) Long hierarchyId,
                                 HttpServletResponse response) throws IOException {
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType("text/csv;charset=UTF-8");
         response.setHeader("Content-Disposition", "attachment; filename=eve-static-locations.csv");
         StringBuilder csv = new StringBuilder("\uFEFF资料类型,位置ID,位置名称,所属星系ID,所属星座ID,所属星域ID,安全等级,资料更新时间\n");
         for (EveStaticLocationReferenceResp item : staticReferenceService
-            .listLocationsForExport(keyword, referenceType)) {
+            .listLocationsForExport(keyword, referenceType, hierarchyType, hierarchyId)) {
             csv.append(csv(item.referenceType()))
                 .append(',')
                 .append(csv(item.referenceId()))
@@ -186,5 +225,21 @@ public class EveStaticReferenceController {
             text = "'" + text;
         }
         return '"' + text.replace("\"", "\"\"") + '"';
+    }
+
+    /** 将最多六级的请求参数整理为服务层可直接匹配的市场分类路径。 */
+    private static List<String> categoryPath(String marketCategoryL1,
+                                             String marketCategoryL2,
+                                             String marketCategoryL3,
+                                             String marketCategoryL4,
+                                             String marketCategoryL5,
+                                             String marketCategoryL6) {
+        return List
+            .of(emptyToBlank(marketCategoryL1), emptyToBlank(marketCategoryL2), emptyToBlank(marketCategoryL3), emptyToBlank(marketCategoryL4), emptyToBlank(marketCategoryL5), emptyToBlank(marketCategoryL6));
+    }
+
+    /** 将缺省分类参数安全转换为空字符串，保持分类路径的级次。 */
+    private static String emptyToBlank(String value) {
+        return value == null ? "" : value;
     }
 }

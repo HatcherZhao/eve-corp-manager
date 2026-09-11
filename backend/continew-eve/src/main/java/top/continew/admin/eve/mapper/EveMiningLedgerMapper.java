@@ -23,6 +23,7 @@ import top.continew.admin.eve.model.entity.EveMiningLedgerDO;
 import top.continew.starter.data.mapper.BaseMapper;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -43,4 +44,30 @@ public interface EveMiningLedgerMapper extends BaseMapper<EveMiningLedgerDO> {
                                   @Param("fromDate") LocalDate fromDate,
                                   @Param("toDate") LocalDate toDate,
                                   @Param("keyword") String keyword);
+
+    /** 按开采日期汇总趋势，结果按日期正序返回。 */
+    @Select("SELECT recorded_at AS recordedAt, COALESCE(SUM(quantity), 0) AS quantity, " + "COUNT(*) AS entryCount FROM eve_mining_ledger " + "WHERE tenant_id = #{tenantId} AND corporation_ref_id = #{corporationRefId} AND deleted = 0 " + "AND (#{fromDate} IS NULL OR recorded_at >= #{fromDate}) " + "AND (#{toDate} IS NULL OR recorded_at <= #{toDate}) " + "AND (#{keyword} IS NULL OR observer_name LIKE CONCAT('%', #{keyword}, '%') " + "OR character_name LIKE CONCAT('%', #{keyword}, '%') OR type_name LIKE CONCAT('%', #{keyword}, '%')) " + "GROUP BY recorded_at ORDER BY recorded_at ASC")
+    List<Map<String, Object>> summarizeTimeline(@Param("tenantId") Long tenantId,
+                                                @Param("corporationRefId") Long corporationRefId,
+                                                @Param("fromDate") LocalDate fromDate,
+                                                @Param("toDate") LocalDate toDate,
+                                                @Param("keyword") String keyword);
+
+    /** 按月矿建筑或观察者汇总开采量并返回前若干名。 */
+    @Select("SELECT COALESCE(NULLIF(observer_name, ''), '未命名建筑') AS observerName, " + "COALESCE(SUM(quantity), 0) AS quantity, COUNT(*) AS entryCount FROM eve_mining_ledger " + "WHERE tenant_id = #{tenantId} AND corporation_ref_id = #{corporationRefId} AND deleted = 0 " + "AND (#{fromDate} IS NULL OR recorded_at >= #{fromDate}) " + "AND (#{toDate} IS NULL OR recorded_at <= #{toDate}) " + "AND (#{keyword} IS NULL OR observer_name LIKE CONCAT('%', #{keyword}, '%') " + "OR character_name LIKE CONCAT('%', #{keyword}, '%') OR type_name LIKE CONCAT('%', #{keyword}, '%')) " + "GROUP BY observer_id, observer_name ORDER BY quantity DESC, observerName ASC LIMIT #{limit}")
+    List<Map<String, Object>> summarizeObservers(@Param("tenantId") Long tenantId,
+                                                 @Param("corporationRefId") Long corporationRefId,
+                                                 @Param("fromDate") LocalDate fromDate,
+                                                 @Param("toDate") LocalDate toDate,
+                                                 @Param("keyword") String keyword,
+                                                 @Param("limit") int limit);
+
+    /** 按玩家汇总开采量并返回前若干名。 */
+    @Select("SELECT COALESCE(NULLIF(character_name, ''), '未命名玩家') AS characterName, " + "COALESCE(SUM(quantity), 0) AS quantity, COUNT(*) AS entryCount FROM eve_mining_ledger " + "WHERE tenant_id = #{tenantId} AND corporation_ref_id = #{corporationRefId} AND deleted = 0 " + "AND (#{fromDate} IS NULL OR recorded_at >= #{fromDate}) " + "AND (#{toDate} IS NULL OR recorded_at <= #{toDate}) " + "AND (#{keyword} IS NULL OR observer_name LIKE CONCAT('%', #{keyword}, '%') " + "OR character_name LIKE CONCAT('%', #{keyword}, '%') OR type_name LIKE CONCAT('%', #{keyword}, '%')) " + "GROUP BY character_id, character_name ORDER BY quantity DESC, characterName ASC LIMIT #{limit}")
+    List<Map<String, Object>> summarizeCharacters(@Param("tenantId") Long tenantId,
+                                                  @Param("corporationRefId") Long corporationRefId,
+                                                  @Param("fromDate") LocalDate fromDate,
+                                                  @Param("toDate") LocalDate toDate,
+                                                  @Param("keyword") String keyword,
+                                                  @Param("limit") int limit);
 }

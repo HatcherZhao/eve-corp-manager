@@ -1,0 +1,15 @@
+FROM eclipse-temurin:17-jre-jammy
+
+WORKDIR /app
+
+RUN useradd --system --uid 10001 --gid root appuser \
+    && mkdir -p /data/eve-images /logs \
+    && chown -R appuser:root /app /data /logs
+
+COPY backend/continew-server/target/continew-admin.jar /app/app.jar
+
+USER appuser
+
+EXPOSE 8000
+
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-Duser.timezone=Asia/Shanghai", "-jar", "/app/app.jar"]

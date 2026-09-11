@@ -57,21 +57,25 @@ import { getImageCaptcha } from '@/apis/common'
 import { useTabsStore, useTenantStore, useUserStore } from '@/stores'
 import { encryptByRsa } from '@/utils/encrypt'
 
-const loginConfig = useStorage('login-config', {
-  rememberMe: true,
-  tenantName: '',
-  username: 'admin', // 演示默认值
-  password: '', // 演示默认值
+/**
+ * 登录账号仅在用户主动勾选“记住我”后保存。
+ * 使用新键隔离旧版遗留的 admin 演示默认值，避免升级后继续自动填充。
+ */
+const loginConfig = useStorage('eve-login-config-v2', {
+  rememberMe: false,
+  username: '',
 })
+/** 上次成功登录时填写的军团名称，与“记住我”开关无关。 */
+const lastSuccessfulTenantName = useStorage('eve-last-successful-tenant-name', '')
 // 是否启用验证码
 const isCaptchaEnabled = ref(true)
 // 验证码图片
 const captchaImgBase64 = ref()
-const tenantName = ref(loginConfig.value.tenantName)
+const tenantName = ref(lastSuccessfulTenantName.value)
 const formRef = ref<FormInstance>()
 const form = reactive({
   username: loginConfig.value.username,
-  password: loginConfig.value.password,
+  password: '',
   captcha: '',
   uuid: '',
   expired: false,
@@ -130,16 +134,20 @@ const handleLogin = async () => {
     if (isInvalid) return
     loading.value = true
 
+    const submittedTenantName = tenantName.value.trim()
     await userStore.accountLogin({
       username: form.username,
       password: encryptByRsa(form.password) || '',
       captcha: form.captcha,
       uuid: form.uuid,
-    }, tenantName.value.trim())
+    }, submittedTenantName)
     tabsStore.reset()
     const { redirect, ...othersQuery } = router.currentRoute.value.query
     const { rememberMe } = loginConfig.value
-    loginConfig.value.tenantName = rememberMe ? tenantName.value.trim() : ''
+    // 仅在真实登录成功且用户填写军团名称后更新，避免默认租户登录覆盖历史军团。
+    if (submittedTenantName) {
+      lastSuccessfulTenantName.value = submittedTenantName
+    }
     loginConfig.value.username = rememberMe ? form.username : ''
 
     // 如果有重定向参数，解码并直接跳转到完整路径

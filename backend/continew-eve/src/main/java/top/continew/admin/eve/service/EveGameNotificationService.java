@@ -29,6 +29,7 @@ import top.continew.admin.eve.client.SerenityEsiClientException;
 import top.continew.admin.eve.mapper.EveAuthorizationMapper;
 import top.continew.admin.eve.mapper.EveCharacterMapper;
 import top.continew.admin.eve.mapper.EveGameNotificationMapper;
+import top.continew.admin.eve.model.EveGameNotificationPresentation;
 import top.continew.admin.eve.model.EveGameNotificationResp;
 import top.continew.admin.eve.model.EveGameNotificationSyncResp;
 import top.continew.admin.eve.model.entity.EveAuthorizationDO;
@@ -67,6 +68,7 @@ public class EveGameNotificationService {
     private final EveAuthorizationMapper authorizationMapper;
     private final EveGameNotificationMapper notificationMapper;
     private final EveAuthorizationLifecycleService authorizationLifecycleService;
+    private final EveGameNotificationPresentationService notificationPresentationService;
     private final SerenityEsiClient esiClient;
 
     /** 分页查询当前授权角色已同步的游戏通知。 */
@@ -88,8 +90,8 @@ public class EveGameNotificationService {
                 .like(EveGameNotificationDO::getContent, value));
         }
         Page<EveGameNotificationDO> result = notificationMapper.selectPage(new Page<>(page, size), query);
-        Map<Long, String> senderNames = resolveSenderNames(result.getRecords());
-        return new PageResp<>(result.getRecords().stream().map(item -> toResponse(item, senderNames)).toList(), result
+        Map<Long, String> entityNames = resolveEntityNames(result.getRecords());
+        return new PageResp<>(result.getRecords().stream().map(item -> toResponse(item, entityNames)).toList(), result
             .getTotal());
     }
 
@@ -217,12 +219,18 @@ public class EveGameNotificationService {
         }
     }
 
-    /** 解析通知发送方名称；公开名称服务不可用时不阻断通知阅读。 */
-    private Map<Long, String> resolveSenderNames(Collection<EveGameNotificationDO> notifications) {
-        List<Long> ids = notifications.stream()
+    /** 解析通知发送方及正文引用的公开名称；名称服务不可用时不阻断通知阅读。 */
+    private Map<Long, String> resolveEntityNames(Collection<EveGameNotificationDO> notifications) {
+        List<Long> senderIds = notifications.stream()
             .filter(Objects::nonNull)
             .map(EveGameNotificationDO::getSenderId)
             .filter(Objects::nonNull)
+            .filter(id -> id > 0 && id <= Integer.MAX_VALUE)
+            .toList();
+        List<Long> contentIds = notificationPresentationService.referencedEntityIds(notifications.stream()
+            .map(EveGameNotificationDO::getContent)
+            .toList());
+        List<Long> ids = java.util.stream.Stream.concat(senderIds.stream(), contentIds.stream())
             .filter(id -> id > 0 && id <= Integer.MAX_VALUE)
             .distinct()
             .toList();
@@ -242,11 +250,14 @@ public class EveGameNotificationService {
     }
 
     /** 将通知缓存转换为不向用户暴露游戏内部数字 ID 的页面响应。 */
-    private static EveGameNotificationResp toResponse(EveGameNotificationDO source, Map<Long, String> senderNames) {
-        String senderName = source.getSenderId() == null ? null : senderNames.get(source.getSenderId());
+    private EveGameNotificationResp toResponse(EveGameNotificationDO source, Map<Long, String> entityNames) {
+        String senderName = source.getSenderId() == null ? null : entityNames.get(source.getSenderId());
+        EveGameNotificationPresentation presentation = notificationPresentationService.present(source
+            .getNotificationType(), source.getContent(), entityNames);
         return new EveGameNotificationResp(source.getNotificationId(), source.getIsRead(), source.getCategory(), source
-            .getNotificationType(), senderName, source.getSenderType(), source.getContent(), source.getSentAt(), source
-                .getLastSeenAt(), source.getSourceExpiresAt());
+            .getNotificationType(), senderName, source.getSenderType(), source.getContent(), presentation
+                .summary(), presentation.details(), source.getSentAt(), source.getLastSeenAt(), source
+                    .getSourceExpiresAt());
     }
 
     /** 个人通知同步所需的角色、授权与隔离上下文。 */

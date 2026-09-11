@@ -1,0 +1,70 @@
+name: eve-corp-manager
+
+services:
+  api:
+    image: eve-corp-manager-api:${IMAGE_TAG:?Set IMAGE_TAG in .env}
+    container_name: eve-corp-manager-api
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8000
+      SNAIL_JOB_ENABLED: "false"
+      JUSTAUTH_CACHE_TYPE: DEFAULT
+      APP_URL: ${APP_URL:?Set APP_URL in .env}
+      DB_HOST: ${DB_HOST:?Set DB_HOST in .env}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME:?Set DB_NAME in .env}
+      DB_USER: ${DB_USER:?Set DB_USER in .env}
+      DB_PWD: ${DB_PWD:?Set DB_PWD in .env}
+      REDIS_HOST: ${REDIS_HOST:?Set REDIS_HOST in .env}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PWD: ${REDIS_PWD:?Set REDIS_PWD in .env}
+      REDIS_DB: ${REDIS_DB:-14}
+      SA_JWT_SECRET: ${SA_JWT_SECRET:?Set SA_JWT_SECRET in .env}
+      FIELD_AES_KEY: ${FIELD_AES_KEY:?Set FIELD_AES_KEY in .env}
+      FIELD_RSA_PUBLIC_KEY: ${FIELD_RSA_PUBLIC_KEY:?Set FIELD_RSA_PUBLIC_KEY in .env}
+      FIELD_RSA_PRIVATE_KEY: ${FIELD_RSA_PRIVATE_KEY:?Set FIELD_RSA_PRIVATE_KEY in .env}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?Set BOOTSTRAP_ADMIN_PASSWORD in .env}
+      EVE_SERENITY_CLIENT_ID: ${EVE_SERENITY_CLIENT_ID:-bc90aa496a404724a93f41b4f4e97761}
+      EVE_SERENITY_CLIENT_SECRET: ${EVE_SERENITY_CLIENT_SECRET:-}
+      EVE_IMAGE_CACHE_DIR: /data/eve-images
+    volumes:
+      - /home/eve-corp-manager/data/eve-images:/data/eve-images
+    networks:
+      - eve-internal
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1536M
+    logging:
+      driver: local
+      options:
+        max-size: 20m
+        max-file: "5"
+
+  web:
+    image: eve-corp-manager-web:${IMAGE_TAG:?Set IMAGE_TAG in .env}
+    container_name: eve-corp-manager-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${APP_BIND_IP:?Set APP_BIND_IP to vm-app private address}:18080:80"
+    networks:
+      - eve-internal
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  eve-internal:
+    name: eve-corp-manager-internal

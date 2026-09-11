@@ -36,6 +36,7 @@ import top.continew.admin.eve.mapper.EveMiningLedgerMapper;
 import top.continew.admin.eve.mapper.EveMiningObserverMapper;
 import top.continew.admin.eve.mapper.EveMiningSyncRunMapper;
 import top.continew.admin.eve.model.EveMeContextResp;
+import top.continew.admin.eve.model.EveMiningAnalyticsResp;
 import top.continew.admin.eve.model.EveMiningLedgerResp;
 import top.continew.admin.eve.model.EveMiningLedgerSummaryResp;
 import top.continew.admin.eve.model.EveMiningSyncResp;
@@ -86,6 +87,7 @@ public class EveMiningLedgerService {
     private static final int MAX_UPSTREAM_PAGES = 1000;
     private static final int MAX_TOTAL_ENTRIES = 100_000;
     private static final int UNIVERSE_NAME_BATCH_SIZE = 1000;
+    private static final int ANALYTICS_RANKING_LIMIT = 10;
 
     private final EveContextService contextService;
     private final EveCorporationMapper corporationMapper;
@@ -139,6 +141,39 @@ public class EveMiningLedgerService {
                 .get("characterCount")).intValue(), number(summary.get("mineralTypeCount"))
                     .intValue(), toLocalDate(summary.get("latestRecordedAt")), toLocalDateTime(summary
                         .get("latestSynchronizedAt")));
+    }
+
+    /** 聚合当前军团的日期趋势、建筑排名、玩家排名和军团概览。 */
+    public EveMiningAnalyticsResp analytics(LocalDate fromDate, LocalDate toDate, String keyword) {
+        validateDateRange(fromDate, toDate);
+        UserContext context = UserContextHolder.getContext();
+        EveCorporationDO corporation = requireCurrentCorporation(context.getTenantId());
+        String normalizedKeyword = normalizeKeyword(keyword);
+        Map<String, Object> summary = ledgerMapper.summarize(context.getTenantId(), corporation
+            .getId(), null, null, null, fromDate, toDate, normalizedKeyword);
+        EveMiningAnalyticsResp.CorporationOverview overview = new EveMiningAnalyticsResp.CorporationOverview(corporation
+            .getName(), corporation.getTicker(), number(summary.get("quantity")).longValue(), number(summary
+                .get("entryCount")).longValue(), number(summary.get("observerCount")).intValue(), number(summary
+                    .get("characterCount")).intValue(), number(summary.get("mineralTypeCount")).intValue());
+        List<EveMiningAnalyticsResp.TimelinePoint> timeline = ledgerMapper.summarizeTimeline(context
+            .getTenantId(), corporation.getId(), fromDate, toDate, normalizedKeyword)
+            .stream()
+            .map(item -> new EveMiningAnalyticsResp.TimelinePoint(toLocalDate(item.get("recordedAt")), number(item
+                .get("quantity")).longValue(), number(item.get("entryCount")).longValue()))
+            .toList();
+        List<EveMiningAnalyticsResp.ObserverRanking> observers = ledgerMapper.summarizeObservers(context
+            .getTenantId(), corporation.getId(), fromDate, toDate, normalizedKeyword, ANALYTICS_RANKING_LIMIT)
+            .stream()
+            .map(item -> new EveMiningAnalyticsResp.ObserverRanking(text(item.get("observerName")), number(item
+                .get("quantity")).longValue(), number(item.get("entryCount")).longValue()))
+            .toList();
+        List<EveMiningAnalyticsResp.CharacterRanking> characters = ledgerMapper.summarizeCharacters(context
+            .getTenantId(), corporation.getId(), fromDate, toDate, normalizedKeyword, ANALYTICS_RANKING_LIMIT)
+            .stream()
+            .map(item -> new EveMiningAnalyticsResp.CharacterRanking(text(item.get("characterName")), number(item
+                .get("quantity")).longValue(), number(item.get("entryCount")).longValue()))
+            .toList();
+        return new EveMiningAnalyticsResp(overview, timeline, observers, characters);
     }
 
     /** 同步当前军团的完整观察者清单和所有可读取账本页。 */
@@ -528,6 +563,11 @@ public class EveMiningLedgerService {
     /** 空汇总字段按零处理，兼容 JDBC 驱动返回的不同数字实现。 */
     private static Number number(Object value) {
         return value instanceof Number number ? number : 0L;
+    }
+
+    /** 将数据库聚合结果安全转换为展示文字。 */
+    private static String text(Object value) {
+        return value == null ? "" : value.toString();
     }
 
     /** 将 JDBC 聚合查询返回的日期统一转换为 Java 时间类型，兼容不同 MySQL 驱动实现。 */

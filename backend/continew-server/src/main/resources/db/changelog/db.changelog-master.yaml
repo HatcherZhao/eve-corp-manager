@@ -92,3 +92,11 @@ databaseChangeLog:
       file: db/changelog/mysql/eve/031_game_mail_menu_group.sql
   - include:
       file: db/changelog/mysql/eve/032_game_communication_notifications.sql
+  - include:
+      file: db/changelog/mysql/eve/033_moon_structure_note.sql
+  - include:
+      file: db/changelog/mysql/eve/034_static_location_tree_indexes.sql
+  - include:
+      file: db/changelog/mysql/eve/035_login_session_six_hours.sql
+  - include:
+      file: db/changelog/mysql/eve/036_mining_analytics_title.sql

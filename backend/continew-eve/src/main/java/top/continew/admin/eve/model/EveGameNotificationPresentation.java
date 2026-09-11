@@ -16,16 +16,12 @@
 
 package top.continew.admin.eve.model;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 游戏通知列表安全响应。
+ * 将国服机器通知转换后的用户可读内容。
  *
  * @author zhaoyuqing
  */
-public record EveGameNotificationResp(Long notificationId, Boolean read, String category, String type,
-                                      String senderName, String senderType, String content, String summary,
-                                      List<EveGameNotificationDetailItem> details, LocalDateTime sentAt,
-                                      LocalDateTime lastSeenAt, LocalDateTime sourceExpiresAt) {
+public record EveGameNotificationPresentation(String summary, List<EveGameNotificationDetailItem> details) {
 }

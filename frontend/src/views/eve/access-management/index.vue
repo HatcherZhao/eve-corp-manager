@@ -174,18 +174,18 @@ onMounted(loadOverview)
 <style scoped lang="scss">
 .eve-access { color: var(--color-text-1); }
 .eve-access__header, .eve-access__title, .eve-access__role-heading, .eve-access__members article { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-.eve-access__header { align-items: flex-end; margin-bottom: 20px; }
-.eve-access__header h1 { margin: 8px 0; font-size: 30px; }
+.eve-access__header { align-items: flex-end; margin-bottom: 12px; }
+.eve-access__header h1 { margin: 5px 0; font-size: 26px; }
 .eve-access__header p, .eve-access__title small, .eve-access article p { color: var(--color-text-3); }
 .eve-access__back { margin-left: -12px; }
 .eve-access__loading { display: block; min-height: 380px; }
-.eve-access__section { margin-bottom: 18px; padding: 22px; border: 1px solid var(--color-border-2); border-radius: 14px; background: var(--color-bg-1); }
-.eve-access__title { margin-bottom: 16px; }
+.eve-access__section { margin-bottom: 12px; padding: 16px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }
+.eve-access__title { margin-bottom: 12px; }
 .eve-access__title > div { display: flex; align-items: baseline; gap: 10px; }
 .eve-access__title span { color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; }
 .eve-access__title h2 { margin: 0; font-size: 19px; }
 .eve-access__roles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.eve-access__roles article { padding: 18px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-fill-1); }
+.eve-access__roles article { padding: 14px; border: 1px solid var(--color-border-2); border-radius: 10px; background: var(--color-fill-1); }
 .eve-access__role-heading { align-items: flex-start; }
 .eve-access__role-heading h3 { margin: 0; }
 .eve-access code { color: var(--color-text-3); font-size: 11px; }
