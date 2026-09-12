@@ -18,7 +18,6 @@ package top.continew.admin.eve.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
@@ -67,7 +66,6 @@ import java.util.regex.Pattern;
  */
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class EveOfficialNewsService {
 
     private static final String SYNC_LOCK = "eve:official-news:sync";
@@ -98,6 +96,19 @@ public class EveOfficialNewsService {
     private final RedissonClient redissonClient;
     @Qualifier("eveOfficialNewsRestClient")
     private final RestClient restClient;
+
+    /** 创建官网资讯服务，并明确使用受控官网访问客户端。 */
+    public EveOfficialNewsService(EveOfficialNewsProperties properties,
+                                  EveOfficialNewsMapper newsMapper,
+                                  EveOfficialNewsSyncStateMapper syncStateMapper,
+                                  RedissonClient redissonClient,
+                                  @Qualifier("eveOfficialNewsRestClient") RestClient restClient) {
+        this.properties = properties;
+        this.newsMapper = newsMapper;
+        this.syncStateMapper = syncStateMapper;
+        this.redissonClient = redissonClient;
+        this.restClient = restClient;
+    }
 
     /** 分页查询官网新闻；版本更新以独立分类供二级菜单复用。 */
     public PageResp<EveOfficialNewsResp> page(int page, int size, String category, String keyword) {
