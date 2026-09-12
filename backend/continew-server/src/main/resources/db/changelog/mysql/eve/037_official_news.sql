@@ -9,7 +9,7 @@ CREATE TABLE `eve_official_news`
     `source_category`         varchar(64)  NOT NULL COMMENT '官网栏目名称',
     `title`                   varchar(500) NOT NULL COMMENT '资讯标题',
     `summary`                 varchar(2000) DEFAULT NULL COMMENT '官网列表摘要',
-    `original_url`            varchar(1000) NOT NULL COMMENT '官网原文链接',
+    `original_url`            varchar(768) NOT NULL COMMENT '官网原文链接',
     `content_html`            mediumtext   DEFAULT NULL COMMENT '净化后的官网正文 HTML',
     `content_text`            mediumtext   DEFAULT NULL COMMENT '官网正文纯文本',
     `cover_url`               varchar(1000) DEFAULT NULL COMMENT '首张正文图片官网链接',
