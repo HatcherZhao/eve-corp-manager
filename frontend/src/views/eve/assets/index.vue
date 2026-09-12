@@ -164,6 +164,7 @@ async function sync() {
   try {
     const { data } = await syncEveCorporationAssets()
     Message.success(data.message)
+    await loadTree()
   } finally {
     syncing.value = false
     freshnessVersion.value += 1

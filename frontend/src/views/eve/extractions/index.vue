@@ -77,6 +77,7 @@ async function sync() {
   try {
     const { data } = await syncEveMoonExtractions()
     Message.success(data.message)
+    await loadExtractions()
   } finally {
     syncing.value = false
     freshnessVersion.value += 1

@@ -14,12 +14,19 @@
  * limitations under the License.
  */
 
-package top.continew.admin.eve.model;
+package top.continew.admin.eve.mapper;
+
+import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
+import org.apache.ibatis.annotations.Mapper;
+import top.continew.admin.eve.model.entity.EveOfficialNewsDO;
+import top.continew.starter.data.mapper.BaseMapper;
 
 /**
- * 手动同步的即时执行结果。
+ * 官网资讯全局快照 Mapper。
  *
  * @author zhaoyuqing
  */
-public record EveSyncRequestResp(boolean accepted, String message) {
+@Mapper
+@InterceptorIgnore(tenantLine = "true")
+public interface EveOfficialNewsMapper extends BaseMapper<EveOfficialNewsDO> {
 }

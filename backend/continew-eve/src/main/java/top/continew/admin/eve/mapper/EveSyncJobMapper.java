@@ -77,6 +77,17 @@ public interface EveSyncJobMapper extends BaseMapper<EveSyncJobDO> {
                         @Param("nextRunAt") LocalDateTime nextRunAt,
                         @Param("cooldownUntil") LocalDateTime cooldownUntil);
 
+    /** 手动同步成功后重排未运行的自动任务，避免后台立即重复拉取同一资源。 */
+    @InterceptorIgnore(tenantLine = "true")
+    @Update("UPDATE eve_sync_job SET state = 'PENDING', next_run_at = #{nextRunAt}, " + "cooldown_until = #{cooldownUntil}, last_finished_at = #{finishedAt}, consecutive_failures = 0, " + "last_failure_code = NULL, update_time = #{finishedAt} " + "WHERE tenant_id = #{tenantId} AND target_type = #{targetType} AND target_ref_id = #{targetRefId} " + "AND module = #{module} AND state <> 'RUNNING' AND deleted = 0")
+    int completeManualSuccess(@Param("tenantId") Long tenantId,
+                              @Param("targetType") EveSyncTargetType targetType,
+                              @Param("targetRefId") Long targetRefId,
+                              @Param("module") EveSyncModule module,
+                              @Param("finishedAt") LocalDateTime finishedAt,
+                              @Param("nextRunAt") LocalDateTime nextRunAt,
+                              @Param("cooldownUntil") LocalDateTime cooldownUntil);
+
     /** 仅允许当前租约持有者提交失败结果，并按结果决定退避或暂停。 */
     @InterceptorIgnore(tenantLine = "true")
     @Update("UPDATE eve_sync_job SET state = #{state}, next_run_at = #{nextRunAt}, " + "cooldown_until = #{cooldownUntil}, last_finished_at = #{finishedAt}, " + "consecutive_failures = #{consecutiveFailures}, last_failure_code = #{failureCode}, " + "claim_token = NULL, claim_expires_at = NULL, update_time = #{finishedAt} " + "WHERE id = #{jobId} AND tenant_id = #{tenantId} AND state = 'RUNNING' " + "AND claim_token = #{claimToken} AND deleted = 0")
@@ -90,20 +101,4 @@ public interface EveSyncJobMapper extends BaseMapper<EveSyncJobDO> {
                         @Param("consecutiveFailures") int consecutiveFailures,
                         @Param("failureCode") String failureCode);
 
-    /** 将等待任务提前到冷却结束后执行，不干扰运行中或已暂停任务。 */
-    @InterceptorIgnore(tenantLine = "true")
-    @Update("UPDATE eve_sync_job SET next_run_at = CASE " + "WHEN cooldown_until IS NOT NULL AND cooldown_until > #{requestedAt} THEN cooldown_until " + "ELSE #{requestedAt} END, update_time = #{requestedAt} " + "WHERE tenant_id = #{tenantId} AND target_type = #{targetType} AND target_ref_id = #{targetRefId} " + "AND module = #{module} AND state = 'PENDING' AND deleted = 0")
-    int requestManual(@Param("tenantId") Long tenantId,
-                      @Param("targetType") EveSyncTargetType targetType,
-                      @Param("targetRefId") Long targetRefId,
-                      @Param("module") EveSyncModule module,
-                      @Param("requestedAt") LocalDateTime requestedAt);
-
-    /** 用户完成重新授权后通过手动同步恢复已暂停任务；仍遵守已有冷却时间。 */
-    @Update("UPDATE eve_sync_job SET state = 'PENDING', next_run_at = CASE " + "WHEN cooldown_until IS NOT NULL AND cooldown_until > #{requestedAt} THEN cooldown_until " + "ELSE #{requestedAt} END, consecutive_failures = 0, last_failure_code = NULL, " + "update_time = #{requestedAt} WHERE tenant_id = #{tenantId} AND target_type = #{targetType} " + "AND target_ref_id = #{targetRefId} AND module = #{module} AND state = 'PAUSED' AND deleted = 0")
-    int resumeManual(@Param("tenantId") Long tenantId,
-                     @Param("targetType") EveSyncTargetType targetType,
-                     @Param("targetRefId") Long targetRefId,
-                     @Param("module") EveSyncModule module,
-                     @Param("requestedAt") LocalDateTime requestedAt);
 }

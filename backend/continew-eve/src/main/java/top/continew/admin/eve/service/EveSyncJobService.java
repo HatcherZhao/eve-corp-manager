@@ -159,6 +159,35 @@ public class EveSyncJobService {
             .getClaimToken(), finishedAt, nextRunAt, cooldownUntil) == 1;
     }
 
+    /**
+     * 在页面直接完成同步后，仅重排后续自动任务。
+     *
+     * <p>此方法不领取、等待或取消任何自动任务，因此不会阻塞本次手动同步；运行中的任务继续由其
+     * 租约持有者收尾，避免无令牌更新破坏并发安全。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void scheduleAfterManualSuccess(Long tenantId,
+                                           EveSyncTargetType targetType,
+                                           Long targetRefId,
+                                           EveSyncModule module,
+                                           Duration interval,
+                                           LocalDateTime sourceExpiresAt) {
+        requireIdentity(tenantId, targetType, targetRefId);
+        Objects.requireNonNull(module, "module must not be null");
+        if (interval == null || interval.isNegative() || interval.isZero()) {
+            throw new IllegalArgumentException("interval must be positive");
+        }
+        LocalDateTime finishedAt = utcNow();
+        LocalDateTime nextRunAt = finishedAt.plus(interval);
+        if (sourceExpiresAt != null && sourceExpiresAt.isAfter(nextRunAt)) {
+            nextRunAt = sourceExpiresAt;
+        }
+        LocalDateTime cooldownUntil = finishedAt.plus(MINIMUM_MANUAL_COOLDOWN);
+        ensureJobs(tenantId, targetType, targetRefId, List.of(module), nextRunAt);
+        syncJobMapper
+            .completeManualSuccess(tenantId, targetType, targetRefId, module, finishedAt, nextRunAt, cooldownUntil);
+    }
+
     /** 根据失败分类自动判断是否需要暂停，其余失败按固定阶梯退避。 */
     public boolean completeFailure(EveSyncJobDO job, String failureCode) {
         String normalizedCode = normalizeFailureCode(failureCode);
@@ -186,26 +215,6 @@ public class EveSyncJobService {
         LocalDateTime cooldownUntil = permanentAuthorizationFailure ? null : nextRunAt;
         return syncJobMapper.completeFailure(job.getId(), job.getTenantId(), job
             .getClaimToken(), state, finishedAt, nextRunAt, cooldownUntil, consecutiveFailures, normalizedCode) == 1;
-    }
-
-    /** 将等待中的任务提升为手动请求，并继续遵守上游有效期或失败退避冷却。 */
-    public boolean requestManual(Long tenantId, EveSyncTargetType targetType, Long targetRefId, EveSyncModule module) {
-        return requestManual(tenantId, targetType, targetRefId, module, utcNow());
-    }
-
-    /** 按指定请求时间提升等待任务，运行中和暂停任务不会被修改。 */
-    public boolean requestManual(Long tenantId,
-                                 EveSyncTargetType targetType,
-                                 Long targetRefId,
-                                 EveSyncModule module,
-                                 LocalDateTime requestedAt) {
-        requireIdentity(tenantId, targetType, targetRefId);
-        Objects.requireNonNull(module, "module must not be null");
-        Objects.requireNonNull(requestedAt, "requestedAt must not be null");
-        if (syncJobMapper.requestManual(tenantId, targetType, targetRefId, module, requestedAt) == 1) {
-            return true;
-        }
-        return syncJobMapper.resumeManual(tenantId, targetType, targetRefId, module, requestedAt) == 1;
     }
 
     private EveSyncJobDO createJob(Long tenantId,

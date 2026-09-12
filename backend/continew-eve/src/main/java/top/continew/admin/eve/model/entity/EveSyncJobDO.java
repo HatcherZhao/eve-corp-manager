@@ -50,7 +50,7 @@ public class EveSyncJobDO extends TenantBaseDO {
     private EveSyncJobState state;
     /** 下次允许调度时间。 */
     private LocalDateTime nextRunAt;
-    /** 手动同步也不得绕过的冷却截止时间。 */
+    /** 自动任务在此时间前不得提前执行的冷却截止时间。 */
     private LocalDateTime cooldownUntil;
     /** 最近开始执行时间。 */
     private LocalDateTime lastStartedAt;

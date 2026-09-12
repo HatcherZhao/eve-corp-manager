@@ -55,7 +55,7 @@ const handleLoginExpired = () => {
   redirectingToLogin = true
   modalErrorWrapper({
     title: '登录已过期',
-    content: '你已超过 6 小时未操作。重新登录后会回到当前页面。',
+    content: '请重新登录。',
     maskClosable: false,
     escToClose: false,
     okText: '重新登录',

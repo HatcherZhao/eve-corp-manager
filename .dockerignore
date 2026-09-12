@@ -6,6 +6,8 @@
 node_modules
 frontend/node_modules
 frontend/dist
+!frontend/dist/
+!frontend/dist/**
 output
 tmp
 logs
@@ -15,4 +17,3 @@ private-data
 **/target/*
 !backend/continew-server/target/
 !backend/continew-server/target/continew-admin.jar
-

@@ -87,8 +87,8 @@ export const setupRouterGuard = (router: Router) => {
     // 判断该用户是否登录
     if (getToken()) {
       if (to.path === '/login') {
-        // 如果已经登录，并准备进入 Login 页面，则重定向到主页
-        next()
+        // 已有本站会话时不再放行登录页，避免嵌套 redirect 让用户再次登录。
+        next({ path: '/', replace: true })
       } else {
         if (!hasRouteFlag) {
           try {

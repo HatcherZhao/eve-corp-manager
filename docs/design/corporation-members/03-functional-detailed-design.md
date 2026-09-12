@@ -17,9 +17,9 @@ sequenceDiagram
     W->>A: 请求当前租户成员数据
     A->>D: 读取最近成功快照
     D-->>W: 返回名册、数据时间与能力状态
-    U->>W: 手动同步（受限）
+    U->>W: 手动同步
     W->>A: POST 同步请求
-    A->>S: 创建或合并资源同步任务
+    A->>S: 立即读取并发布资源快照
     S->>E: 按 Scope 与游戏资格读取成员资源
     E-->>S: 数据、ETag、Expires 或受限错误
     S->>D: 仅完整资源批次发布新快照
@@ -30,7 +30,7 @@ sequenceDiagram
 
 ### 2.1 成员名册
 
-页面路径：`/eve/members`。顶部显示军团名称、基础名册/追踪/头衔/角色历史四项数据状态、上次成功时间和“同步”按钮。同步按钮仅对 `eve:members:manage` 可见，且根据资源冷却状态禁用。
+页面路径：`/eve/members`。顶部显示军团名称、基础名册/追踪/头衔/角色历史四项数据状态、上次成功时间和“同步”按钮。同步按钮仅对 `eve:members:manage` 可见；点击后在当前请求中完成读取，资源已在同步时显示明确的互斥提示。
 
 列表列：角色名、本站账号关联、游戏头衔、关键游戏职位、本站业务角色、在团状态、入团时间、最近登录、最近登出、位置、舰船、基地、最近同步时间。拥有 `eve:members:track:view` 的用户直接显示追踪列；没有该权限时隐藏这些列并展示权限说明。
 
@@ -62,7 +62,7 @@ sequenceDiagram
 | `GET /eve/members/{characterId}/tracking` | `eve:members:track:view` | 返回追踪字段、来源时间、字段可用性 | 非总监可获授权；缺数据返回可解释状态，不以空对象代替 |
 | `GET /eve/members/{characterId}/role-history` | `eve:members:view` | 分页返回角色变更历史 | 历史数据不存在时返回空页与资源状态 |
 | `PUT /eve/members/{characterId}/operations-profile` | `eve:members:manage` | 标签 ID、备注、负责人 | 只更新本站表，写操作审计 |
-| `POST /eve/members/sync` | `eve:members:manage` | 可选 `resources`；返回任务 ID / 合并结果 | 仅允许基础名册、追踪、头衔、角色历史四类白名单资源 |
+| `POST /eve/members/sync` | `eve:members:manage` | 返回即时同步结果与最新数据时间 | 同步基础名册及可读取的追踪资源，并重排后续自动任务 |
 | `GET /eve/members/sync-runs` | `eve:members:manage` | 资源、状态、时间范围分页 | 仅当前租户审计 |
 
 ## 4. 权限、隐私与审计

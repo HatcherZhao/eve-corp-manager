@@ -100,3 +100,5 @@ databaseChangeLog:
       file: db/changelog/mysql/eve/035_login_session_six_hours.sql
   - include:
       file: db/changelog/mysql/eve/036_mining_analytics_title.sql
+  - include:
+      file: db/changelog/mysql/eve/037_official_news.sql

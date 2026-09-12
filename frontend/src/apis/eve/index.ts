@@ -576,7 +576,7 @@ export interface EveGameMailSyncResult {
   sourceExpiresAt?: string
 }
 
-/** 手动同步请求已交给服务端队列，实际读取受上游缓存与限流策略控制。 */
+/** 手动同步已在当前请求中完成，页面可立即读取最新快照。 */
 export interface EveSyncRequestResult {
   accepted: boolean
   message: string
@@ -623,6 +623,41 @@ export interface EveGameNotificationDetailItem {
 export interface EveGameNotificationQuery extends PageQuery {
   category?: EveGameNotificationCategory
   keyword?: string
+}
+
+/** 国服官网资讯的安全阅读记录；列表响应不携带完整正文。 */
+export interface EveOfficialNews {
+  category: string
+  categoryLabel: string
+  title: string
+  summary?: string
+  originalUrl: string
+  contentHtml?: string
+  contentText?: string
+  coverUrl?: string
+  publishedAt?: string
+  lastSyncedAt: string
+}
+
+export interface EveOfficialNewsQuery extends PageQuery {
+  category?: string
+  keyword?: string
+}
+
+/** 官网资讯各栏目最近一次检查结果，供页面显示数据新鲜度。 */
+export interface EveOfficialNewsSyncStatus {
+  lastSuccessfulAt?: string
+  lastFailureAt?: string
+  lastFailureMessage?: string
+  failureCount: number
+}
+
+/** 手动检查官网资讯的本次执行回执。 */
+export interface EveOfficialNewsSyncResult {
+  synchronized: boolean
+  message: string
+  discoveredCount: number
+  synchronizedAt: string
 }
 
 export function getWorkspace() {
@@ -700,7 +735,7 @@ export function getEveCorporationAssetTree() {
   return http.get<EveCorporationAssetTree>('/eve/assets/tree')
 }
 
-/** 请求后台同步当前军团完整资产快照。 */
+/** 立即同步当前军团完整资产快照。 */
 export function syncEveCorporationAssets() {
   return http.post<EveSyncRequestResult>('/eve/assets/sync')
 }
@@ -715,7 +750,7 @@ export function getEveCorporationStructures(query: EveCorporationStructureQuery)
   return http.get<PageRes<EveCorporationStructure[]>>('/eve/structures', query)
 }
 
-/** 请求后台同步当前军团建筑。 */
+/** 立即同步当前军团建筑。 */
 export function syncEveCorporationStructures() {
   return http.post<EveSyncRequestResult>('/eve/structures/sync')
 }
@@ -735,7 +770,7 @@ export function getEveMiningAnalytics(query: Omit<EveMiningLedgerQuery, 'page' |
   return http.get<EveMiningAnalytics>('/eve/mining/analytics', query)
 }
 
-/** 请求后台同步当前军团的完整采矿账本。 */
+/** 立即同步当前军团的完整采矿账本。 */
 export function syncEveMiningLedger() {
   return http.post<EveSyncRequestResult>('/eve/mining/sync')
 }
@@ -745,7 +780,7 @@ export function getEveMoonExtractions(query: EveMoonExtractionQuery) {
   return http.get<PageRes<EveMoonExtraction[]>>('/eve/extractions', query)
 }
 
-/** 请求后台读取并原子发布当前军团完整月矿时间线。 */
+/** 立即读取并原子发布当前军团完整月矿时间线。 */
 export function syncEveMoonExtractions() {
   return http.post<EveSyncRequestResult>('/eve/extractions/sync')
 }
@@ -825,7 +860,7 @@ export function getEveMemberRoleAudit(limit = 20) {
   return http.get<EveMemberOperationAudit[]>('/eve/rbac/audit', { limit })
 }
 
-/** 请求后台同步名册与可用的追踪资源。 */
+/** 立即同步名册与可用的追踪资源。 */
 export function syncEveMembers() {
   return http.post<EveSyncRequestResult>('/eve/members/sync')
 }
@@ -840,7 +875,7 @@ export function getEveGameMailLabels() {
   return http.get<EveGameMailLabel[]>('/eve/mail/labels')
 }
 
-/** 请求后台同步当前登录用户授权角色的最近邮件。 */
+/** 立即同步当前登录用户授权角色的最近邮件。 */
 export function syncEveGameMails() {
   return http.post<EveSyncRequestResult>('/eve/mail/sync')
 }
@@ -870,9 +905,29 @@ export function getEveGameNotifications(query: EveGameNotificationQuery) {
   return http.get<PageRes<EveGameNotification[]>>('/eve/notifications', query)
 }
 
-/** 请求后台同步当前授权角色的游戏通知。 */
+/** 立即同步当前授权角色的游戏通知。 */
 export function syncEveGameNotifications() {
   return http.post<EveSyncRequestResult>('/eve/notifications/sync')
+}
+
+/** 分页查询已同步的网易 EVE 国服官网新闻活动或版本更新。 */
+export function getEveOfficialNews(query: EveOfficialNewsQuery) {
+  return http.get<PageRes<EveOfficialNews[]>>('/eve/news', query)
+}
+
+/** 按官网原文地址读取已净化的完整资讯正文。 */
+export function getEveOfficialNewsDetail(originalUrl: string) {
+  return http.get<EveOfficialNews>('/eve/news/detail', { originalUrl })
+}
+
+/** 查询国服官网资讯最近一次同步状态。 */
+export function getEveOfficialNewsSyncStatus() {
+  return http.get<EveOfficialNewsSyncStatus>('/eve/news/sync-status')
+}
+
+/** CEO 或总监立即检查官网是否发布了新资讯。 */
+export function syncEveOfficialNews() {
+  return http.post<EveOfficialNewsSyncResult>('/eve/news/sync')
 }
 
 export function createEveBusinessRole(data: EveBusinessRoleReq) {

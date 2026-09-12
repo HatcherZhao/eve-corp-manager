@@ -16,10 +16,14 @@
 
 package top.continew.admin.eve.model;
 
+import java.time.LocalDateTime;
+
 /**
- * 手动同步的即时执行结果。
+ * 面向站内阅读页的官网资讯安全响应，不暴露数据库或抓取内部标识。
  *
  * @author zhaoyuqing
  */
-public record EveSyncRequestResp(boolean accepted, String message) {
+public record EveOfficialNewsResp(String category, String categoryLabel, String title, String summary,
+                                  String originalUrl, String contentHtml, String contentText, String coverUrl,
+                                  LocalDateTime publishedAt, LocalDateTime lastSyncedAt) {
 }

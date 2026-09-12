@@ -106,6 +106,7 @@ async function sync() {
   try {
     const { data } = await syncEveCorporationStructures()
     Message.success(data.message)
+    await loadStructures()
   } finally {
     syncing.value = false
     freshnessVersion.value += 1

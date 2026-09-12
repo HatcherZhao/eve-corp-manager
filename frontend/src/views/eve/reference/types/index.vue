@@ -23,22 +23,12 @@ const total = ref(0)
 const selectedType = ref<EveStaticTypeReference>()
 const categoryTree = ref<MarketCategoryTreeNode[]>([])
 const selectedCategory = ref<MarketCategoryTreeNode>()
-const selectedCategoryKeys = ref<string[]>(['all'])
+const selectedCategoryKeys = ref<string[]>([])
 const expandedCategoryKeys = ref<string[]>([])
 const query = reactive({ page: 1, size: 20, keyword: '' })
 const canExport = computed(() => userStore.permissions.includes('eve:reference:export') || userStore.permissions.includes('*:*:*'))
 const canManage = computed(() => userStore.permissions.includes('eve:reference:manage') || userStore.permissions.includes('*:*:*'))
-const activeCategoryLabel = computed(() => selectedCategory.value?.name || '全部物品')
-const marketTree = computed<MarketCategoryTreeNode[]>(() => [{
-  name: '全部物品',
-  path: [],
-  directTypeCount: 0,
-  typeCount: 0,
-  unclassified: false,
-  key: 'all',
-  title: '全部物品',
-  children: categoryTree.value,
-}])
+const activeCategoryLabel = computed(() => selectedCategory.value?.name || '物品列表')
 
 interface MarketCategoryTreeNode extends EveStaticTypeCategoryNode {
   key: string
@@ -116,7 +106,7 @@ function search() {
 function reset() {
   Object.assign(query, { page: 1, keyword: '' })
   selectedCategory.value = undefined
-  selectedCategoryKeys.value = ['all']
+  selectedCategoryKeys.value = []
   loadTypes()
 }
 
@@ -133,9 +123,9 @@ async function loadCategories() {
 
 /** 选择左侧市场分类，并在右侧保留全局关键词搜索能力。 */
 function selectCategory(keys: string[]) {
-  const key = keys[0] || 'all'
-  selectedCategoryKeys.value = [key]
-  selectedCategory.value = key === 'all' ? undefined : findCategory(categoryTree.value, key)
+  const key = keys[0]
+  selectedCategoryKeys.value = key ? [key] : []
+  selectedCategory.value = key ? findCategory(categoryTree.value, key) : undefined
   query.page = 1
   loadTypes()
 }
@@ -215,7 +205,7 @@ onMounted(() => Promise.all([loadCategories(), loadTypes()]))
           <a-tree
             v-if="categoryTree.length"
             v-model:expanded-keys="expandedCategoryKeys"
-            :data="marketTree"
+            :data="categoryTree"
             :selected-keys="selectedCategoryKeys"
             block-node
             show-line

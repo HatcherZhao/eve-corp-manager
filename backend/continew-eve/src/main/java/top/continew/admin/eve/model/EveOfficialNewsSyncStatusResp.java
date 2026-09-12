@@ -16,10 +16,13 @@
 
 package top.continew.admin.eve.model;
 
+import java.time.LocalDateTime;
+
 /**
- * 手动同步的即时执行结果。
+ * 官网资讯同步健康状态，供页面右上角以单行文字显示。
  *
  * @author zhaoyuqing
  */
-public record EveSyncRequestResp(boolean accepted, String message) {
+public record EveOfficialNewsSyncStatusResp(LocalDateTime lastSuccessfulAt, LocalDateTime lastFailureAt,
+                                            String lastFailureMessage, int failureCount) {
 }

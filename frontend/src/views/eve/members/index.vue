@@ -127,6 +127,7 @@ async function sync() {
   try {
     const { data } = await syncEveMembers()
     Message.success(data.message)
+    await Promise.all([loadMembers(), loadOperations()])
   } finally {
     syncing.value = false
     freshnessVersion.value += 1

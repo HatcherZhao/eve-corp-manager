@@ -211,6 +211,7 @@ async function sync() {
   try {
     const { data } = await syncEveGameMails()
     Message.success(data.message)
+    await Promise.all([loadMails(), loadLabels()])
   } finally {
     syncing.value = false
   }

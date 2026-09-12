@@ -58,20 +58,21 @@ class EveSyncJobServiceTest {
         assertThat(cooldownUntil.getValue()).isEqualTo(sourceExpiresAt);
     }
 
-    /** 已暂停任务在用户完成重新授权后手动请求时必须恢复，而不是永久卡住。 */
+    /** 页面直接同步成功后，应仅延后自动任务而不走手动入队逻辑。 */
     @Test
-    void shouldResumePausedJobForManualRequest() {
+    void shouldScheduleFollowingAutomaticJobAfterManualSuccess() {
         EveSyncJobMapper mapper = mock(EveSyncJobMapper.class);
         EveSyncJobService service = new EveSyncJobService(mapper);
-        LocalDateTime requestedAt = LocalDateTime.of(2026, 9, 10, 10, 0);
-        when(mapper.requestManual(any(), any(), any(), any(), any())).thenReturn(0);
-        when(mapper.resumeManual(any(), any(), any(), any(), any())).thenReturn(1);
+        EveSyncJobDO existingJob = new EveSyncJobDO();
+        LocalDateTime sourceExpiresAt = LocalDateTime.now().plusHours(2);
+        when(mapper.selectByIdentity(10L, EveSyncTargetType.CORPORATION, 20L, EveSyncModule.STRUCTURES))
+            .thenReturn(existingJob);
 
-        boolean accepted = service
-            .requestManual(10L, EveSyncTargetType.CORPORATION, 20L, EveSyncModule.STRUCTURES, requestedAt);
+        service.scheduleAfterManualSuccess(10L, EveSyncTargetType.CORPORATION, 20L, EveSyncModule.STRUCTURES, Duration
+            .ofMinutes(30), sourceExpiresAt);
 
-        assertThat(accepted).isTrue();
-        verify(mapper).resumeManual(10L, EveSyncTargetType.CORPORATION, 20L, EveSyncModule.STRUCTURES, requestedAt);
+        verify(mapper)
+            .completeManualSuccess(eq(10L), eq(EveSyncTargetType.CORPORATION), eq(20L), eq(EveSyncModule.STRUCTURES), any(), eq(sourceExpiresAt), any());
     }
 
     /** 构造具有有效数据库领取令牌的运行中任务。 */

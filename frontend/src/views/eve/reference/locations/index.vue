@@ -23,7 +23,7 @@ const total = ref(0)
 const selectedLocation = ref<EveStaticLocationReference>()
 const locationTree = ref<LocationTreeNode[]>([])
 const selectedTreeNode = ref<LocationTreeNode>()
-const selectedTreeKeys = ref<string[]>(['all'])
+const selectedTreeKeys = ref<string[]>([])
 const expandedTreeKeys = ref<string[]>([])
 const query = reactive<{ page: number, size: number, keyword: string, referenceType: EveStaticLocationReference['referenceType'] | '' }>({
   page: 1,
@@ -34,16 +34,6 @@ const query = reactive<{ page: number, size: number, keyword: string, referenceT
 const canExport = computed(() => userStore.permissions.includes('eve:reference:export') || userStore.permissions.includes('*:*:*'))
 const canManage = computed(() => userStore.permissions.includes('eve:reference:manage') || userStore.permissions.includes('*:*:*'))
 const activeLocationLabel = computed(() => selectedTreeNode.value?.referenceName || '全部位置')
-const navigationTree = computed<LocationTreeNode[]>(() => [{
-  referenceType: 'REGION',
-  referenceId: 'all',
-  referenceName: '全部位置',
-  locationCount: 0,
-  key: 'all',
-  title: '全部位置',
-  children: locationTree.value,
-}])
-
 interface LocationTreeNode extends EveStaticLocationTreeNode {
   key: string
   title: string
@@ -128,7 +118,7 @@ function search() {
 function reset() {
   Object.assign(query, { page: 1, keyword: '', referenceType: '' })
   selectedTreeNode.value = undefined
-  selectedTreeKeys.value = ['all']
+  selectedTreeKeys.value = []
   loadLocations()
 }
 
@@ -145,9 +135,9 @@ async function loadLocationTree() {
 
 /** 选择位置树节点后，在右侧列出其全部下级位置。 */
 function selectLocationTreeNode(keys: string[]) {
-  const key = keys[0] || 'all'
-  selectedTreeKeys.value = [key]
-  selectedTreeNode.value = key === 'all' ? undefined : findLocationTreeNode(locationTree.value, key)
+  const key = keys[0]
+  selectedTreeKeys.value = key ? [key] : []
+  selectedTreeNode.value = key ? findLocationTreeNode(locationTree.value, key) : undefined
   query.page = 1
   loadLocations()
 }
@@ -218,7 +208,7 @@ onMounted(() => Promise.all([loadLocationTree(), loadLocations()]))
           <a-tree
             v-if="locationTree.length"
             v-model:expanded-keys="expandedTreeKeys"
-            :data="navigationTree"
+            :data="locationTree"
             :selected-keys="selectedTreeKeys"
             block-node
             show-line

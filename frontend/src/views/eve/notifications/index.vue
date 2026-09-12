@@ -170,6 +170,7 @@ async function sync() {
   try {
     const { data } = await syncEveGameNotifications()
     Message.success(data.message)
+    await loadNotifications()
   } finally {
     syncing.value = false
   }
