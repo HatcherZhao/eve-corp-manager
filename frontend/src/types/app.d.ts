@@ -9,7 +9,6 @@ declare namespace App {
     menuCollapse: boolean
     menuAccordion: boolean
     menuDark: boolean
-    copyrightDisplay: boolean
     layout: 'left' | 'mix' | 'columns' | 'top'
     isOpenWatermark?: boolean
     watermark?: string

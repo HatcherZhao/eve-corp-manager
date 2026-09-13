@@ -102,3 +102,5 @@ databaseChangeLog:
       file: db/changelog/mysql/eve/036_mining_analytics_title.sql
   - include:
       file: db/changelog/mysql/eve/037_official_news.sql
+  - include:
+      file: db/changelog/mysql/eve/038_root_eve_menus.sql

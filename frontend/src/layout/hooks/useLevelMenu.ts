@@ -22,7 +22,12 @@ export function useLevelMenu() {
   // 二级菜单
   const twoLevelMenus = computed(() => {
     const path = route.matched[0].path
-    return showMenuList.find((i) => i.path === path)?.children || []
+    const currentMenu = showMenuList.find((i) => i.path === path)
+    // 一级页面的 Layout 容器仅承载一个实际页面时，与常规侧栏保持一致地折叠该层。
+    if (currentMenu?.children?.length === 1 && currentMenu.meta?.alwaysShow !== true) {
+      return []
+    }
+    return currentMenu?.children || []
   })
 
   // 一级菜单选中的路由

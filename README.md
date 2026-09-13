@@ -143,7 +143,6 @@ flowchart LR
 - 不保存游戏账号密码；授权令牌、审计记录与敏感配置均受保护。
 - 公开仓库不包含真实军团数据、账号凭据、令牌或生产日志。
 - 本项目为非官方工具，与网易及 CCP 无隶属关系。
-- 源码采用 Apache-2.0，保留上游版权与许可证；详见 [UPSTREAM.md](UPSTREAM.md)。
 
 <p align="center">
   <sub>Fly safe. Build smart. Operate together.</sub>

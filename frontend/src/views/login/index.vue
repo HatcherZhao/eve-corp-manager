@@ -19,12 +19,6 @@
       </a-col>
     </a-row>
 
-    <div v-if="isDesktop" class="footer">
-      <div class="beian">
-        <div class="below text">{{ appStore.getCopyright() }}{{ appStore.getForRecord() ? ` · ${appStore.getForRecord()}` : '' }}</div>
-      </div>
-    </div>
-
     <GiThemeBtn class="theme-btn" />
     <Background />
   </div>
@@ -249,28 +243,6 @@ onMounted(() => {
     z-index: 1000;
   }
 
-  .footer {
-    align-items: center;
-    box-sizing: border-box;
-    position: absolute;
-    bottom: 10px;
-    z-index: 999;
-
-    .beian {
-      .text {
-        font-size: 12px;
-        font-weight: 400;
-        letter-spacing: 0.2px;
-        line-height: 20px;
-        text-align: center;
-      }
-
-      .below {
-        align-items: center;
-        display: flex;
-      }
-    }
-  }
 }
 
 @media screen and (min-width: 571px) {
@@ -459,27 +431,5 @@ onMounted(() => {
     z-index: 1000;
   }
 
-  .footer {
-    align-items: center;
-    box-sizing: border-box;
-    position: absolute;
-    bottom: 10px;
-    z-index: 999;
-
-    .beian {
-      .text {
-        font-size: 12px;
-        font-weight: 400;
-        letter-spacing: 0.2px;
-        line-height: 20px;
-        text-align: center;
-      }
-
-      .below {
-        align-items: center;
-        display: flex;
-      }
-    }
-  }
 }
 </style>

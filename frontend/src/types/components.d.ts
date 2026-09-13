@@ -26,7 +26,6 @@ declare module 'vue' {
     GiCodeView: typeof import('./../components/GiCodeView/index.vue')['default']
     GiDot: typeof import('./../components/GiDot/index.tsx')['default']
     GiEditTable: typeof import('./../components/GiEditTable/GiEditTable.vue')['default']
-    GiFooter: typeof import('./../components/GiFooter/index.vue')['default']
     GiForm: typeof import('./../components/GiForm/src/GiForm.vue')['default']
     GiIconBox: typeof import('./../components/GiIconBox/index.vue')['default']
     GiIconSelector: typeof import('./../components/GiIconSelector/index.vue')['default']

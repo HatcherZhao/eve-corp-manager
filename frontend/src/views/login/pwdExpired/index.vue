@@ -27,15 +27,6 @@
       </a-col>
     </a-row>
 
-    <div v-if="isDesktop" class="footer">
-      <div class="beian">
-        <div class="below text">
-          {{ appStore.getCopyright() }}{{ appStore.getForRecord() ? ` ·
-                    ${appStore.getForRecord()}` : '' }}
-        </div>
-      </div>
-    </div>
-
     <GiThemeBtn class="theme-btn" />
     <Background />
   </div>
@@ -66,11 +57,9 @@
 import Background from '../components/background/index.vue'
 import ModifyPassword from '../components/modifyPassword/index.vue'
 import { useAppStore } from '@/stores'
-import { useDevice } from '@/hooks'
 
 defineOptions({ name: 'PwdExpired' })
 
-const { isDesktop } = useDevice()
 const appStore = useAppStore()
 const title = computed(() => appStore.getTitle())
 const logo = computed(() => appStore.getLogo())
@@ -186,28 +175,6 @@ const logo = computed(() => appStore.getLogo())
       z-index: 1000;
     }
 
-    .footer {
-        align-items: center;
-        box-sizing: border-box;
-        position: absolute;
-        bottom: 10px;
-        z-index: 999;
-
-        .beian {
-            .text {
-                font-size: 12px;
-                font-weight: 400;
-                letter-spacing: 0.2px;
-                line-height: 20px;
-                text-align: center;
-            }
-
-            .below {
-                align-items: center;
-                display: flex;
-            }
-        }
-    }
 }
 
 @media screen and (min-width: 571px) {
@@ -397,27 +364,5 @@ const logo = computed(() => appStore.getLogo())
       z-index: 1000;
     }
 
-    .footer {
-        align-items: center;
-        box-sizing: border-box;
-        position: absolute;
-        bottom: 10px;
-        z-index: 999;
-
-        .beian {
-            .text {
-                font-size: 12px;
-                font-weight: 400;
-                letter-spacing: 0.2px;
-                line-height: 20px;
-                text-align: center;
-            }
-
-            .below {
-                align-items: center;
-                display: flex;
-            }
-        }
-    }
 }
 </style>

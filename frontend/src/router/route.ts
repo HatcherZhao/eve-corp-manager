@@ -23,26 +23,11 @@ export const systemRoutes: RouteRecordRaw[] = [
     component: () => import('@/views/eve/recover/index.vue'),
     meta: { title: '使用 EVE 找回密码', hidden: true },
   },
+  /** 未指定页面时直接进入军团工作台，不保留框架默认仪表盘。 */
   {
     path: '/',
-    name: 'Dashboard',
-    component: Layout,
-    redirect: '/dashboard/workplace',
-    meta: { title: '仪表盘', icon: 'dashboard', hidden: false },
-    children: [
-      {
-        path: '/dashboard/workplace',
-        name: 'Workplace',
-        component: () => import('@/views/dashboard/workplace/index.vue'),
-        meta: { title: '工作台', icon: 'desktop', hidden: false, affix: true },
-      },
-      {
-        path: '/dashboard/analysis',
-        name: 'Analysis',
-        component: () => import('@/views/dashboard/analysis/index.vue'),
-        meta: { title: '分析页', icon: 'insert-chart', hidden: false },
-      },
-    ],
+    redirect: '/eve/workspace',
+    meta: { hidden: true },
   },
   {
     path: '/social/callback',
@@ -89,48 +74,6 @@ export const systemRoutes: RouteRecordRaw[] = [
         name: 'EveAccessManagement',
         component: () => import('@/views/eve/access-management/index.vue'),
         meta: { title: '军团成员权限', hidden: true },
-      },
-    ],
-  },
-  {
-    path: '/about',
-    name: 'About',
-    component: Layout,
-    meta: { title: '关于项目', icon: 'apps', hidden: false, sort: 999 },
-    redirect: '/about/document/api',
-    children: [
-      {
-        path: '/about/document/api',
-        component: () => import('@/views/about/document/api/index.vue'),
-        meta: { title: '接口文档', icon: 'swagger', hidden: false, keepAlive: true },
-      },
-      {
-        path: '/about/document/changelog',
-        component: () => import('@/views/about/document/changelog/index.vue'),
-        meta: { title: '更新日志', icon: 'continew', hidden: false, keepAlive: true },
-      },
-      {
-        path: 'https://arco.design/vue/component/button',
-        meta: { title: 'Arco Design文档', icon: 'arco', hidden: false },
-      } as RouteRecordRaw,
-      {
-        path: '/about/source',
-        name: 'AboutSource',
-        meta: { title: '开源地址', icon: 'github', hidden: false },
-        children: [
-          {
-            path: 'https://gitee.com/continew/continew-admin',
-            meta: { title: 'Gitee', icon: 'gitee', hidden: false },
-          } as RouteRecordRaw,
-          {
-            path: 'https://gitcode.com/continew/continew-admin',
-            meta: { title: 'GitCode', icon: 'gitcode', hidden: false },
-          } as RouteRecordRaw,
-          {
-            path: 'https://github.com/continew-org/continew-admin',
-            meta: { title: 'GitHub', icon: 'github', hidden: false },
-          } as RouteRecordRaw,
-        ],
       },
     ],
   },

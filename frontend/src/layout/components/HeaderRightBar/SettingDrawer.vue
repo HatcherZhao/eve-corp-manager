@@ -48,9 +48,6 @@
         <a-descriptions-item label="手风琴效果">
           <a-switch v-model="appStore.menuAccordion" />
         </a-descriptions-item>
-        <a-descriptions-item label="版权显示">
-          <a-switch v-model="appStore.copyrightDisplay" />
-        </a-descriptions-item>
         <a-descriptions-item label="水印">
           <a-switch v-model="appStore.isOpenWatermark" />
         </a-descriptions-item>
@@ -163,7 +160,6 @@ const copySettings = () => {
     menuCollapse: appStore.menuCollapse,
     menuAccordion: appStore.menuAccordion,
     menuDark: appStore.menuDark,
-    copyrightDisplay: appStore.copyrightDisplay,
     layout: appStore.layout,
     isOpenWatermark: appStore.isOpenWatermark,
     watermark: appStore.watermark,

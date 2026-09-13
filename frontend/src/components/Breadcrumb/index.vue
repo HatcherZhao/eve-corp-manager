@@ -25,25 +25,13 @@ const router = useRouter()
 const { routes } = useRouteStore()
 const attrs = useAttrs()
 
-let home: RouteLocationMatched | null = null
-const getHome = () => {
-  if (!home) {
-    const cloneRoutes = JSON.parse(JSON.stringify(routes)) as RouteLocationMatched[]
-    const obj = findTree(cloneRoutes, (i) => i.path === '/dashboard/workplace')
-    home = obj.item
-  }
-}
-
 const breadcrumbList = ref<RouteLocationMatched[]>([])
 function getBreadcrumbList() {
-  getHome()
   const cloneRoutes = JSON.parse(JSON.stringify(routes)) as RouteLocationMatched[]
   const obj = findTree(cloneRoutes, (i) => i.path === route.path)
   // 获取当前节点的所有上级节点集合，包含当前节点
   const arr = obj ? obj.nodes.filter((item) => item.meta && item.meta.title && item.meta.breadcrumb !== false) : []
-  if (home) {
-    breadcrumbList.value = [home, ...arr]
-  }
+  breadcrumbList.value = arr
 }
 getBreadcrumbList()
 

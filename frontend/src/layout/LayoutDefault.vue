@@ -5,7 +5,6 @@
       <Header></Header>
       <Tabs></Tabs>
       <Main></Main>
-      <GiFooter v-if="appStore.copyrightDisplay" />
     </a-layout>
 
     <!-- 公告弹窗 -->
@@ -19,14 +18,11 @@ import Asider from './components/Asider/index.vue'
 import Header from './components/Header/index.vue'
 import Main from './components/Main.vue'
 import Tabs from './components/Tabs/index.vue'
-import GiFooter from '@/components/GiFooter/index.vue'
 import NoticePopup from '@/views/user/message/components/NoticePopup.vue'
-import { useAppStore } from '@/stores'
 import { useDevice } from '@/hooks'
 import { getToken } from '@/utils/auth'
 
 defineOptions({ name: 'LayoutDefault' })
-const appStore = useAppStore()
 const { isMobile } = useDevice()
 
 // 公告弹窗引用
