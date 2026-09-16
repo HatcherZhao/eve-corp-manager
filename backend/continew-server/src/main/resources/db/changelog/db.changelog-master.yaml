@@ -104,3 +104,13 @@ databaseChangeLog:
       file: db/changelog/mysql/eve/037_official_news.sql
   - include:
       file: db/changelog/mysql/eve/038_root_eve_menus.sql
+  - include:
+      file: db/changelog/mysql/eve/039_jita_market.sql
+  - include:
+      file: db/changelog/mysql/eve/040_market_history_warmup.sql
+  - include:
+      file: db/changelog/mysql/eve/041_market_menu_icon.sql
+  - include:
+      file: db/changelog/mysql/eve/042_moon_mining_compression_valuation.sql
+  - include:
+      file: db/changelog/mysql/eve/043_asset_valuation.sql

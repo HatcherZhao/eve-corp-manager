@@ -96,6 +96,21 @@ spring.servlet.multipart:
   # 单次总上传文件大小限制
   max-request-size: 20MB
 eve:
+  market:
+    # 吉他市场页面只由服务端读取公开数据源并缓存；列表一页最多合并为一次 20 项报价请求。
+    enabled: ${EVE_MARKET_ENABLED:true}
+    base-url: "${EVE_MARKET_BASE_URL:https://www.ceve-market.org}"
+    timeout: "${EVE_MARKET_TIMEOUT:PT15S}"
+    quote-refresh-interval: "${EVE_MARKET_QUOTE_REFRESH_INTERVAL:PT15M}"
+    detail-refresh-interval: "${EVE_MARKET_DETAIL_REFRESH_INTERVAL:PT30M}"
+    recent-refresh-interval: "${EVE_MARKET_RECENT_REFRESH_INTERVAL:PT30M}"
+    recent-refresh-limit: ${EVE_MARKET_RECENT_REFRESH_LIMIT:40}
+    # 价格历史独立轮转：约 15 次/分钟，覆盖全体可交易物品约需一天，接口不会因页面访问才触发。
+    history-warmup-interval: "${EVE_MARKET_HISTORY_WARMUP_INTERVAL:PT20S}"
+    history-warmup-limit: ${EVE_MARKET_HISTORY_WARMUP_LIMIT:5}
+    # 报价接口每次合并二十项；每 15 秒一批，约四小时轮转一遍全部可交易物品。
+    quote-warmup-interval: "${EVE_MARKET_QUOTE_WARMUP_INTERVAL:PT15S}"
+    quote-warmup-limit: ${EVE_MARKET_QUOTE_WARMUP_LIMIT:20}
   reference:
     remote-sync:
       # 每日从公开资料源下载；内容、结构或导入校验失败时保留当前数据库快照。

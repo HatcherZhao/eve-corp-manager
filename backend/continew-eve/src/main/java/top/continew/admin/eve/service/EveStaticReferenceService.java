@@ -155,6 +155,7 @@ public class EveStaticReferenceService {
         jdbcTemplate.update("DELETE FROM eve_static_location_reference");
         batchInsertTypes(workbook.types());
         batchInsertLocations(workbook.locations());
+        refreshMoonCompressionMappings();
         EveStaticReferenceImportDO imported = new EveStaticReferenceImportDO();
         imported.setReferenceName(REFERENCE_NAME);
         imported.setSourceFileName(workbook.sourceFileName());
@@ -569,6 +570,27 @@ public class EveStaticReferenceService {
                     return batch.size();
                 }
             }));
+    }
+
+    /**
+     * 资料更新后补齐新增卫星矿石的原矿—高密度矿映射。
+     *
+     * <p>只接受同属“卫星矿石”分类、名称严格相差“高密度”前缀的类型；无法唯一对应的资料不会被
+     * 纳入估值，避免将普通矿石或其他材料误算为月矿。</p>
+     */
+    private void refreshMoonCompressionMappings() {
+        jdbcTemplate.update("""
+            INSERT INTO eve_mining_compression_mapping (raw_type_id, compressed_type_id, compression_ratio)
+            SELECT raw.type_id, compressed.type_id, 100
+            FROM eve_static_type_reference AS raw
+            INNER JOIN eve_static_type_reference AS compressed
+                ON compressed.type_name = CONCAT('高密度', raw.type_name)
+               AND compressed.market_category_l4 = '卫星矿石'
+            WHERE raw.market_category_l4 = '卫星矿石'
+              AND raw.type_name NOT LIKE '高密度%'
+            ON DUPLICATE KEY UPDATE compressed_type_id = VALUES(compressed_type_id),
+                                    compression_ratio = VALUES(compression_ratio)
+            """);
     }
 
     /** 将大表拆为固定批次提交，控制 JDBC 参数和内存占用。 */

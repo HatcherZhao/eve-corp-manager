@@ -18,8 +18,12 @@ package top.continew.admin.eve.mapper;
 
 import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import top.continew.admin.eve.model.entity.EveStaticTypeReferenceDO;
 import top.continew.starter.data.mapper.BaseMapper;
+
+import java.util.List;
 
 /**
  * EVE 静态类型资料 Mapper。
@@ -29,4 +33,53 @@ import top.continew.starter.data.mapper.BaseMapper;
 @Mapper
 @InterceptorIgnore(tenantLine = "true")
 public interface EveStaticTypeReferenceMapper extends BaseMapper<EveStaticTypeReferenceDO> {
+
+    /**
+     * 选择尚未拥有有效价格历史的少量物品，供后台平稳补全行情曲线。
+     *
+     * @param limit 单次处理上限
+     * @return 游戏物品类型 ID
+     */
+    @Select("""
+        SELECT `reference`.`type_id`
+        FROM `eve_static_type_reference` AS `reference`
+        LEFT JOIN `eve_market_snapshot` AS `snapshot` ON `snapshot`.`type_id` = `reference`.`type_id`
+        WHERE `reference`.`market_category_l1` <> ''
+          AND (`snapshot`.`history_synchronized_at` IS NULL
+            OR `snapshot`.`history_synchronized_at` < DATE_SUB(NOW(), INTERVAL 1 DAY))
+        -- 优先补齐用户已经浏览过、已有报价快照的物品，再渐进覆盖其余基础资料。
+        ORDER BY CASE WHEN `snapshot`.`type_id` IS NULL THEN 1 ELSE 0 END ASC,
+                 `snapshot`.`history_synchronized_at` ASC,
+                 `reference`.`type_id` ASC
+        LIMIT #{limit}
+        """)
+    List<Integer> selectHistoryWarmupTypeIds(@Param("limit") int limit);
+
+    /**
+     * 选择需要更新报价的可交易物品，供后台轮转刷新整个市场目录。
+     *
+     * @param limit 单次处理上限
+     * @return 游戏物品类型 ID
+     */
+    @Select("""
+        SELECT `reference`.`type_id`
+        FROM `eve_static_type_reference` AS `reference`
+        LEFT JOIN `eve_market_snapshot` AS `snapshot` ON `snapshot`.`type_id` = `reference`.`type_id`
+        LEFT JOIN `eve_mining_compression_mapping` AS `compression`
+            ON `compression`.`compressed_type_id` = `reference`.`type_id`
+        LEFT JOIN (
+            SELECT DISTINCT `type_id`
+            FROM `eve_corporation_asset`
+            WHERE `status` = 'ACTIVE' AND `deleted` = 0 AND `type_id` IS NOT NULL
+        ) AS `asset` ON `asset`.`type_id` = `reference`.`type_id`
+        WHERE `reference`.`market_category_l1` <> ''
+          AND (`snapshot`.`quote_synchronized_at` IS NULL
+            OR `snapshot`.`quote_synchronized_at` < DATE_SUB(NOW(), INTERVAL 15 MINUTE))
+        -- 优先补齐当前军团资产和月矿估值所需报价，随后仍按全市场轮转。
+        ORDER BY CASE WHEN `asset`.`type_id` IS NULL THEN 1 ELSE 0 END ASC,
+                 CASE WHEN `compression`.`compressed_type_id` IS NULL THEN 1 ELSE 0 END ASC,
+                 `snapshot`.`quote_synchronized_at` ASC, `reference`.`type_id` ASC
+        LIMIT #{limit}
+        """)
+    List<Integer> selectQuoteSyncTypeIds(@Param("limit") int limit);
 }

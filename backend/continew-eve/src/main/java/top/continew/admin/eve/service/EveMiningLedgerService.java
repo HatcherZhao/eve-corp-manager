@@ -32,11 +32,13 @@ import top.continew.admin.eve.mapper.EveAuthorizationMapper;
 import top.continew.admin.eve.mapper.EveCharacterRoleSnapshotMapper;
 import top.continew.admin.eve.mapper.EveCorporationMapper;
 import top.continew.admin.eve.mapper.EveCorporationStructureMapper;
+import top.continew.admin.eve.mapper.EveMiningCompressionMapper;
 import top.continew.admin.eve.mapper.EveMiningLedgerMapper;
 import top.continew.admin.eve.mapper.EveMiningObserverMapper;
 import top.continew.admin.eve.mapper.EveMiningSyncRunMapper;
 import top.continew.admin.eve.model.EveMeContextResp;
 import top.continew.admin.eve.model.EveMiningAnalyticsResp;
+import top.continew.admin.eve.model.EveMiningCompressionValuationResp;
 import top.continew.admin.eve.model.EveMiningLedgerResp;
 import top.continew.admin.eve.model.EveMiningLedgerSummaryResp;
 import top.continew.admin.eve.model.EveMiningSyncResp;
@@ -56,6 +58,7 @@ import top.continew.admin.eve.model.serenity.SerenityUniverseNameResponse;
 import top.continew.starter.core.exception.BusinessException;
 import top.continew.starter.extension.crud.model.resp.PageResp;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -94,12 +97,14 @@ public class EveMiningLedgerService {
     private final EveCorporationStructureMapper structureMapper;
     private final EveMiningObserverMapper observerMapper;
     private final EveMiningLedgerMapper ledgerMapper;
+    private final EveMiningCompressionMapper compressionMapper;
     private final EveMiningSyncRunMapper syncRunMapper;
     private final EveAuthorizationMapper authorizationMapper;
     private final EveCharacterRoleSnapshotMapper roleSnapshotMapper;
     private final EveAuthorizationLifecycleService authorizationLifecycleService;
     private final EvePermissionRefreshService permissionRefreshService;
     private final EveStaticReferenceService staticReferenceService;
+    private final EveMarketService marketService;
     private final SerenityEsiClient esiClient;
     private final RedissonClient redissonClient;
     private final EveDataFreshnessService dataFreshnessService;
@@ -141,6 +146,32 @@ public class EveMiningLedgerService {
                 .get("characterCount")).intValue(), number(summary.get("mineralTypeCount"))
                     .intValue(), toLocalDate(summary.get("latestRecordedAt")), toLocalDateTime(summary
                         .get("latestSynchronizedAt")));
+    }
+
+    /**
+     * 将当前筛选范围内的月矿按完整压缩批次折算，并使用对应高密度矿的吉他最低卖单估值。
+     *
+     * <p>每种原矿独立按 100:1 取整，未满一批的数量不会虚高计入估值。缺少卖单或缓存尚未建立的
+     * 类型保留在明细中并明确标识为待报价。</p>
+     */
+    public EveMiningCompressionValuationResp compressionValuation(Long observerId,
+                                                                  Long characterId,
+                                                                  Integer typeId,
+                                                                  LocalDate fromDate,
+                                                                  LocalDate toDate,
+                                                                  String keyword) {
+        validateDateRange(fromDate, toDate);
+        UserContext context = UserContextHolder.getContext();
+        EveCorporationDO corporation = requireCurrentCorporation(context.getTenantId());
+        String normalizedKeyword = normalizeKeyword(keyword);
+        List<Map<String, Object>> initial = compressionMapper.summarizeCompressionValuation(context
+            .getTenantId(), corporation.getId(), observerId, characterId, typeId, fromDate, toDate, normalizedKeyword);
+        marketService.refreshQuotesForValuation(initial.stream()
+            .map(item -> number(item.get("compressedTypeId")).intValue())
+            .toList());
+        List<Map<String, Object>> rows = compressionMapper.summarizeCompressionValuation(context
+            .getTenantId(), corporation.getId(), observerId, characterId, typeId, fromDate, toDate, normalizedKeyword);
+        return toCompressionValuation(rows);
     }
 
     /** 聚合当前军团的日期趋势、建筑排名、玩家排名和军团概览。 */
@@ -563,6 +594,52 @@ public class EveMiningLedgerService {
     /** 空汇总字段按零处理，兼容 JDBC 驱动返回的不同数字实现。 */
     private static Number number(Object value) {
         return value instanceof Number number ? number : 0L;
+    }
+
+    /** 将 JDBC 聚合行转换为对页面友好的压缩矿估值，并保留报价缺失状态。 */
+    private static EveMiningCompressionValuationResp toCompressionValuation(List<Map<String, Object>> rows) {
+        long rawQuantity = 0L;
+        long compressedQuantity = 0L;
+        long remainderQuantity = 0L;
+        int pricedTypeCount = 0;
+        int unpricedTypeCount = 0;
+        BigDecimal estimatedValue = BigDecimal.ZERO;
+        List<EveMiningCompressionValuationResp.Item> items = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            long itemRawQuantity = number(row.get("rawQuantity")).longValue();
+            long itemCompressedQuantity = number(row.get("compressedQuantity")).longValue();
+            long itemRemainderQuantity = number(row.get("remainderQuantity")).longValue();
+            BigDecimal lowestSellPrice = decimal(row.get("lowestSellPrice"));
+            BigDecimal itemValue = lowestSellPrice == null
+                ? null
+                : lowestSellPrice.multiply(BigDecimal.valueOf(itemCompressedQuantity));
+            rawQuantity += itemRawQuantity;
+            compressedQuantity += itemCompressedQuantity;
+            remainderQuantity += itemRemainderQuantity;
+            if (itemValue == null) {
+                unpricedTypeCount++;
+            } else {
+                pricedTypeCount++;
+                estimatedValue = estimatedValue.add(itemValue);
+            }
+            items.add(new EveMiningCompressionValuationResp.Item(number(row.get("rawTypeId")).intValue(), text(row
+                .get("rawTypeName")), number(row.get("compressedTypeId")).intValue(), text(row
+                    .get("compressedTypeName")), itemRawQuantity, itemCompressedQuantity, itemRemainderQuantity, lowestSellPrice, itemValue, toLocalDateTime(row
+                        .get("priceUpdatedAt"))));
+        }
+        return new EveMiningCompressionValuationResp(rawQuantity, compressedQuantity, remainderQuantity, estimatedValue, pricedTypeCount, unpricedTypeCount, List
+            .copyOf(items));
+    }
+
+    /** 将可空数据库价格安全转换为金额类型。 */
+    private static BigDecimal decimal(Object value) {
+        if (value instanceof BigDecimal decimal) {
+            return decimal;
+        }
+        if (value instanceof Number number) {
+            return BigDecimal.valueOf(number.doubleValue());
+        }
+        return null;
     }
 
     /** 将数据库聚合结果安全转换为展示文字。 */

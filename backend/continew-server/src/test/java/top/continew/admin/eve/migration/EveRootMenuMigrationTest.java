@@ -39,9 +39,8 @@ class EveRootMenuMigrationTest {
         String migration = resource(migrationPath);
 
         assertThat(master.indexOf(migrationPath)).isGreaterThan(master.indexOf("037_official_news.sql"));
-        assertThat(migration).contains("WHERE `parent_id` = 20000", "SET `parent_id`   = 0",
-            "WHERE `id` IN (20011, 20024, 20020, 20061, 20065, 20067)", "`component` = 'Layout'",
-            "WHERE `id` = 20000");
+        assertThat(migration)
+            .contains("WHERE `parent_id` = 20000", "SET `parent_id`   = 0", "WHERE `id` IN (20011, 20024, 20020, 20061, 20065, 20067)", "`component` = 'Layout'", "WHERE `id` = 20000");
     }
 
     /** 读取类路径迁移资源。 */

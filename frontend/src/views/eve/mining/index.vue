@@ -6,9 +6,11 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import DataFreshnessBanner from '../components/DataFreshnessBanner.vue'
 import {
   type EveMiningAnalytics,
+  type EveMiningCompressionValuation,
   type EveMiningLedger,
   type EveMiningLedgerSummary,
   getEveMiningAnalytics,
+  getEveMiningCompressionValuation,
   getEveMiningLedger,
   getEveMiningLedgerSummary,
   syncEveMiningLedger,
@@ -36,6 +38,15 @@ const analytics = ref<EveMiningAnalytics>({
   timeline: [],
   observers: [],
   characters: [],
+})
+const valuation = ref<EveMiningCompressionValuation>({
+  rawQuantity: 0,
+  compressedQuantity: 0,
+  remainderQuantity: 0,
+  estimatedValue: 0,
+  pricedTypeCount: 0,
+  unpricedTypeCount: 0,
+  items: [],
 })
 const query = reactive({
   page: 1,
@@ -145,6 +156,11 @@ function formatNumber(value?: number) {
   return (value || 0).toLocaleString()
 }
 
+/** 吉他行情估值以 ISK 显示，并保持缺失报价与零值的可辨性。 */
+function formatIsk(value?: number) {
+  return value === undefined || value === null ? '待报价' : `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ISK`
+}
+
 /** 将组件字段转换为和后端同名、可选的筛选条件。 */
 function filters() {
   return {
@@ -170,13 +186,15 @@ async function loadLedger() {
   loading.value = true
   const analyticsTask = loadAnalytics()
   try {
-    const [pageResult, summaryResult] = await Promise.all([
+    const [pageResult, summaryResult, valuationResult] = await Promise.all([
       getEveMiningLedger({ page: query.page, size: query.size, ...filters() }),
       getEveMiningLedgerSummary(filters()),
+      getEveMiningCompressionValuation(filters()),
     ])
     records.value = pageResult.data.list
     total.value = pageResult.data.total
     summary.value = summaryResult.data
+    valuation.value = valuationResult.data
   } finally {
     loading.value = false
   }
@@ -235,6 +253,24 @@ onMounted(loadLedger)
       <article class="eve-mining-page__metric"><span>开采建筑</span><strong>{{ formatNumber(summary.observerCount) }}</strong><small>有开采记录的观察者</small></article>
       <article class="eve-mining-page__metric"><span>参与玩家</span><strong>{{ formatNumber(summary.characterCount) }}</strong><small>当前筛选范围内</small></article>
       <article class="eve-mining-page__metric"><span>最近开采日期</span><strong>{{ dateText(summary.latestRecordedAt) }}</strong><small>已收录 {{ formatNumber(summary.mineralTypeCount) }} 种矿物</small></article>
+      <article class="eve-mining-page__metric eve-mining-page__metric--valuation"><span>压缩后估值</span><strong>{{ formatIsk(valuation.estimatedValue) }}</strong><small>吉他最低卖单 · {{ valuation.pricedTypeCount }} 种已报价</small></article>
+    </section>
+
+    <section class="eve-mining-page__valuation" aria-label="月矿压缩后估值">
+      <div class="eve-mining-page__valuation-heading"><div><span>压缩后估值</span><h2>高密度月矿吉他参考价</h2></div><small>每种原矿独立按 100:1 折算；不足 100 单位的余量不计入估值</small></div>
+      <a-alert v-if="valuation.unpricedTypeCount" type="warning" :show-icon="true">{{ valuation.unpricedTypeCount }} 种高密度月矿暂无吉他卖单，未计入合计估值；市场后台会优先补齐报价。</a-alert>
+      <a-table :data="valuation.items" :pagination="false" row-key="rawTypeId" :scroll="{ x: 860 }" size="small">
+        <template #columns>
+          <a-table-column title="原矿" :width="180" ellipsis tooltip><template #cell="{ record }"><div class="eve-mining-page__type-identity"><EveTypeIcon :type-id="record.rawTypeId" :size="24" :alt="`${record.rawTypeName}图标`" /><strong>{{ record.rawTypeName }}</strong></div></template></a-table-column>
+          <a-table-column title="原矿数量" :width="116" align="right"><template #cell="{ record }">{{ formatNumber(record.rawQuantity) }}</template></a-table-column>
+          <a-table-column title="高密度矿" :width="190" ellipsis tooltip><template #cell="{ record }"><div class="eve-mining-page__type-identity"><EveTypeIcon :type-id="record.compressedTypeId" :size="24" :alt="`${record.compressedTypeName}图标`" /><strong>{{ record.compressedTypeName }}</strong></div></template></a-table-column>
+          <a-table-column title="可压缩" :width="105" align="right"><template #cell="{ record }"><strong class="eve-mining-page__quantity">{{ formatNumber(record.compressedQuantity) }}</strong></template></a-table-column>
+          <a-table-column title="余量" :width="88" align="right"><template #cell="{ record }">{{ formatNumber(record.remainderQuantity) }}</template></a-table-column>
+          <a-table-column title="吉他最低卖单" :width="148" align="right" nowrap><template #cell="{ record }">{{ formatIsk(record.lowestSellPrice) }}</template></a-table-column>
+          <a-table-column title="参考估值" :width="158" align="right" nowrap><template #cell="{ record }"><strong class="eve-mining-page__valuation-price">{{ formatIsk(record.estimatedValue) }}</strong><small class="eve-mining-page__price-time">{{ timeText(record.priceUpdatedAt) }}</small></template></a-table-column>
+        </template>
+      </a-table>
+      <a-empty v-if="!valuation.items.length" description="当前筛选范围内暂无可按高密度月矿折算的开采记录" />
     </section>
 
     <a-spin :loading="analyticsLoading" class="eve-mining-page__analytics-loading">
@@ -266,11 +302,12 @@ onMounted(loadLedger)
 .eve-mining-page__header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 20px 22px; border: 1px solid rgba(var(--arcoblue-6), .18); border-radius: 14px; background: linear-gradient(125deg, rgba(var(--arcoblue-6), .12), transparent 55%), var(--color-bg-1); }
 .eve-mining-page__header-tools { display: flex; align-self: flex-start; flex-direction: column; align-items: flex-end; gap: 10px; }.eve-mining-page__eyebrow { color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; font-size: 11px; letter-spacing: .15em; }.eve-mining-page h1 { margin: 5px 0; font-size: 26px; }.eve-mining-page__header p { max-width: 720px; margin: 0; color: var(--color-text-3); }
 .eve-mining-page__guide { margin-top: 12px; }.eve-mining-page__filter-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 0; padding: 10px 12px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }.eve-mining-page__filter-bar .arco-input-wrapper { width: min(310px, 100%); }.eve-mining-page__filter-bar .arco-picker { width: 190px; }
-.eve-mining-page__metrics { display: grid; grid-template-columns: 1.18fr repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }.eve-mining-page__metric { display: flex; min-width: 0; flex-direction: column; gap: 3px; min-height: 84px; padding: 13px 14px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }.eve-mining-page__metric--corporation { border-color: rgba(var(--arcoblue-6), .28); background: linear-gradient(120deg, rgba(var(--arcoblue-6), .1), transparent 72%), var(--color-bg-1); }.eve-mining-page__metric span, .eve-mining-page__metric small { overflow: hidden; color: var(--color-text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.eve-mining-page__metric strong { overflow: hidden; color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; font-size: 22px; text-overflow: ellipsis; white-space: nowrap; }
+.eve-mining-page__metrics { display: grid; grid-template-columns: 1.18fr repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }.eve-mining-page__metric { display: flex; min-width: 0; flex-direction: column; gap: 3px; min-height: 84px; padding: 13px 14px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }.eve-mining-page__metric--corporation { border-color: rgba(var(--arcoblue-6), .28); background: linear-gradient(120deg, rgba(var(--arcoblue-6), .1), transparent 72%), var(--color-bg-1); }.eve-mining-page__metric--valuation { border-color: rgba(var(--arcoblue-6), .28); background: linear-gradient(120deg, rgba(var(--arcoblue-6), .08), transparent 72%), var(--color-bg-1); }.eve-mining-page__metric span, .eve-mining-page__metric small { overflow: hidden; color: var(--color-text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.eve-mining-page__metric strong { overflow: hidden; color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; font-size: 22px; text-overflow: ellipsis; white-space: nowrap; }
+.eve-mining-page__valuation { margin-bottom: 12px; padding: 12px; overflow: hidden; border: 1px solid rgba(var(--arcoblue-6), .22); border-radius: 12px; background: linear-gradient(125deg, rgba(var(--arcoblue-6), .06), transparent 48%), var(--color-bg-1); }.eve-mining-page__valuation-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }.eve-mining-page__valuation-heading span, .eve-mining-page__valuation-heading small { color: var(--color-text-3); font-size: 12px; }.eve-mining-page__valuation-heading h2 { margin: 2px 0 0; font-size: 16px; }.eve-mining-page__valuation-heading small { max-width: 380px; padding-top: 3px; text-align: right; }.eve-mining-page__valuation :deep(.arco-alert) { margin-bottom: 10px; }.eve-mining-page__valuation-price { display: block; color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; white-space: nowrap; }.eve-mining-page__price-time { display: block; margin-top: 2px; color: var(--color-text-3); font-size: 11px; white-space: nowrap; }
 .eve-mining-page__analytics-loading { width: 100%; }.eve-mining-page__analytics { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(280px, .94fr) minmax(280px, .94fr); gap: 10px; }.eve-mining-page__chart-card { display: flex; min-width: 0; min-height: 318px; flex-direction: column; padding: 14px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }.eve-mining-page__chart-card--trend { border-color: rgba(var(--arcoblue-6), .24); background: linear-gradient(135deg, rgba(var(--arcoblue-6), .07), transparent 50%), var(--color-bg-1); }.eve-mining-page__chart-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-height: 40px; }.eve-mining-page__chart-heading span, .eve-mining-page__chart-heading small { color: var(--color-text-3); font-size: 12px; }.eve-mining-page__chart-heading h2 { margin: 2px 0 0; font-size: 16px; }.eve-mining-page__chart-heading small { padding-top: 3px; text-align: right; }.eve-mining-page__chart-card :deep(.arco-empty) { flex: 1; }
 .eve-mining-page__table-wrap { margin-top: 12px; padding: 12px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }.eve-mining-page__caption { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; color: var(--color-text-3); font-size: 12px; }.eve-mining-page__caption > div > span { display: block; color: var(--color-text-1); font-size: 15px; font-weight: 600; }.eve-mining-page__caption small { display: block; margin-top: 2px; }.eve-mining-page__quantity { color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; }.eve-mining-page__table-wrap .arco-pagination { justify-content: flex-end; margin-top: 12px; }.eve-mining-page__type-identity { display: flex; align-items: center; gap: 10px; }.eve-mining-page__type-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 1180px) { .eve-mining-page__analytics { grid-template-columns: repeat(2, minmax(0, 1fr)); }.eve-mining-page__chart-card--trend { grid-column: 1 / -1; } }.eve-mining-page__chart-card--trend :deep(.echarts) { min-height: 250px; }
 @media (max-width: 980px) { .eve-mining-page__header { align-items: flex-start; flex-direction: column; }.eve-mining-page__header-tools { align-items: flex-start; }.eve-mining-page__metrics { grid-template-columns: repeat(2, 1fr); }.eve-mining-page__filter-bar .arco-input-wrapper, .eve-mining-page__filter-bar .arco-picker { width: 100%; } }
-@media (max-width: 680px) { .eve-mining-page__analytics, .eve-mining-page__metrics { grid-template-columns: 1fr; }.eve-mining-page__chart-card--trend { grid-column: auto; }.eve-mining-page__caption { flex-direction: column; } }
+@media (max-width: 680px) { .eve-mining-page__analytics, .eve-mining-page__metrics { grid-template-columns: 1fr; }.eve-mining-page__chart-card--trend { grid-column: auto; }.eve-mining-page__caption, .eve-mining-page__valuation-heading { flex-direction: column; }.eve-mining-page__valuation-heading small { max-width: none; padding-top: 0; text-align: left; } }
 @media (prefers-reduced-motion: reduce) { .eve-mining-page *, .eve-mining-page *::before, .eve-mining-page *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }
 </style>

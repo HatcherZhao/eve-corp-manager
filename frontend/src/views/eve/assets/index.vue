@@ -5,8 +5,10 @@ import { computed, onMounted, ref } from 'vue'
 import DataFreshnessBanner from '../components/DataFreshnessBanner.vue'
 import {
   type EveCorporationAssetTreeNode,
+  type EveCorporationAssetValuation,
   exportEveCorporationAssets,
   getEveCorporationAssetTree,
+  getEveCorporationAssetValuation,
   syncEveCorporationAssets,
 } from '@/apis/eve'
 import { useDownload } from '@/hooks'
@@ -20,6 +22,16 @@ const syncing = ref(false)
 const keyword = ref('')
 const assetCount = ref(0)
 const nodes = ref<EveCorporationAssetTreeNode[]>([])
+const valuation = ref<EveCorporationAssetValuation>({
+  itemCount: 0,
+  totalQuantity: 0,
+  highestBuyEstimatedValue: 0,
+  lowestSellEstimatedValue: 0,
+  highestBuyPricedTypeCount: 0,
+  lowestSellPricedTypeCount: 0,
+  unpricedTypeCount: 0,
+  items: [],
+})
 const selectedKeys = ref<string[]>([])
 const expandedKeys = ref<string[]>([])
 const selectedNode = ref<EveCorporationAssetTreeNode>()
@@ -31,9 +43,15 @@ const canExport = computed(() => userStore.permissions.includes('eve:assets:view
 const treeNodes = computed(() => hideFittingGroups(filterTree(nodes.value, keyword.value.trim().toLowerCase())))
 const selectedFittingGroup = computed(() => findFittingGroup(selectedNode.value))
 const selectedFittingSections = computed(() => collectFittingSections(selectedFittingGroup.value))
+const selectedValuation = computed(() => valuation.value.items.find((item) => item.typeId === selectedNode.value?.typeId))
 
 function formatTime(value?: string) {
   return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '—'
+}
+
+/** 市场金额统一以 ISK 展示，未建立有效买卖单时不伪造零价格。 */
+function formatIsk(value?: number) {
+  return value === undefined || value === null ? '暂无报价' : `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ISK`
 }
 
 function nodeKindLabel(kind: EveCorporationAssetTreeNode['kind']) {
@@ -147,9 +165,13 @@ function findNode(source: EveCorporationAssetTreeNode[], key?: string): EveCorpo
 async function loadTree() {
   loading.value = true
   try {
-    const { data } = await getEveCorporationAssetTree()
-    nodes.value = data.nodes
-    assetCount.value = data.assetCount
+    const [treeResult, valuationResult] = await Promise.all([
+      getEveCorporationAssetTree(),
+      getEveCorporationAssetValuation(),
+    ])
+    nodes.value = treeResult.data.nodes
+    assetCount.value = treeResult.data.assetCount
+    valuation.value = valuationResult.data
     expandedKeys.value = []
     selectedKeys.value = []
     selectedNode.value = undefined
@@ -238,6 +260,18 @@ onMounted(loadTree)
     <a-alert class="eve-assets-page__guide" type="info" :show-icon="false">
       资料分类由数据库中的 evedata.xlsx 静态资料驱动。资产树只展示物理位置、仓库和货舱；舰船装配与建筑装备请从名称旁的按钮在右侧查看。物品箱仅在该物品确有下级资产时显示。
     </a-alert>
+    <section class="eve-assets-page__valuation" aria-label="军团资产吉他参考估值">
+      <div class="eve-assets-page__valuation-heading">
+        <div><span>JITA MARKET · REFERENCE VALUE</span><h2>资产参考估值</h2></div>
+        <small>基于当前资产快照和吉他报价缓存；最高收购价用于快速变现参考，最低卖单用于市场售价参考。</small>
+      </div>
+      <div class="eve-assets-page__valuation-metrics">
+        <article><span>最高收购估值</span><strong>{{ formatIsk(valuation.highestBuyEstimatedValue) }}</strong><small>{{ valuation.highestBuyPricedTypeCount }} 种已报价</small></article>
+        <article><span>最低卖单估值</span><strong>{{ formatIsk(valuation.lowestSellEstimatedValue) }}</strong><small>{{ valuation.lowestSellPricedTypeCount }} 种已报价</small></article>
+        <article><span>已纳入快照</span><strong>{{ valuation.itemCount.toLocaleString() }} 项</strong><small>{{ valuation.totalQuantity.toLocaleString() }} 件／单位</small></article>
+      </div>
+      <a-alert v-if="valuation.unpricedTypeCount" type="warning" :show-icon="true">{{ valuation.unpricedTypeCount }} 种资产暂无有效吉他买卖单，未计入对应估值；市场后台会优先补齐当前军团资产的报价。</a-alert>
+    </section>
     <a-spin :loading="loading" class="eve-assets-page__loading">
       <section class="eve-assets-page__workspace">
         <div class="eve-assets-page__tree-panel">
@@ -313,6 +347,13 @@ onMounted(loadTree)
                 <div><dt>数量</dt><dd>{{ selectedNode.quantity }}</dd></div>
                 <div><dt>仓位</dt><dd>{{ selectedNode.locationFlag || '—' }}</dd></div>
                 <div><dt>物品属性</dt><dd>{{ selectedNode.singleton ? '独立物品' : '普通堆叠' }}{{ selectedNode.blueprintCopy ? ' · 蓝图拷贝' : '' }}</dd></div>
+                <template v-if="selectedValuation">
+                  <div><dt>吉他最高收购</dt><dd>{{ formatIsk(selectedValuation.highestBuyPrice) }}</dd></div>
+                  <div><dt>按收购估值</dt><dd>{{ formatIsk(selectedValuation.highestBuyEstimatedValue) }}</dd></div>
+                  <div><dt>吉他最低卖单</dt><dd>{{ formatIsk(selectedValuation.lowestSellPrice) }}</dd></div>
+                  <div><dt>按卖单估值</dt><dd>{{ formatIsk(selectedValuation.lowestSellEstimatedValue) }}</dd></div>
+                  <div><dt>价格时间</dt><dd>{{ formatTime(selectedValuation.priceUpdatedAt) }}</dd></div>
+                </template>
                 <div><dt>最近同步</dt><dd>{{ formatTime(selectedNode.lastSeenAt) }}</dd></div>
                 <div><dt>数据有效至</dt><dd>{{ formatTime(selectedNode.sourceExpiresAt) }}</dd></div>
               </dl>
@@ -339,6 +380,8 @@ onMounted(loadTree)
 .eve-assets-page__filter-bar .arco-input-wrapper { width: min(360px, 100%); }
 .eve-assets-page__count { margin-right: auto; color: var(--color-text-3); font-size: 13px; }
 .eve-assets-page__guide { margin-bottom: 12px; }
+.eve-assets-page__valuation { margin-bottom: 12px; padding: 13px 14px; border: 1px solid rgba(var(--arcoblue-6), .22); border-radius: 12px; background: linear-gradient(125deg, rgba(var(--arcoblue-6), .07), transparent 52%), var(--color-bg-1); }
+.eve-assets-page__valuation-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 10px; }.eve-assets-page__valuation-heading span { color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; font-size: 11px; letter-spacing: .14em; }.eve-assets-page__valuation-heading h2 { margin: 3px 0 0; font-size: 17px; }.eve-assets-page__valuation-heading small { max-width: 550px; padding-top: 4px; color: var(--color-text-3); font-size: 12px; text-align: right; }.eve-assets-page__valuation-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }.eve-assets-page__valuation-metrics article { display: flex; min-width: 0; flex-direction: column; gap: 3px; padding: 10px 12px; border: 1px solid var(--color-border-2); border-radius: 10px; background: var(--color-bg-1); }.eve-assets-page__valuation-metrics span, .eve-assets-page__valuation-metrics small { overflow: hidden; color: var(--color-text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.eve-assets-page__valuation-metrics strong { overflow: hidden; color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; font-size: 18px; text-overflow: ellipsis; white-space: nowrap; }.eve-assets-page__valuation :deep(.arco-alert) { margin-top: 10px; }
 .eve-assets-page__loading { display: block; min-height: 500px; }
 .eve-assets-page__workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); gap: 12px; }
 .eve-assets-page__tree-panel, .eve-assets-page__asset-detail { min-width: 0; padding: 14px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }
@@ -376,5 +419,5 @@ onMounted(loadTree)
 .eve-assets-page__fitting-module strong { overflow: hidden; font-size: 12px; line-height: 1.45; text-overflow: ellipsis; }
 .eve-assets-page__fitting-empty { color: var(--color-text-4); font-size: 12px; }
 @media (max-width: 900px) { .eve-assets-page__workspace { grid-template-columns: 1fr; } .eve-assets-page__asset-detail { position: static; } }
-@media (max-width: 720px) { .eve-assets-page__header { align-items: flex-start; flex-direction: column; } .eve-assets-page__header-tools { align-items: flex-start; } .eve-assets-page__filter-bar { flex-wrap: wrap; } .eve-assets-page__filter-bar .arco-input-wrapper { width: 100%; } .eve-assets-page__count { width: 100%; margin-right: 0; } }
+@media (max-width: 720px) { .eve-assets-page__header { align-items: flex-start; flex-direction: column; } .eve-assets-page__header-tools { align-items: flex-start; } .eve-assets-page__filter-bar { flex-wrap: wrap; } .eve-assets-page__filter-bar .arco-input-wrapper { width: 100%; } .eve-assets-page__count { width: 100%; margin-right: 0; } .eve-assets-page__valuation-heading { flex-direction: column; } .eve-assets-page__valuation-heading small { max-width: none; padding-top: 0; text-align: left; } .eve-assets-page__valuation-metrics { grid-template-columns: 1fr; } }
 </style>

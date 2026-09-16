@@ -25,17 +25,20 @@ import top.continew.admin.eve.mapper.EveAuthorizationMapper;
 import top.continew.admin.eve.mapper.EveCharacterRoleSnapshotMapper;
 import top.continew.admin.eve.mapper.EveCorporationMapper;
 import top.continew.admin.eve.mapper.EveCorporationStructureMapper;
+import top.continew.admin.eve.mapper.EveMiningCompressionMapper;
 import top.continew.admin.eve.mapper.EveMiningLedgerMapper;
 import top.continew.admin.eve.mapper.EveMiningObserverMapper;
 import top.continew.admin.eve.mapper.EveMiningSyncRunMapper;
 import top.continew.admin.eve.model.EveMeContextResp;
 import top.continew.admin.eve.model.EveMiningAnalyticsResp;
+import top.continew.admin.eve.model.EveMiningCompressionValuationResp;
 import top.continew.admin.eve.model.entity.EveAuthorizationDO;
 import top.continew.admin.eve.model.entity.EveCharacterRoleSnapshotDO;
 import top.continew.admin.eve.model.entity.EveCorporationDO;
 import top.continew.admin.eve.model.enums.EveAuthorizationStatus;
 
 import java.lang.reflect.Method;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -70,7 +73,7 @@ class EveMiningLedgerServiceTest {
         EveContextService contextService = mock(EveContextService.class);
         EveCorporationMapper corporationMapper = mock(EveCorporationMapper.class);
         EveMiningLedgerMapper ledgerMapper = mock(EveMiningLedgerMapper.class);
-        EveMiningLedgerService service = new EveMiningLedgerService(contextService, corporationMapper, mock(EveCorporationStructureMapper.class), mock(EveMiningObserverMapper.class), ledgerMapper, mock(EveMiningSyncRunMapper.class), mock(EveAuthorizationMapper.class), mock(EveCharacterRoleSnapshotMapper.class), mock(EveAuthorizationLifecycleService.class), mock(EvePermissionRefreshService.class), mock(EveStaticReferenceService.class), mock(SerenityEsiClient.class), mock(RedissonClient.class), mock(EveDataFreshnessService.class));
+        EveMiningLedgerService service = new EveMiningLedgerService(contextService, corporationMapper, mock(EveCorporationStructureMapper.class), mock(EveMiningObserverMapper.class), ledgerMapper, mock(EveMiningCompressionMapper.class), mock(EveMiningSyncRunMapper.class), mock(EveAuthorizationMapper.class), mock(EveCharacterRoleSnapshotMapper.class), mock(EveAuthorizationLifecycleService.class), mock(EvePermissionRefreshService.class), mock(EveStaticReferenceService.class), mock(EveMarketService.class), mock(SerenityEsiClient.class), mock(RedissonClient.class), mock(EveDataFreshnessService.class));
         UserContext userContext = new UserContext();
         userContext.setTenantId(10L);
         EveCorporationDO corporation = new EveCorporationDO();
@@ -109,13 +112,62 @@ class EveMiningLedgerServiceTest {
         }
     }
 
+    /** 月矿估值必须按每种原矿独立完成 100:1 压缩，余量和缺失报价不得计入价值。 */
+    @Test
+    void shouldValueOnlyCompleteMoonOreCompressionBatches() {
+        EveContextService contextService = mock(EveContextService.class);
+        EveCorporationMapper corporationMapper = mock(EveCorporationMapper.class);
+        EveMiningCompressionMapper compressionMapper = mock(EveMiningCompressionMapper.class);
+        EveMarketService marketService = mock(EveMarketService.class);
+        EveMiningLedgerService service = new EveMiningLedgerService(contextService, corporationMapper, mock(EveCorporationStructureMapper.class), mock(EveMiningObserverMapper.class), mock(EveMiningLedgerMapper.class), compressionMapper, mock(EveMiningSyncRunMapper.class), mock(EveAuthorizationMapper.class), mock(EveCharacterRoleSnapshotMapper.class), mock(EveAuthorizationLifecycleService.class), mock(EvePermissionRefreshService.class), mock(EveStaticReferenceService.class), marketService, mock(SerenityEsiClient.class), mock(RedissonClient.class), mock(EveDataFreshnessService.class));
+        UserContext userContext = new UserContext();
+        userContext.setTenantId(10L);
+        EveCorporationDO corporation = new EveCorporationDO();
+        corporation.setId(20L);
+        corporation.setTenantId(10L);
+        corporation.setCorporationId(30L);
+        when(contextService.getCurrentContext())
+            .thenReturn(new EveMeContextResp(10L, null, new EveMeContextResp.CorporationInfo(30L, "测试军团", "TEST"), null, null, List
+                .of(), null, List.of()));
+        when(corporationMapper.selectByTenantAndCorporationId(10L, 30L)).thenReturn(corporation);
+        LocalDate fromDate = LocalDate.of(2026, 9, 1);
+        LocalDate toDate = LocalDate.of(2026, 9, 12);
+        Map<String, Object> beforeQuote = Map
+            .of("rawTypeId", 45490, "rawTypeName", "沸石", "compressedTypeId", 62463, "compressedTypeName", "高密度沸石", "rawQuantity", 251L, "compressedQuantity", 2L, "remainderQuantity", 51L);
+        Map<String, Object> priced = Map
+            .of("rawTypeId", 45490, "rawTypeName", "沸石", "compressedTypeId", 62463, "compressedTypeName", "高密度沸石", "rawQuantity", 251L, "compressedQuantity", 2L, "remainderQuantity", 51L, "lowestSellPrice", new BigDecimal("1234.50"), "priceUpdatedAt", java.sql.Timestamp
+                .valueOf(LocalDateTime.of(2026, 9, 12, 10, 0)));
+        when(compressionMapper.summarizeCompressionValuation(10L, 20L, null, null, null, fromDate, toDate, "沸"))
+            .thenReturn(List.of(beforeQuote), List.of(priced));
+
+        UserContextHolder.setContext(userContext, false);
+        try {
+            EveMiningCompressionValuationResp result = service
+                .compressionValuation(null, null, null, fromDate, toDate, " 沸 ");
+
+            assertThat(result.rawQuantity()).isEqualTo(251L);
+            assertThat(result.compressedQuantity()).isEqualTo(2L);
+            assertThat(result.remainderQuantity()).isEqualTo(51L);
+            assertThat(result.estimatedValue()).isEqualByComparingTo("2469.00");
+            assertThat(result.pricedTypeCount()).isEqualTo(1);
+            assertThat(result.unpricedTypeCount()).isZero();
+            assertThat(result.items()).singleElement().satisfies(item -> {
+                assertThat(item.compressedTypeName()).isEqualTo("高密度沸石");
+                assertThat(item.lowestSellPrice()).isEqualByComparingTo("1234.50");
+            });
+            verify(marketService).refreshQuotesForValuation(List.of(62463));
+        } finally {
+            UserContextHolder.clearContext();
+        }
+    }
+
     /** 角色缓存过期时应主动复核，且只有 Accountant 能成为观察者账本数据源。 */
     @Test
     void shouldRefreshExpiredAccountantSnapshotBeforeSelectingMiningSource() throws Exception {
         EveAuthorizationMapper authorizationMapper = mock(EveAuthorizationMapper.class);
         EveCharacterRoleSnapshotMapper roleSnapshotMapper = mock(EveCharacterRoleSnapshotMapper.class);
         EvePermissionRefreshService permissionRefreshService = mock(EvePermissionRefreshService.class);
-        EveMiningLedgerService service = new EveMiningLedgerService(mock(EveContextService.class), mock(EveCorporationMapper.class), mock(EveCorporationStructureMapper.class), mock(EveMiningObserverMapper.class), mock(EveMiningLedgerMapper.class), mock(EveMiningSyncRunMapper.class), authorizationMapper, roleSnapshotMapper, mock(EveAuthorizationLifecycleService.class), permissionRefreshService, mock(EveStaticReferenceService.class), mock(SerenityEsiClient.class), mock(RedissonClient.class), mock(EveDataFreshnessService.class));
+        EveMiningLedgerService service = new EveMiningLedgerService(mock(EveContextService.class), mock(EveCorporationMapper.class), mock(EveCorporationStructureMapper.class), mock(EveMiningObserverMapper.class), mock(EveMiningLedgerMapper.class), mock(EveMiningCompressionMapper.class), mock(EveMiningSyncRunMapper.class), authorizationMapper, roleSnapshotMapper, mock(EveAuthorizationLifecycleService.class), permissionRefreshService, mock(EveStaticReferenceService.class), mock(EveMarketService.class), mock(SerenityEsiClient.class), mock(RedissonClient.class), mock(EveDataFreshnessService.class));
         EveAuthorizationDO authorization = authorization();
         when(authorizationMapper.selectTenantCandidates(10L)).thenReturn(List.of(authorization));
         when(roleSnapshotMapper.selectLatest(10L, 100L)).thenReturn(snapshot(List.of("Accountant"), LocalDateTime
@@ -136,7 +188,7 @@ class EveMiningLedgerServiceTest {
         EveAuthorizationMapper authorizationMapper = mock(EveAuthorizationMapper.class);
         EveCharacterRoleSnapshotMapper roleSnapshotMapper = mock(EveCharacterRoleSnapshotMapper.class);
         EvePermissionRefreshService permissionRefreshService = mock(EvePermissionRefreshService.class);
-        EveMiningLedgerService service = new EveMiningLedgerService(mock(EveContextService.class), mock(EveCorporationMapper.class), mock(EveCorporationStructureMapper.class), mock(EveMiningObserverMapper.class), mock(EveMiningLedgerMapper.class), mock(EveMiningSyncRunMapper.class), authorizationMapper, roleSnapshotMapper, mock(EveAuthorizationLifecycleService.class), permissionRefreshService, mock(EveStaticReferenceService.class), mock(SerenityEsiClient.class), mock(RedissonClient.class), mock(EveDataFreshnessService.class));
+        EveMiningLedgerService service = new EveMiningLedgerService(mock(EveContextService.class), mock(EveCorporationMapper.class), mock(EveCorporationStructureMapper.class), mock(EveMiningObserverMapper.class), mock(EveMiningLedgerMapper.class), mock(EveMiningCompressionMapper.class), mock(EveMiningSyncRunMapper.class), authorizationMapper, roleSnapshotMapper, mock(EveAuthorizationLifecycleService.class), permissionRefreshService, mock(EveStaticReferenceService.class), mock(EveMarketService.class), mock(SerenityEsiClient.class), mock(RedissonClient.class), mock(EveDataFreshnessService.class));
         EveAuthorizationDO authorization = authorization();
         when(authorizationMapper.selectTenantCandidates(10L)).thenReturn(List.of(authorization));
         when(roleSnapshotMapper.selectLatest(10L, 100L)).thenReturn(snapshot(List.of("Director"), LocalDateTime

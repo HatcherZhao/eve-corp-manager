@@ -240,6 +240,28 @@ export interface EveCorporationAssetTree {
   assetCount: number
 }
 
+/** 当前军团资产按吉他最高收购与最低卖单计算的参考估值。 */
+export interface EveCorporationAssetValuation {
+  itemCount: number
+  totalQuantity: number
+  highestBuyEstimatedValue: number
+  lowestSellEstimatedValue: number
+  highestBuyPricedTypeCount: number
+  lowestSellPricedTypeCount: number
+  unpricedTypeCount: number
+  items: Array<{
+    typeId: number
+    typeName: string
+    quantity: number
+    itemCount: number
+    highestBuyPrice?: number
+    lowestSellPrice?: number
+    highestBuyEstimatedValue?: number
+    lowestSellEstimatedValue?: number
+    priceUpdatedAt?: string
+  }>
+}
+
 export interface EveAssetSyncResult {
   assetCount: number
   pageCount: number
@@ -315,6 +337,28 @@ export interface EveMiningLedgerSummary {
   mineralTypeCount: number
   latestRecordedAt?: string
   latestSynchronizedAt?: string
+}
+
+/** 当前筛选范围内按高密度月矿吉他卖单计算的压缩后估值。 */
+export interface EveMiningCompressionValuation {
+  rawQuantity: number
+  compressedQuantity: number
+  remainderQuantity: number
+  estimatedValue: number
+  pricedTypeCount: number
+  unpricedTypeCount: number
+  items: Array<{
+    rawTypeId: number
+    rawTypeName: string
+    compressedTypeId: number
+    compressedTypeName: string
+    rawQuantity: number
+    compressedQuantity: number
+    remainderQuantity: number
+    lowestSellPrice?: number
+    estimatedValue?: number
+    priceUpdatedAt?: string
+  }>
 }
 
 /** 月矿开采统计页面的服务端聚合结果。 */
@@ -429,6 +473,74 @@ export interface EveStaticTypeCategoryNode {
   typeCount: number
   unclassified: boolean
   children: EveStaticTypeCategoryNode[]
+}
+
+/** 吉他贸易中心的物品买卖报价；用于列表展示和资产估值基线。 */
+export interface EveMarketQuote {
+  highestBuyPrice?: number
+  lowestSellPrice?: number
+  buyVolume?: number
+  sellVolume?: number
+  sourceUpdatedAt?: string
+  synchronizedAt?: string
+  stale: boolean
+}
+
+/** 静态物品资料叠加吉他市场报价后的列表项。 */
+export interface EveMarketItem {
+  type: EveStaticTypeReference
+  quote?: EveMarketQuote
+}
+
+export interface EveMarketQuery extends PageQuery {
+  keyword?: string
+  marketCategoryL1?: string
+  marketCategoryL2?: string
+  marketCategoryL3?: string
+  marketCategoryL4?: string
+  marketCategoryL5?: string
+  marketCategoryL6?: string
+  unclassified?: boolean
+}
+
+/** 吉他市场订单簿中的单条买单或卖单。 */
+export interface EveMarketOrder {
+  side: 'BUY' | 'SELL'
+  stationId?: string
+  stationName?: string
+  price?: number
+  volume?: number
+  issuedOn?: string
+  reportedAt?: string
+  range?: number
+}
+
+/** 吉他市场每日价格 K 线。 */
+export interface EveMarketHistory {
+  date: string
+  openPrice?: number
+  closePrice?: number
+  highestPrice?: number
+  lowestPrice?: number
+  volume?: number
+}
+
+/** 单个物品的完整吉他行情缓存。 */
+export interface EveMarketDetail {
+  type: EveStaticTypeReference
+  quote?: EveMarketQuote
+  buyOrders: EveMarketOrder[]
+  sellOrders: EveMarketOrder[]
+  history: EveMarketHistory[]
+  servedFromCache: boolean
+  upstreamMessage?: string
+}
+
+/** 手动刷新单物品吉他市场的执行结果。 */
+export interface EveMarketSyncResult {
+  refreshed: boolean
+  message: string
+  synchronizedAt: string
 }
 
 export interface EveStaticLocationReference {
@@ -735,6 +847,11 @@ export function getEveCorporationAssetTree() {
   return http.get<EveCorporationAssetTree>('/eve/assets/tree')
 }
 
+/** 查询当前军团资产的吉他买卖价参考估值。 */
+export function getEveCorporationAssetValuation() {
+  return http.get<EveCorporationAssetValuation>('/eve/assets/valuation')
+}
+
 /** 立即同步当前军团完整资产快照。 */
 export function syncEveCorporationAssets() {
   return http.post<EveSyncRequestResult>('/eve/assets/sync')
@@ -763,6 +880,11 @@ export function getEveMiningLedger(query: EveMiningLedgerQuery) {
 /** 汇总当前筛选条件下的观察者采矿账本。 */
 export function getEveMiningLedgerSummary(query: Omit<EveMiningLedgerQuery, 'page' | 'size'>) {
   return http.get<EveMiningLedgerSummary>('/eve/mining/summary', query)
+}
+
+/** 查询当前筛选范围内月矿压缩后的吉他参考估值。 */
+export function getEveMiningCompressionValuation(query: Omit<EveMiningLedgerQuery, 'page' | 'size'>) {
+  return http.get<EveMiningCompressionValuation>('/eve/mining/compression-valuation', query)
 }
 
 /** 查询当前军团月矿开采的时间、建筑和成员聚合统计。 */
@@ -803,6 +925,21 @@ export function getEveStaticTypes(query: EveStaticTypeReferenceQuery) {
 /** 查询由 evedata.xlsx 生成的完整游戏市场分类树。 */
 export function getEveStaticTypeCategories() {
   return http.get<EveStaticTypeCategoryNode[]>('/eve/reference/types/categories')
+}
+
+/** 按本系统的物品资料分类读取吉他贸易中心的参考报价。 */
+export function getEveMarket(query: EveMarketQuery) {
+  return http.get<PageRes<EveMarketItem[]>>('/eve/market', query)
+}
+
+/** 读取物品的吉他报价、买卖单与每日价格历史。 */
+export function getEveMarketDetail(typeId: number, forceRefresh = false) {
+  return http.get<EveMarketDetail>(`/eve/market/${typeId}`, { forceRefresh })
+}
+
+/** CEO 或总监手动更新单个物品的吉他订单簿和历史数据。 */
+export function syncEveMarketDetail(typeId: number) {
+  return http.post<EveMarketSyncResult>(`/eve/market/${typeId}/sync`)
 }
 
 /** 导出当前筛选条件下的物品类型资料。 */

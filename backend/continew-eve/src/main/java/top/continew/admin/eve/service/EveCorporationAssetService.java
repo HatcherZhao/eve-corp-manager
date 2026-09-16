@@ -32,11 +32,13 @@ import top.continew.admin.eve.client.SerenityEsiClientException;
 import top.continew.admin.eve.mapper.EveAuthorizationMapper;
 import top.continew.admin.eve.mapper.EveCharacterRoleSnapshotMapper;
 import top.continew.admin.eve.mapper.EveCorporationAssetMapper;
+import top.continew.admin.eve.mapper.EveCorporationAssetValuationMapper;
 import top.continew.admin.eve.mapper.EveCorporationMapper;
 import top.continew.admin.eve.model.EveAssetSyncResp;
 import top.continew.admin.eve.model.EveCorporationAssetResp;
 import top.continew.admin.eve.model.EveCorporationAssetTreeNodeResp;
 import top.continew.admin.eve.model.EveCorporationAssetTreeResp;
+import top.continew.admin.eve.model.EveCorporationAssetValuationResp;
 import top.continew.admin.eve.model.EveMeContextResp;
 import top.continew.admin.eve.model.entity.EveAuthorizationDO;
 import top.continew.admin.eve.model.entity.EveCharacterRoleSnapshotDO;
@@ -55,6 +57,7 @@ import top.continew.admin.eve.model.serenity.SerenityUniverseStructureResponse;
 import top.continew.starter.core.exception.BusinessException;
 import top.continew.starter.extension.crud.model.resp.PageResp;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.Duration;
@@ -99,6 +102,7 @@ public class EveCorporationAssetService {
     private final EveContextService contextService;
     private final EveCorporationMapper corporationMapper;
     private final EveCorporationAssetMapper assetMapper;
+    private final EveCorporationAssetValuationMapper assetValuationMapper;
     private final EveAuthorizationMapper authorizationMapper;
     private final EveCharacterRoleSnapshotMapper roleSnapshotMapper;
     private final EveAuthorizationLifecycleService authorizationLifecycleService;
@@ -147,6 +151,18 @@ public class EveCorporationAssetService {
             .collect(Collectors.toSet()));
         Map<Integer, String> hangarNames = resolveCorporationHangarNames(context.getTenantId(), corporation);
         return new EveCorporationAssetTreeResp(buildTree(assets, typeReferences, hangarNames), assets.size());
+    }
+
+    /**
+     * 按当前军团完整资产快照汇总吉他市场参考估值。
+     *
+     * <p>最高收购价适合衡量快速变现价值，最低卖单适合衡量市场售价参考；无有效买单或卖单的
+     * 物品不计入对应合计，避免把无法成交的资产估为零价或虚高金额。</p>
+     */
+    public EveCorporationAssetValuationResp valuation() {
+        UserContext context = UserContextHolder.getContext();
+        EveCorporationDO corporation = requireCurrentCorporation(context.getTenantId());
+        return toValuation(assetValuationMapper.summarizeValuation(context.getTenantId(), corporation.getId()));
     }
 
     /**
@@ -605,6 +621,77 @@ public class EveCorporationAssetService {
             .getItemName(), asset.getLocationId(), asset.getLocationName(), asset.getLocationType(), asset
                 .getLocationFlag(), asset.getQuantity(), asset.getSingleton(), asset.getBlueprintCopy(), asset
                     .getLastSeenAt(), asset.getSourceExpiresAt());
+    }
+
+    /** 将资产类型聚合行转换为两种不混淆的吉他市场估值口径。 */
+    static EveCorporationAssetValuationResp toValuation(List<Map<String, Object>> rows) {
+        long itemCount = 0L;
+        long totalQuantity = 0L;
+        int highestBuyPricedTypeCount = 0;
+        int lowestSellPricedTypeCount = 0;
+        int unpricedTypeCount = 0;
+        BigDecimal highestBuyEstimatedValue = BigDecimal.ZERO;
+        BigDecimal lowestSellEstimatedValue = BigDecimal.ZERO;
+        List<EveCorporationAssetValuationResp.Item> items = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            long quantity = number(row.get("quantity"));
+            long currentItemCount = number(row.get("itemCount"));
+            BigDecimal highestBuyPrice = price(row.get("highestBuyPrice"));
+            BigDecimal lowestSellPrice = price(row.get("lowestSellPrice"));
+            BigDecimal highestBuyValue = highestBuyPrice == null
+                ? null
+                : highestBuyPrice.multiply(BigDecimal.valueOf(quantity));
+            BigDecimal lowestSellValue = lowestSellPrice == null
+                ? null
+                : lowestSellPrice.multiply(BigDecimal.valueOf(quantity));
+            itemCount += currentItemCount;
+            totalQuantity += quantity;
+            if (highestBuyValue != null) {
+                highestBuyPricedTypeCount++;
+                highestBuyEstimatedValue = highestBuyEstimatedValue.add(highestBuyValue);
+            }
+            if (lowestSellValue != null) {
+                lowestSellPricedTypeCount++;
+                lowestSellEstimatedValue = lowestSellEstimatedValue.add(lowestSellValue);
+            }
+            if (highestBuyValue == null && lowestSellValue == null) {
+                unpricedTypeCount++;
+            }
+            items.add(new EveCorporationAssetValuationResp.Item((int)number(row.get("typeId")), text(row
+                .get("typeName")), quantity, currentItemCount, highestBuyPrice, lowestSellPrice, highestBuyValue, lowestSellValue, toLocalDateTime(row
+                    .get("priceUpdatedAt"))));
+        }
+        return new EveCorporationAssetValuationResp(itemCount, totalQuantity, highestBuyEstimatedValue, lowestSellEstimatedValue, highestBuyPricedTypeCount, lowestSellPricedTypeCount, unpricedTypeCount, List
+            .copyOf(items));
+    }
+
+    /** 将 JDBC 数字类型稳定转换为资产数量。 */
+    private static long number(Object value) {
+        return value instanceof Number number ? number.longValue() : 0L;
+    }
+
+    /** 仅将大于零的买卖价格视为可成交报价。 */
+    private static BigDecimal price(Object value) {
+        BigDecimal result = value instanceof BigDecimal decimal
+            ? decimal
+            : value instanceof Number number ? BigDecimal.valueOf(number.doubleValue()) : null;
+        return result == null || result.signum() <= 0 ? null : result;
+    }
+
+    /** 兼容 MySQL JDBC 返回的时间类型。 */
+    private static LocalDateTime toLocalDateTime(Object value) {
+        if (value instanceof LocalDateTime dateTime) {
+            return dateTime;
+        }
+        if (value instanceof java.sql.Timestamp timestamp) {
+            return timestamp.toLocalDateTime();
+        }
+        return null;
+    }
+
+    /** 将可空的数据库名称转换为安全展示文本。 */
+    private static String text(Object value) {
+        return value == null ? "" : value.toString();
     }
 
     /** 将完整快照拼成安全的物理位置与容器树，循环和缺失父项统一降级到未归类位置。 */

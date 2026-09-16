@@ -32,6 +32,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import top.continew.admin.eve.model.EveCorporationAssetResp;
 import top.continew.admin.eve.model.EveCorporationAssetTreeResp;
+import top.continew.admin.eve.model.EveCorporationAssetValuationResp;
 import top.continew.admin.eve.model.EveStaticReferenceImportResp;
 import top.continew.admin.eve.model.EveSyncRequestResp;
 import top.continew.admin.eve.model.enums.EveSyncModule;
@@ -78,6 +79,14 @@ public class EveCorporationAssetController {
     @SaCheckPermission("eve:assets:view")
     public EveCorporationAssetTreeResp tree() {
         return assetService.tree();
+    }
+
+    /** 查询当前军团资产按吉他最高收购价和最低卖单计算的参考估值。 */
+    @GetMapping("/valuation")
+    @Operation(summary = "估算当前军团资产的吉他参考价值")
+    @SaCheckPermission("eve:assets:view")
+    public EveCorporationAssetValuationResp valuation() {
+        return assetService.valuation();
     }
 
     /** 导出当前筛选条件下的全部有效资产，CSV 可直接由 Excel 打开。 */

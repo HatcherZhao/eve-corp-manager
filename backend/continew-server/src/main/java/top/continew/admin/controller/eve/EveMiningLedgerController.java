@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import top.continew.admin.eve.model.EveMiningAnalyticsResp;
+import top.continew.admin.eve.model.EveMiningCompressionValuationResp;
 import top.continew.admin.eve.model.EveMiningLedgerResp;
 import top.continew.admin.eve.model.EveMiningLedgerSummaryResp;
 import top.continew.admin.eve.model.EveSyncRequestResp;
@@ -79,6 +80,19 @@ public class EveMiningLedgerController {
                                               @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
                                               @RequestParam(required = false) String keyword) {
         return miningLedgerService.summary(observerId, characterId, typeId, fromDate, toDate, keyword);
+    }
+
+    /** 按完整压缩批次和吉他最低卖单估算当前筛选范围内的月矿价值。 */
+    @GetMapping("/compression-valuation")
+    @Operation(summary = "估算当前军团月矿压缩后价值")
+    @SaCheckPermission("eve:mining:view")
+    public EveMiningCompressionValuationResp compressionValuation(@RequestParam(required = false) Long observerId,
+                                                                  @RequestParam(required = false) Long characterId,
+                                                                  @RequestParam(required = false) Integer typeId,
+                                                                  @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+                                                                  @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+                                                                  @RequestParam(required = false) String keyword) {
+        return miningLedgerService.compressionValuation(observerId, characterId, typeId, fromDate, toDate, keyword);
     }
 
     /** 查询当前军团的开采趋势、建筑排名、玩家排名和总体概览。 */
