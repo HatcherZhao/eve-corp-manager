@@ -51,6 +51,8 @@ import top.continew.admin.eve.model.serenity.SerenityGameMailLabelResponse;
 import top.continew.admin.eve.model.serenity.SerenityGameMailSendRequest;
 import top.continew.admin.eve.model.serenity.SerenityGameMailUpdateRequest;
 import top.continew.admin.eve.model.serenity.SerenityGameNotificationResponse;
+import top.continew.admin.eve.model.serenity.SerenityUniverseSystemResponse;
+import top.continew.admin.eve.model.serenity.SerenityUniverseStargateResponse;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -408,6 +410,69 @@ public class SerenityEsiClient {
                 .uri(endpoint("/universe/stations/{id}/"), stationId)
                 .retrieve()
                 .body(SerenityUniverseStationResponse.class));
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
+    /** 读取国服公开星系目录，供星图同步建立可续跑的索引。 */
+    public List<Long> getUniverseSystemIds() {
+        try {
+            Long[] response = restClient.get()
+                .uri(endpoint("/universe/systems/"))
+                .retrieve()
+                .body(Long[].class);
+            return List.of(requireBody(response));
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
+    /** 读取公开星系的坐标、安全等级和星门目录。 */
+    public SerenityEsiResponse<SerenityUniverseSystemResponse> getUniverseSystemWithMetadata(Long systemId) {
+        if (systemId == null || systemId <= 0) {
+            throw new IllegalArgumentException("国服星系查询参数无效");
+        }
+        try {
+            ResponseEntity<SerenityUniverseSystemResponse> response = restClient.get()
+                .uri(endpoint("/universe/systems/{id}/"), systemId)
+                .retrieve()
+                .toEntity(SerenityUniverseSystemResponse.class);
+            return new SerenityEsiResponse<>(requireBody(response.getBody()), expiresAt(response), response.getHeaders()
+                .getETag());
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
+    /** 读取公开星门的对端星系关系。 */
+    public SerenityEsiResponse<SerenityUniverseStargateResponse> getUniverseStargateWithMetadata(Long stargateId) {
+        if (stargateId == null || stargateId <= 0) {
+            throw new IllegalArgumentException("国服星门查询参数无效");
+        }
+        try {
+            ResponseEntity<SerenityUniverseStargateResponse> response = restClient.get()
+                .uri(endpoint("/universe/stargates/{id}/"), stargateId)
+                .retrieve()
+                .toEntity(SerenityUniverseStargateResponse.class);
+            return new SerenityEsiResponse<>(requireBody(response.getBody()), expiresAt(response), response.getHeaders()
+                .getETag());
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
+    /** 按国服当前拓扑计算两座星系之间的最短跳跃序列。 */
+    public List<Long> getRoute(Long originSystemId, Long destinationSystemId) {
+        if (originSystemId == null || originSystemId <= 0 || destinationSystemId == null || destinationSystemId <= 0) {
+            throw new IllegalArgumentException("国服路线查询参数无效");
+        }
+        try {
+            Long[] response = restClient.get()
+                .uri(endpoint("/route/{origin}/{destination}/"), originSystemId, destinationSystemId)
+                .retrieve()
+                .body(Long[].class);
+            return List.of(requireBody(response));
         } catch (RestClientException e) {
             throw classify(e);
         }

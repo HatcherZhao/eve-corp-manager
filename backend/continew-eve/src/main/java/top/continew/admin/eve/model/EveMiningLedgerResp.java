@@ -27,5 +27,5 @@ import java.time.LocalDateTime;
 public record EveMiningLedgerResp(Long id, Long observerId, String observerName, String characterId,
                                   String characterName, String recordedCorporationId, Integer typeId, String typeName,
                                   LocalDate recordedAt, Long quantity, LocalDateTime lastSeenAt,
-                                  LocalDateTime sourceExpiresAt) {
+                                  LocalDateTime sourceExpiresAt, boolean currentCorporationMember) {
 }

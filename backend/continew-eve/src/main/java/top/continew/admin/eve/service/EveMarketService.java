@@ -31,7 +31,9 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
+import top.continew.admin.common.context.UserContextHolder;
 import top.continew.admin.eve.config.EveMarketProperties;
+import top.continew.admin.eve.mapper.EveCorporationMapper;
 import top.continew.admin.eve.mapper.EveMarketSnapshotMapper;
 import top.continew.admin.eve.mapper.EveStaticTypeReferenceMapper;
 import top.continew.admin.eve.model.EveMarketDetailResp;
@@ -41,8 +43,10 @@ import top.continew.admin.eve.model.EveMarketOrderResp;
 import top.continew.admin.eve.model.EveMarketQuoteResp;
 import top.continew.admin.eve.model.EveMarketSyncResp;
 import top.continew.admin.eve.model.EveStaticTypeReferenceResp;
+import top.continew.admin.eve.model.entity.EveCorporationDO;
 import top.continew.admin.eve.model.entity.EveMarketSnapshotDO;
 import top.continew.admin.eve.model.entity.EveStaticTypeReferenceDO;
+import top.continew.admin.eve.model.enums.EveMineralPriceCategory;
 import top.continew.starter.core.exception.BusinessException;
 import top.continew.starter.extension.crud.model.resp.PageResp;
 
@@ -83,6 +87,8 @@ public class EveMarketService {
     private static final int HISTORY_LIMIT = 366;
 
     private final EveMarketProperties properties;
+    private final EveContextService contextService;
+    private final EveCorporationMapper corporationMapper;
     private final EveMarketSnapshotMapper snapshotMapper;
     private final EveStaticTypeReferenceMapper typeReferenceMapper;
     private final EveStaticReferenceService staticReferenceService;
@@ -96,18 +102,25 @@ public class EveMarketService {
      * 创建吉他市场服务，并明确注入独立的市场 HTTP 客户端。
      *
      * @param properties             市场同步配置
+     * @param contextService         当前军团上下文服务
+     * @param corporationMapper      军团绑定数据访问器
      * @param snapshotMapper         行情缓存数据访问器
+     * @param typeReferenceMapper    静态物品资料访问器
      * @param staticReferenceService 基础信息查询服务
      * @param objectMapper           JSON 解析器
      * @param restClient             吉他公开市场 HTTP 客户端
      */
     public EveMarketService(EveMarketProperties properties,
+                            EveContextService contextService,
+                            EveCorporationMapper corporationMapper,
                             EveMarketSnapshotMapper snapshotMapper,
                             EveStaticTypeReferenceMapper typeReferenceMapper,
                             EveStaticReferenceService staticReferenceService,
                             ObjectMapper objectMapper,
                             @Qualifier("eveMarketRestClient") RestClient restClient) {
         this.properties = properties;
+        this.contextService = contextService;
+        this.corporationMapper = corporationMapper;
         this.snapshotMapper = snapshotMapper;
         this.typeReferenceMapper = typeReferenceMapper;
         this.staticReferenceService = staticReferenceService;
@@ -125,6 +138,32 @@ public class EveMarketService {
                                             boolean unclassified) {
         PageResp<EveStaticTypeReferenceResp> types = staticReferenceService
             .pageTypes(page, size, keyword, categoryPath, unclassified);
+        return attachQuotes(types);
+    }
+
+    /**
+     * 按月矿、普通矿物或冰矿目录读取吉他单价；军团月矿仅按已同步账本识别品类，不汇总任何开采量。
+     */
+    public PageResp<EveMarketItemResp> mineralPage(int page,
+                                                   int size,
+                                                   String keyword,
+                                                   EveMineralPriceCategory category) {
+        List<String> categoryPath = mineralCategoryPath(category);
+        PageResp<EveStaticTypeReferenceResp> types;
+        if (EveMineralPriceCategory.CORPORATION_MOON == category) {
+            EveCorporationDO corporation = requireCurrentCorporation();
+            List<Integer> typeIds = typeReferenceMapper.selectCorporationMoonOreTypeIds(UserContextHolder
+                .getContext()
+                .getTenantId(), corporation.getId());
+            types = staticReferenceService.pageTypesByIds(page, size, keyword, categoryPath, typeIds);
+        } else {
+            types = staticReferenceService.pageTypes(page, size, keyword, categoryPath, false);
+        }
+        return attachQuotes(types);
+    }
+
+    /** 为静态目录中的每种矿物附加同一时点的吉他报价缓存。 */
+    private PageResp<EveMarketItemResp> attachQuotes(PageResp<EveStaticTypeReferenceResp> types) {
         List<Integer> typeIds = types.getList().stream().map(EveStaticTypeReferenceResp::typeId).toList();
         if (properties.isEnabled()) {
             refreshQuotesIfNecessary(typeIds);
@@ -134,6 +173,33 @@ public class EveMarketService {
             .stream()
             .map(type -> new EveMarketItemResp(type, toQuote(snapshots.get(type.typeId()))))
             .toList(), types.getTotal());
+    }
+
+    /** 将 evedata 中稳定的原材料分类映射为面向用户的四个价格目录。 */
+    private static List<String> mineralCategoryPath(EveMineralPriceCategory category) {
+        String mineralCategory = switch (category) {
+            case CORPORATION_MOON, MOON -> "卫星矿石";
+            case ORE -> "标准矿石";
+            case ICE -> "冰矿";
+        };
+        return List.of("制造和研究", "材料", "原材料", mineralCategory);
+    }
+
+    /** 根据当前登录上下文确定正在浏览的军团，避免以任意账本数据越权识别月矿。 */
+    private EveCorporationDO requireCurrentCorporation() {
+        Long tenantId = UserContextHolder.getContext().getTenantId();
+        var context = contextService.getCurrentContext();
+        Long corporationId = context.corporation() == null
+            ? null
+            : context.corporation().corporationId();
+        if (corporationId == null) {
+            throw new BusinessException("请先选择所属军团后再查看军团月矿价格");
+        }
+        EveCorporationDO corporation = corporationMapper.selectByTenantAndCorporationId(tenantId, corporationId);
+        if (corporation == null) {
+            throw new BusinessException("当前所属军团不可用，请重新登录后重试");
+        }
+        return corporation;
     }
 
     /**

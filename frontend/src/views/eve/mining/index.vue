@@ -6,11 +6,9 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import DataFreshnessBanner from '../components/DataFreshnessBanner.vue'
 import {
   type EveMiningAnalytics,
-  type EveMiningCompressionValuation,
   type EveMiningLedger,
   type EveMiningLedgerSummary,
   getEveMiningAnalytics,
-  getEveMiningCompressionValuation,
   getEveMiningLedger,
   getEveMiningLedgerSummary,
   syncEveMiningLedger,
@@ -32,21 +30,16 @@ const summary = ref<EveMiningLedgerSummary>({
   observerCount: 0,
   characterCount: 0,
   mineralTypeCount: 0,
+  externalQuantity: 0,
+  externalEntryCount: 0,
+  externalCharacterCount: 0,
 })
 const analytics = ref<EveMiningAnalytics>({
-  corporation: { quantity: 0, entryCount: 0, observerCount: 0, characterCount: 0, mineralTypeCount: 0 },
+  corporation: { quantity: 0, entryCount: 0, observerCount: 0, characterCount: 0, mineralTypeCount: 0, externalQuantity: 0, externalEntryCount: 0, externalCharacterCount: 0 },
   timeline: [],
   observers: [],
   characters: [],
-})
-const valuation = ref<EveMiningCompressionValuation>({
-  rawQuantity: 0,
-  compressedQuantity: 0,
-  remainderQuantity: 0,
-  estimatedValue: 0,
-  pricedTypeCount: 0,
-  unpricedTypeCount: 0,
-  items: [],
+  minerals: [],
 })
 const query = reactive({
   page: 1,
@@ -61,6 +54,13 @@ const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduc
 const chartTextColor = (isDark: boolean) => (isDark ? 'rgba(255, 255, 255, .68)' : '#4E5969')
 const chartGridColor = (isDark: boolean) => (isDark ? 'rgba(255, 255, 255, .12)' : '#E5E6EB')
 const formatTooltipNumber = (value: number) => value.toLocaleString()
+const mineralPalette = ['#246EFF', '#6B5AED', '#00B42A', '#F2C94C', '#F2994A', '#722ED1', '#14C9C9', '#86909C', '#3491FA', '#9FDB1D']
+const observerChartHeight = computed(() => `${Math.max(250, analytics.value.observers.length * 34)}px`)
+
+/** 同一矿物始终使用同一颜色，避免筛选或排序后图例颜色发生漂移。 */
+function mineralColor(typeId: number) {
+  return mineralPalette[Math.abs(typeId) % mineralPalette.length]
+}
 
 /** 数据可视化按完整筛选结果渲染，不受下方分页表格影响。 */
 const { chartOption: trendChartOption } = useChart((isDark): EChartsOption => ({
@@ -85,17 +85,29 @@ const { chartOption: trendChartOption } = useChart((isDark): EChartsOption => ({
     splitLine: { lineStyle: { color: chartGridColor(isDark), type: 'dashed' } },
     axisLabel: { color: chartTextColor(isDark), formatter: (value: number) => formatTooltipNumber(value), fontSize: 11 },
   },
-  series: [{
-    name: '开采量',
-    type: 'line',
-    smooth: true,
-    symbol: 'circle',
-    symbolSize: 6,
-    lineStyle: { width: 3, color: '#246EFF' },
-    itemStyle: { color: '#246EFF', borderColor: isDark ? '#1D2129' : '#FFF', borderWidth: 2 },
-    areaStyle: { color: new graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(36, 110, 255, .34)' }, { offset: 1, color: 'rgba(36, 110, 255, .02)' }]) },
-    data: analytics.value.timeline.map((item) => item.quantity),
-  }],
+  series: [
+    {
+      name: '本军团成员',
+      type: 'line',
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 6,
+      lineStyle: { width: 3, color: '#246EFF' },
+      itemStyle: { color: '#246EFF', borderColor: isDark ? '#1D2129' : '#FFF', borderWidth: 2 },
+      areaStyle: { color: new graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(36, 110, 255, .34)' }, { offset: 1, color: 'rgba(36, 110, 255, .02)' }]) },
+      data: analytics.value.timeline.map((item) => item.quantity - item.externalQuantity),
+    },
+    {
+      name: '外部成员',
+      type: 'line',
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 5,
+      lineStyle: { width: 2, color: '#F53F3F' },
+      itemStyle: { color: '#F53F3F' },
+      data: analytics.value.timeline.map((item) => item.externalQuantity),
+    },
+  ],
 }))
 
 /** 建筑排行使用横向条形图，优先保证名称在窄屏下仍清晰可读。 */
@@ -110,14 +122,10 @@ const { chartOption: observerChartOption } = useChart((isDark): EChartsOption =>
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: (value) => `${formatTooltipNumber(Number(value))} 单位` },
     xAxis: { type: 'value', splitLine: { lineStyle: { color: chartGridColor(isDark), type: 'dashed' } }, axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false } },
     yAxis: { type: 'category', data: items.map((item) => item.observerName || '名称待补齐'), axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: chartTextColor(isDark), width: 106, overflow: 'truncate', fontSize: 12 } },
-    series: [{
-      name: '开采量',
-      type: 'bar',
-      barMaxWidth: 20,
-      itemStyle: { color: new graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#6B5AED' }, { offset: 1, color: '#9B8CFF' }]), borderRadius: [0, 7, 7, 0] },
-      label: { show: true, position: 'right', color: chartTextColor(isDark), fontSize: 11, formatter: ({ value }: { value: number }) => formatTooltipNumber(value) },
-      data: items.map((item) => item.quantity),
-    }],
+    series: [
+      { name: '本军团成员', type: 'bar', stack: 'total', barMaxWidth: 20, itemStyle: { color: new graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#6B5AED' }, { offset: 1, color: '#9B8CFF' }]), borderRadius: [0, 7, 7, 0] }, data: items.map((item) => item.quantity - item.externalQuantity) },
+      { name: '外部成员', type: 'bar', stack: 'total', barMaxWidth: 20, itemStyle: { color: '#F53F3F', borderRadius: [0, 7, 7, 0] }, label: { show: true, position: 'right', color: chartTextColor(isDark), fontSize: 11, formatter: ({ dataIndex }: { dataIndex: number }) => formatTooltipNumber(items[dataIndex].quantity) }, data: items.map((item) => item.externalQuantity) },
+    ],
   }
 })
 
@@ -137,12 +145,38 @@ const { chartOption: characterChartOption } = useChart((isDark): EChartsOption =
       name: '开采量',
       type: 'bar',
       barMaxWidth: 20,
-      itemStyle: { color: new graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#F2994A' }, { offset: 1, color: '#F2C94C' }]), borderRadius: [0, 7, 7, 0] },
+      itemStyle: { color: ({ dataIndex }: { dataIndex: number }) => items[dataIndex].externalQuantity > 0 ? '#F53F3F' : new graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: '#F2994A' }, { offset: 1, color: '#F2C94C' }]), borderRadius: [0, 7, 7, 0] },
       label: { show: true, position: 'right', color: chartTextColor(isDark), fontSize: 11, formatter: ({ value }: { value: number }) => formatTooltipNumber(value) },
       data: items.map((item) => item.quantity),
     }],
   }
 })
+
+/** 矿种分布使用稳定的分类色；外部采矿量在提示信息中单独说明，不能覆盖矿种颜色。 */
+const { chartOption: mineralChartOption } = useChart((isDark): EChartsOption => ({
+  animation: !prefersReducedMotion,
+  animationDuration: 620,
+  tooltip: {
+    trigger: 'item',
+    formatter: (params: { marker: string, name: string, value: number, data: { externalQuantity: number } }) => `${params.marker}${params.name}<br>开采量：${formatTooltipNumber(params.value)} 单位${params.data.externalQuantity ? `<br>其中外部成员：${formatTooltipNumber(params.data.externalQuantity)} 单位` : ''}`,
+  },
+  legend: { type: 'scroll', bottom: 0, textStyle: { color: chartTextColor(isDark), fontSize: 11 } },
+  series: [{
+    name: '开采量',
+    type: 'pie',
+    radius: ['43%', '72%'],
+    center: ['50%', '44%'],
+    minAngle: 3,
+    label: { show: false },
+    itemStyle: { borderColor: isDark ? '#1D2129' : '#FFF', borderWidth: 2 },
+    data: analytics.value.minerals.map((item) => ({
+      name: item.externalQuantity > 0 ? `${item.typeName}（含外部）` : item.typeName,
+      value: item.quantity,
+      externalQuantity: item.externalQuantity,
+      itemStyle: { color: mineralColor(item.typeId) },
+    })),
+  }],
+}))
 
 function dateText(value?: string) {
   return value ? dayjs(value).format('YYYY-MM-DD') : '—'
@@ -154,11 +188,6 @@ function timeText(value?: string) {
 
 function formatNumber(value?: number) {
   return (value || 0).toLocaleString()
-}
-
-/** 吉他行情估值以 ISK 显示，并保持缺失报价与零值的可辨性。 */
-function formatIsk(value?: number) {
-  return value === undefined || value === null ? '待报价' : `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ISK`
 }
 
 /** 将组件字段转换为和后端同名、可选的筛选条件。 */
@@ -186,15 +215,13 @@ async function loadLedger() {
   loading.value = true
   const analyticsTask = loadAnalytics()
   try {
-    const [pageResult, summaryResult, valuationResult] = await Promise.all([
+    const [pageResult, summaryResult] = await Promise.all([
       getEveMiningLedger({ page: query.page, size: query.size, ...filters() }),
       getEveMiningLedgerSummary(filters()),
-      getEveMiningCompressionValuation(filters()),
     ])
     records.value = pageResult.data.list
     total.value = pageResult.data.total
     summary.value = summaryResult.data
-    valuation.value = valuationResult.data
   } finally {
     loading.value = false
   }
@@ -253,31 +280,15 @@ onMounted(loadLedger)
       <article class="eve-mining-page__metric"><span>开采建筑</span><strong>{{ formatNumber(summary.observerCount) }}</strong><small>有开采记录的观察者</small></article>
       <article class="eve-mining-page__metric"><span>参与玩家</span><strong>{{ formatNumber(summary.characterCount) }}</strong><small>当前筛选范围内</small></article>
       <article class="eve-mining-page__metric"><span>最近开采日期</span><strong>{{ dateText(summary.latestRecordedAt) }}</strong><small>已收录 {{ formatNumber(summary.mineralTypeCount) }} 种矿物</small></article>
-      <article class="eve-mining-page__metric eve-mining-page__metric--valuation"><span>压缩后估值</span><strong>{{ formatIsk(valuation.estimatedValue) }}</strong><small>吉他最低卖单 · {{ valuation.pricedTypeCount }} 种已报价</small></article>
-    </section>
-
-    <section class="eve-mining-page__valuation" aria-label="月矿压缩后估值">
-      <div class="eve-mining-page__valuation-heading"><div><span>压缩后估值</span><h2>高密度月矿吉他参考价</h2></div><small>每种原矿独立按 100:1 折算；不足 100 单位的余量不计入估值</small></div>
-      <a-alert v-if="valuation.unpricedTypeCount" type="warning" :show-icon="true">{{ valuation.unpricedTypeCount }} 种高密度月矿暂无吉他卖单，未计入合计估值；市场后台会优先补齐报价。</a-alert>
-      <a-table :data="valuation.items" :pagination="false" row-key="rawTypeId" :scroll="{ x: 860 }" size="small">
-        <template #columns>
-          <a-table-column title="原矿" :width="180" ellipsis tooltip><template #cell="{ record }"><div class="eve-mining-page__type-identity"><EveTypeIcon :type-id="record.rawTypeId" :size="24" :alt="`${record.rawTypeName}图标`" /><strong>{{ record.rawTypeName }}</strong></div></template></a-table-column>
-          <a-table-column title="原矿数量" :width="116" align="right"><template #cell="{ record }">{{ formatNumber(record.rawQuantity) }}</template></a-table-column>
-          <a-table-column title="高密度矿" :width="190" ellipsis tooltip><template #cell="{ record }"><div class="eve-mining-page__type-identity"><EveTypeIcon :type-id="record.compressedTypeId" :size="24" :alt="`${record.compressedTypeName}图标`" /><strong>{{ record.compressedTypeName }}</strong></div></template></a-table-column>
-          <a-table-column title="可压缩" :width="105" align="right"><template #cell="{ record }"><strong class="eve-mining-page__quantity">{{ formatNumber(record.compressedQuantity) }}</strong></template></a-table-column>
-          <a-table-column title="余量" :width="88" align="right"><template #cell="{ record }">{{ formatNumber(record.remainderQuantity) }}</template></a-table-column>
-          <a-table-column title="吉他最低卖单" :width="148" align="right" nowrap><template #cell="{ record }">{{ formatIsk(record.lowestSellPrice) }}</template></a-table-column>
-          <a-table-column title="参考估值" :width="158" align="right" nowrap><template #cell="{ record }"><strong class="eve-mining-page__valuation-price">{{ formatIsk(record.estimatedValue) }}</strong><small class="eve-mining-page__price-time">{{ timeText(record.priceUpdatedAt) }}</small></template></a-table-column>
-        </template>
-      </a-table>
-      <a-empty v-if="!valuation.items.length" description="当前筛选范围内暂无可按高密度月矿折算的开采记录" />
+      <article class="eve-mining-page__metric eve-mining-page__metric--external"><span>外部成员开采</span><strong>{{ formatNumber(summary.externalQuantity) }}</strong><small>{{ formatNumber(summary.externalCharacterCount) }} 名外部角色 · {{ formatNumber(summary.externalEntryCount) }} 条记录</small></article>
     </section>
 
     <a-spin :loading="analyticsLoading" class="eve-mining-page__analytics-loading">
       <section class="eve-mining-page__analytics" aria-label="月矿开采分析图表">
-        <article class="eve-mining-page__chart-card eve-mining-page__chart-card--trend"><div class="eve-mining-page__chart-heading"><div><span>时间趋势</span><h2>每日开采量</h2></div><small>筛选范围内的累计单位</small></div><Chart v-if="analytics.timeline.length" :option="trendChartOption" height="250px" /><a-empty v-else description="暂无可用于趋势统计的开采数据" /></article>
-        <article class="eve-mining-page__chart-card"><div class="eve-mining-page__chart-heading"><div><span>建筑维度</span><h2>开采建筑排行</h2></div><small>前 {{ analytics.observers.length }} 座</small></div><Chart v-if="analytics.observers.length" :option="observerChartOption" height="250px" /><a-empty v-else description="暂无开采建筑数据" /></article>
-        <article class="eve-mining-page__chart-card"><div class="eve-mining-page__chart-heading"><div><span>玩家维度</span><h2>开采成员排行</h2></div><small>前 {{ analytics.characters.length }} 名</small></div><Chart v-if="analytics.characters.length" :option="characterChartOption" height="250px" /><a-empty v-else description="暂无成员开采数据" /></article>
+        <article class="eve-mining-page__chart-card eve-mining-page__chart-card--trend"><div class="eve-mining-page__chart-heading"><div><span>时间趋势</span><h2>每日开采量</h2></div><small>蓝色为成员，红色为外部角色</small></div><Chart v-if="analytics.timeline.length" :option="trendChartOption" height="250px" /><a-empty v-else description="暂无可用于趋势统计的开采数据" /></article>
+        <article class="eve-mining-page__chart-card"><div class="eve-mining-page__chart-heading"><div><span>建筑维度</span><h2>开采建筑排行</h2></div><small>共 {{ analytics.observers.length }} 座</small></div><Chart v-if="analytics.observers.length" :option="observerChartOption" :height="observerChartHeight" /><a-empty v-else description="暂无开采建筑数据" /></article>
+        <article class="eve-mining-page__chart-card"><div class="eve-mining-page__chart-heading"><div><span>玩家维度</span><h2>开采成员排行</h2></div><small>红色条目含外部开采</small></div><Chart v-if="analytics.characters.length" :option="characterChartOption" height="250px" /><a-empty v-else description="暂无成员开采数据" /></article>
+        <article class="eve-mining-page__chart-card"><div class="eve-mining-page__chart-heading"><div><span>矿种维度</span><h2>月矿产出结构</h2></div><small>前 {{ analytics.minerals.length }} 种</small></div><Chart v-if="analytics.minerals.length" :option="mineralChartOption" height="250px" /><a-empty v-else description="暂无矿种分布数据" /></article>
       </section>
     </a-spin>
 
@@ -287,7 +298,7 @@ onMounted(loadLedger)
         <template #columns>
           <a-table-column title="日期" :width="112"><template #cell="{ record }"><strong>{{ dateText(record.recordedAt) }}</strong></template></a-table-column>
           <a-table-column title="开采建筑" :width="150" ellipsis tooltip><template #cell="{ record }"><strong>{{ record.observerName || '建筑名称待补齐' }}</strong></template></a-table-column>
-          <a-table-column title="采矿角色" :width="140" ellipsis tooltip><template #cell="{ record }"><strong>{{ record.characterName || '角色名称待补齐' }}</strong></template></a-table-column>
+          <a-table-column title="采矿角色" :width="160" ellipsis tooltip><template #cell="{ record }"><strong :class="{ 'eve-mining-page__external-text': !record.currentCorporationMember }">{{ record.characterName || '角色名称待补齐' }}</strong><a-tag v-if="!record.currentCorporationMember" color="red" size="small">外部成员</a-tag></template></a-table-column>
           <a-table-column title="矿物" :width="180" ellipsis tooltip><template #cell="{ record }"><div class="eve-mining-page__type-identity"><EveTypeIcon :type-id="record.typeId" :size="26" :alt="`${record.typeName || '矿物'}图标`" /><strong>{{ record.typeName || '矿物类型待补齐' }}</strong></div></template></a-table-column>
           <a-table-column title="数量" :width="120" align="right"><template #cell="{ record }"><strong class="eve-mining-page__quantity">{{ formatNumber(record.quantity) }}</strong></template></a-table-column>
         </template>
@@ -302,12 +313,11 @@ onMounted(loadLedger)
 .eve-mining-page__header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 20px 22px; border: 1px solid rgba(var(--arcoblue-6), .18); border-radius: 14px; background: linear-gradient(125deg, rgba(var(--arcoblue-6), .12), transparent 55%), var(--color-bg-1); }
 .eve-mining-page__header-tools { display: flex; align-self: flex-start; flex-direction: column; align-items: flex-end; gap: 10px; }.eve-mining-page__eyebrow { color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; font-size: 11px; letter-spacing: .15em; }.eve-mining-page h1 { margin: 5px 0; font-size: 26px; }.eve-mining-page__header p { max-width: 720px; margin: 0; color: var(--color-text-3); }
 .eve-mining-page__guide { margin-top: 12px; }.eve-mining-page__filter-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 0; padding: 10px 12px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }.eve-mining-page__filter-bar .arco-input-wrapper { width: min(310px, 100%); }.eve-mining-page__filter-bar .arco-picker { width: 190px; }
-.eve-mining-page__metrics { display: grid; grid-template-columns: 1.18fr repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }.eve-mining-page__metric { display: flex; min-width: 0; flex-direction: column; gap: 3px; min-height: 84px; padding: 13px 14px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }.eve-mining-page__metric--corporation { border-color: rgba(var(--arcoblue-6), .28); background: linear-gradient(120deg, rgba(var(--arcoblue-6), .1), transparent 72%), var(--color-bg-1); }.eve-mining-page__metric--valuation { border-color: rgba(var(--arcoblue-6), .28); background: linear-gradient(120deg, rgba(var(--arcoblue-6), .08), transparent 72%), var(--color-bg-1); }.eve-mining-page__metric span, .eve-mining-page__metric small { overflow: hidden; color: var(--color-text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.eve-mining-page__metric strong { overflow: hidden; color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; font-size: 22px; text-overflow: ellipsis; white-space: nowrap; }
-.eve-mining-page__valuation { margin-bottom: 12px; padding: 12px; overflow: hidden; border: 1px solid rgba(var(--arcoblue-6), .22); border-radius: 12px; background: linear-gradient(125deg, rgba(var(--arcoblue-6), .06), transparent 48%), var(--color-bg-1); }.eve-mining-page__valuation-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }.eve-mining-page__valuation-heading span, .eve-mining-page__valuation-heading small { color: var(--color-text-3); font-size: 12px; }.eve-mining-page__valuation-heading h2 { margin: 2px 0 0; font-size: 16px; }.eve-mining-page__valuation-heading small { max-width: 380px; padding-top: 3px; text-align: right; }.eve-mining-page__valuation :deep(.arco-alert) { margin-bottom: 10px; }.eve-mining-page__valuation-price { display: block; color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; white-space: nowrap; }.eve-mining-page__price-time { display: block; margin-top: 2px; color: var(--color-text-3); font-size: 11px; white-space: nowrap; }
-.eve-mining-page__analytics-loading { width: 100%; }.eve-mining-page__analytics { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(280px, .94fr) minmax(280px, .94fr); gap: 10px; }.eve-mining-page__chart-card { display: flex; min-width: 0; min-height: 318px; flex-direction: column; padding: 14px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }.eve-mining-page__chart-card--trend { border-color: rgba(var(--arcoblue-6), .24); background: linear-gradient(135deg, rgba(var(--arcoblue-6), .07), transparent 50%), var(--color-bg-1); }.eve-mining-page__chart-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-height: 40px; }.eve-mining-page__chart-heading span, .eve-mining-page__chart-heading small { color: var(--color-text-3); font-size: 12px; }.eve-mining-page__chart-heading h2 { margin: 2px 0 0; font-size: 16px; }.eve-mining-page__chart-heading small { padding-top: 3px; text-align: right; }.eve-mining-page__chart-card :deep(.arco-empty) { flex: 1; }
-.eve-mining-page__table-wrap { margin-top: 12px; padding: 12px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }.eve-mining-page__caption { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; color: var(--color-text-3); font-size: 12px; }.eve-mining-page__caption > div > span { display: block; color: var(--color-text-1); font-size: 15px; font-weight: 600; }.eve-mining-page__caption small { display: block; margin-top: 2px; }.eve-mining-page__quantity { color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; }.eve-mining-page__table-wrap .arco-pagination { justify-content: flex-end; margin-top: 12px; }.eve-mining-page__type-identity { display: flex; align-items: center; gap: 10px; }.eve-mining-page__type-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eve-mining-page__metrics { display: grid; grid-template-columns: 1.18fr repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }.eve-mining-page__metric { display: flex; min-width: 0; flex-direction: column; gap: 3px; min-height: 84px; padding: 13px 14px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }.eve-mining-page__metric--corporation { border-color: rgba(var(--arcoblue-6), .28); background: linear-gradient(120deg, rgba(var(--arcoblue-6), .1), transparent 72%), var(--color-bg-1); }.eve-mining-page__metric--external { border-color: rgba(var(--red-6), .32); background: linear-gradient(120deg, rgba(var(--red-6), .08), transparent 72%), var(--color-bg-1); }.eve-mining-page__metric--external strong { color: rgb(var(--red-6)); }.eve-mining-page__metric span, .eve-mining-page__metric small { overflow: hidden; color: var(--color-text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.eve-mining-page__metric strong { overflow: hidden; color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; font-size: 22px; text-overflow: ellipsis; white-space: nowrap; }
+.eve-mining-page__analytics-loading { width: 100%; }.eve-mining-page__analytics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 10px; }.eve-mining-page__chart-card { display: flex; min-width: 0; min-height: 318px; flex-direction: column; padding: 14px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }.eve-mining-page__chart-card--trend { grid-column: 1 / -1; border-color: rgba(var(--arcoblue-6), .24); background: linear-gradient(135deg, rgba(var(--arcoblue-6), .07), transparent 50%), var(--color-bg-1); }.eve-mining-page__chart-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-height: 40px; }.eve-mining-page__chart-heading span, .eve-mining-page__chart-heading small { color: var(--color-text-3); font-size: 12px; }.eve-mining-page__chart-heading h2 { margin: 2px 0 0; font-size: 16px; }.eve-mining-page__chart-heading small { padding-top: 3px; text-align: right; }.eve-mining-page__chart-card :deep(.arco-empty) { flex: 1; }
+.eve-mining-page__table-wrap { margin-top: 12px; padding: 12px; border: 1px solid var(--color-border-2); border-radius: 12px; background: var(--color-bg-1); }.eve-mining-page__caption { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; color: var(--color-text-3); font-size: 12px; }.eve-mining-page__caption > div > span { display: block; color: var(--color-text-1); font-size: 15px; font-weight: 600; }.eve-mining-page__caption small { display: block; margin-top: 2px; }.eve-mining-page__quantity { color: rgb(var(--arcoblue-6)); font-family: DINPro, sans-serif; }.eve-mining-page__external-text { color: rgb(var(--red-6)); }.eve-mining-page__table-wrap :deep(.arco-tag) { margin-left: 6px; }.eve-mining-page__table-wrap .arco-pagination { justify-content: flex-end; margin-top: 12px; }.eve-mining-page__type-identity { display: flex; align-items: center; gap: 10px; }.eve-mining-page__type-identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 1180px) { .eve-mining-page__analytics { grid-template-columns: repeat(2, minmax(0, 1fr)); }.eve-mining-page__chart-card--trend { grid-column: 1 / -1; } }.eve-mining-page__chart-card--trend :deep(.echarts) { min-height: 250px; }
 @media (max-width: 980px) { .eve-mining-page__header { align-items: flex-start; flex-direction: column; }.eve-mining-page__header-tools { align-items: flex-start; }.eve-mining-page__metrics { grid-template-columns: repeat(2, 1fr); }.eve-mining-page__filter-bar .arco-input-wrapper, .eve-mining-page__filter-bar .arco-picker { width: 100%; } }
-@media (max-width: 680px) { .eve-mining-page__analytics, .eve-mining-page__metrics { grid-template-columns: 1fr; }.eve-mining-page__chart-card--trend { grid-column: auto; }.eve-mining-page__caption, .eve-mining-page__valuation-heading { flex-direction: column; }.eve-mining-page__valuation-heading small { max-width: none; padding-top: 0; text-align: left; } }
+@media (max-width: 680px) { .eve-mining-page__analytics, .eve-mining-page__metrics { grid-template-columns: 1fr; }.eve-mining-page__chart-card--trend { grid-column: auto; }.eve-mining-page__caption { flex-direction: column; } }
 @media (prefers-reduced-motion: reduce) { .eve-mining-page *, .eve-mining-page *::before, .eve-mining-page *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }
 </style>

@@ -49,6 +49,14 @@ class EveJitaMarketMigrationTest {
             .contains("CREATE TABLE `eve_mining_compression_mapping`", "`compression_ratio`", "(45490, 62463, 100)");
         assertThat(resource("db/changelog/mysql/eve/043_asset_valuation.sql"))
             .contains("idx_eve_corporation_asset_quote_priority", "`status`, `deleted`, `type_id`");
+        String mineralPriceMigration = "db/changelog/mysql/eve/045_mineral_price_directory.sql";
+        assertThat(master.indexOf(mineralPriceMigration)).isGreaterThan(master.indexOf("044_star_map.sql"));
+        assertThat(resource(mineralPriceMigration))
+            .contains("'/eve/mineral-prices'", "'eve:market:view'", "'corp_member'");
+        String correctionMigration = "db/changelog/mysql/eve/046_mineral_price_directory_menu_id_fix.sql";
+        assertThat(master.indexOf(correctionMigration)).isGreaterThan(master.indexOf(mineralPriceMigration));
+        assertThat(resource(correctionMigration))
+            .contains("046-mineral-price-directory-menu-id-fix", "(20098, '矿物价格'", "'corp_member'");
     }
 
     /** 读取类路径迁移资源。 */

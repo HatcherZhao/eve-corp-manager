@@ -34,6 +34,14 @@ import java.util.List;
 @InterceptorIgnore(tenantLine = "true")
 public interface EveStaticTypeReferenceMapper extends BaseMapper<EveStaticTypeReferenceDO> {
 
+    /** 查询当前军团月矿观察者账本中出现过的月矿类型，数量仅用于识别品类而不会下发。 */
+    @Select("SELECT DISTINCT ledger.type_id FROM eve_mining_ledger AS ledger "
+        + "INNER JOIN eve_static_type_reference AS reference ON reference.type_id = ledger.type_id "
+        + "WHERE ledger.tenant_id = #{tenantId} AND ledger.corporation_ref_id = #{corporationRefId} "
+        + "AND ledger.deleted = 0 AND reference.market_category_l4 = '卫星矿石'")
+    List<Integer> selectCorporationMoonOreTypeIds(@Param("tenantId") Long tenantId,
+                                                  @Param("corporationRefId") Long corporationRefId);
+
     /**
      * 选择尚未拥有有效价格历史的少量物品，供后台平稳补全行情曲线。
      *

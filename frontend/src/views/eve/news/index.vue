@@ -32,13 +32,12 @@ const isVersions = computed(() => route.path === '/eve/news/versions')
 const canSync = computed(() => userStore.permissions.includes('eve:news:sync') || userStore.permissions.includes('*:*:*'))
 const pageTitle = computed(() => isVersions.value ? '版本更新' : '国服新闻活动')
 const pageDescription = computed(() => isVersions.value
-  ? '集中阅读 EVE 国服的版本更新与维护说明。'
+  ? '集中阅读 EVE 国服最新版本更新日志与历史版本专题。'
   : '集中阅读 EVE 国服官网发布的新闻、活动和公告。')
 const categoryOptions = [
   { value: 'ALL', label: '全部栏目' },
   { value: 'NEWS', label: '新闻' },
   { value: 'MAINTENANCE', label: '维护' },
-  { value: 'UPDATE_NOTICE', label: '更新通知' },
 ]
 
 /** 将服务端 UTC 时间转为用户易读的本地时间。 */
@@ -188,10 +187,14 @@ watch(() => route.path, resetForRoute)
           <div class="eve-official-news__article-meta"><a-tag color="arcoblue">{{ detail.categoryLabel }}</a-tag><time>{{ formatTime(detail.publishedAt) }}</time></div>
           <h2>{{ detail.title }}</h2>
           <p v-if="detail.summary" class="eve-official-news__article-summary">{{ detail.summary }}</p>
-          <!-- 正文已在服务端按固定标签、链接与图片域名白名单净化。 -->
-          <div v-if="detail.contentHtml" class="eve-official-news__article-content" v-html="detail.contentHtml" />
-          <p v-else class="eve-official-news__article-empty">正文暂未完成同步，请稍后重新打开。</p>
-          <a :href="detail.originalUrl" target="_blank" rel="noopener noreferrer" class="eve-official-news__source-link">在国服官网查看原文 <icon-launch /></a>
+          <p class="eve-official-news__article-notice">以下内容直接呈现国服官网原页，保留原始排版、图片和链接。</p>
+          <iframe
+            class="eve-official-news__official-frame"
+            :src="detail.originalUrl"
+            :title="`${detail.title} - 国服官网原文`"
+            referrerpolicy="strict-origin-when-cross-origin"
+          />
+          <a :href="detail.originalUrl" target="_blank" rel="noopener noreferrer" class="eve-official-news__source-link">在新标签页打开官网原文 <icon-launch /></a>
         </article>
       </a-spin>
     </a-drawer>
@@ -228,12 +231,8 @@ watch(() => route.path, resetForRoute)
 .eve-official-news__article { min-width: 0; }
 .eve-official-news__article h2 { margin: 12px 0; font-size: clamp(20px, 5vw, 26px); line-height: 1.4; overflow-wrap: anywhere; }
 .eve-official-news__article-summary { margin: 0 0 20px; color: var(--color-text-3); line-height: 1.7; }
-.eve-official-news__article-content { color: var(--color-text-1); font-size: 15px; line-height: 1.8; overflow-wrap: anywhere; }
-.eve-official-news__article-content :deep(img) { display: block; width: auto; max-width: 100%; height: auto; margin: 16px auto; border-radius: 6px; }
-.eve-official-news__article-content :deep(a) { color: rgb(var(--arcoblue-6)); overflow-wrap: anywhere; }
-.eve-official-news__article-content :deep(table) { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
-.eve-official-news__article-content :deep(td), .eve-official-news__article-content :deep(th) { padding: 6px 8px; border: 1px solid var(--color-border-2); }
-.eve-official-news__article-empty { color: var(--color-text-3); }
+.eve-official-news__article-notice { margin: 0 0 12px; color: var(--color-text-3); font-size: 13px; line-height: 1.6; }
+.eve-official-news__official-frame { display: block; width: 100%; min-height: min(680px, calc(100vh - 220px)); border: 1px solid var(--color-border-2); border-radius: 8px; background: var(--color-bg-1); }
 .eve-official-news__source-link { display: inline-flex; align-items: center; gap: 4px; margin-top: 24px; color: rgb(var(--arcoblue-6)); }
 
 @media (min-width: 760px) {

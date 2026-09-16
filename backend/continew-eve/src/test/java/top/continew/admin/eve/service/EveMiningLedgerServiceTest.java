@@ -88,14 +88,20 @@ class EveMiningLedgerServiceTest {
             .thenReturn(new EveMeContextResp(10L, null, new EveMeContextResp.CorporationInfo(30L, "测试军团", "TEST"), null, null, List
                 .of(), null, List.of()));
         when(corporationMapper.selectByTenantAndCorporationId(10L, 30L)).thenReturn(corporation);
-        when(ledgerMapper.summarize(10L, 20L, null, null, null, fromDate, toDate, "铁")).thenReturn(Map
-            .of("quantity", 1200L, "entryCount", 12L, "observerCount", 2L, "characterCount", 3L, "mineralTypeCount", 4L));
-        when(ledgerMapper.summarizeTimeline(10L, 20L, fromDate, toDate, "铁")).thenReturn(List.of(Map
-            .of("recordedAt", java.sql.Date.valueOf(fromDate), "quantity", 800L, "entryCount", 8L)));
-        when(ledgerMapper.summarizeObservers(10L, 20L, fromDate, toDate, "铁", 10)).thenReturn(List.of(Map
-            .of("observerName", "月矿堡", "quantity", 900L, "entryCount", 9L)));
-        when(ledgerMapper.summarizeCharacters(10L, 20L, fromDate, toDate, "铁", 10)).thenReturn(List.of(Map
-            .of("characterName", "矿工甲", "quantity", 700L, "entryCount", 7L)));
+        when(ledgerMapper.summarize(10L, 20L, 30L, null, null, null, fromDate, toDate, "铁")).thenReturn(Map
+            .of("quantity", 1200L, "entryCount", 12L, "observerCount", 2L, "characterCount", 3L,
+                "mineralTypeCount", 4L, "externalQuantity", 200L, "externalEntryCount", 2L,
+                "externalCharacterCount", 1L));
+        when(ledgerMapper.summarizeTimeline(10L, 20L, 30L, fromDate, toDate, "铁")).thenReturn(List.of(Map
+            .of("recordedAt", java.sql.Date.valueOf(fromDate), "quantity", 800L, "entryCount", 8L,
+                "externalQuantity", 100L)));
+        when(ledgerMapper.summarizeObservers(10L, 20L, 30L, fromDate, toDate, "铁")).thenReturn(List.of(Map
+            .of("observerName", "月矿堡", "quantity", 900L, "entryCount", 9L, "externalQuantity", 100L)));
+        when(ledgerMapper.summarizeCharacters(10L, 20L, 30L, fromDate, toDate, "铁", 10)).thenReturn(List.of(Map
+            .of("characterName", "矿工甲", "quantity", 700L, "entryCount", 7L, "externalQuantity", 100L)));
+        when(ledgerMapper.summarizeMinerals(10L, 20L, 30L, fromDate, toDate, "铁", 10)).thenReturn(List.of(Map
+            .of("typeId", 45490L, "typeName", "沸石", "quantity", 700L, "entryCount", 7L,
+                "externalQuantity", 100L)));
 
         UserContextHolder.setContext(userContext, false);
         try {
@@ -103,10 +109,12 @@ class EveMiningLedgerServiceTest {
 
             assertThat(result.corporation().name()).isEqualTo("测试军团");
             assertThat(result.corporation().quantity()).isEqualTo(1200L);
-            assertThat(result.timeline()).containsExactly(new EveMiningAnalyticsResp.TimelinePoint(fromDate, 800L, 8L));
-            assertThat(result.observers()).containsExactly(new EveMiningAnalyticsResp.ObserverRanking("月矿堡", 900L, 9L));
+            assertThat(result.timeline()).containsExactly(new EveMiningAnalyticsResp.TimelinePoint(fromDate, 800L, 8L, 100L));
+            assertThat(result.observers()).containsExactly(new EveMiningAnalyticsResp.ObserverRanking("月矿堡", 900L, 9L, 100L));
             assertThat(result.characters())
-                .containsExactly(new EveMiningAnalyticsResp.CharacterRanking("矿工甲", 700L, 7L));
+                .containsExactly(new EveMiningAnalyticsResp.CharacterRanking("矿工甲", 700L, 7L, 100L));
+            assertThat(result.minerals())
+                .containsExactly(new EveMiningAnalyticsResp.MineralRanking(45490, "沸石", 700L, 7L, 100L));
         } finally {
             UserContextHolder.clearContext();
         }

@@ -25,22 +25,29 @@ import java.util.List;
  * @author zhaoyuqing
  */
 public record EveMiningAnalyticsResp(CorporationOverview corporation, List<TimelinePoint> timeline,
-                                     List<ObserverRanking> observers, List<CharacterRanking> characters) {
+                                     List<ObserverRanking> observers, List<CharacterRanking> characters,
+                                     List<MineralRanking> minerals) {
 
     /** 当前军团在筛选范围内的开采概览。 */
     public record CorporationOverview(String name, String ticker, long quantity, long entryCount, int observerCount,
-                                      int characterCount, int mineralTypeCount) {
+                                      int characterCount, int mineralTypeCount, long externalQuantity,
+                                      long externalEntryCount, int externalCharacterCount) {
     }
 
     /** 单个开采日期的趋势统计。 */
-    public record TimelinePoint(LocalDate recordedAt, long quantity, long entryCount) {
+    public record TimelinePoint(LocalDate recordedAt, long quantity, long entryCount, long externalQuantity) {
     }
 
     /** 单个月矿建筑或观察者的开采排名。 */
-    public record ObserverRanking(String observerName, long quantity, long entryCount) {
+    public record ObserverRanking(String observerName, long quantity, long entryCount, long externalQuantity) {
     }
 
     /** 单个玩家的开采排名。 */
-    public record CharacterRanking(String characterName, long quantity, long entryCount) {
+    public record CharacterRanking(String characterName, long quantity, long entryCount, long externalQuantity) {
+    }
+
+    /** 单种月矿的开采占比与外部开采量。 */
+    public record MineralRanking(Integer typeId, String typeName, long quantity, long entryCount,
+                                 long externalQuantity) {
     }
 }

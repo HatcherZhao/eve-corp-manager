@@ -223,6 +223,22 @@ public class EveStaticReferenceService {
             .getTotal());
     }
 
+    /** 按给定类型集合分页查询资料，用于军团月矿等动态品类目录。 */
+    public PageResp<EveStaticTypeReferenceResp> pageTypesByIds(int page,
+                                                               int size,
+                                                               String keyword,
+                                                               List<String> marketCategoryPath,
+                                                               Collection<Integer> typeIds) {
+        if (typeIds == null || typeIds.isEmpty()) {
+            return new PageResp<>(List.of(), 0L);
+        }
+        LambdaQueryWrapper<EveStaticTypeReferenceDO> query = buildTypeQuery(keyword, marketCategoryPath, false)
+            .in(EveStaticTypeReferenceDO::getTypeId, typeIds);
+        Page<EveStaticTypeReferenceDO> result = typeReferenceMapper.selectPage(new Page<>(page, size), query);
+        return new PageResp<>(result.getRecords().stream().map(EveStaticReferenceService::toTypeResp).toList(), result
+            .getTotal());
+    }
+
     /** 导出当前关键词与分类树节点筛选后的完整静态物品类型资料。 */
     public List<EveStaticTypeReferenceResp> listTypesForExport(String keyword,
                                                                List<String> marketCategoryPath,

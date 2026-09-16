@@ -52,10 +52,14 @@ x-required-roles 为空不能解释为无权限要求；例如成员角色列表
 | `GET /corporations/{corporation_id}/wallets/{division}/journal/` | esi-wallet.read_corporation_wallets.v1 | Accountant, Junior_Accountant | page | 3600 |
 | `GET /corporations/{corporation_id}/wallets/{division}/transactions/` | esi-wallet.read_corporation_wallets.v1 | Accountant, Junior_Accountant | from_id | 3600 |
 | `GET /universe/moons/{moon_id}/` | 公开/未声明 | 扩展字段未声明，需读描述 | 无分页参数 | 未声明 |
+| `GET /universe/regions/`、`/universe/regions/{region_id}/` | 公开/未声明 | 公开 | 无分页参数 | 未声明 |
+| `GET /universe/constellations/`、`/universe/constellations/{constellation_id}/` | 公开/未声明 | 公开 | 无分页参数 | 未声明 |
 | `GET /universe/structures/` | 公开/未声明 | 扩展字段未声明，需读描述 | 无分页参数 | 3600 |
 | `GET /universe/structures/{structure_id}/` | esi-universe.read_structures.v1 | 扩展字段未声明，需读描述 | 无分页参数 | 3600 |
 | `GET /universe/systems/` | 公开/未声明 | 扩展字段未声明，需读描述 | 无分页参数 | 未声明 |
 | `GET /universe/systems/{system_id}/` | 公开/未声明 | 扩展字段未声明，需读描述 | 无分页参数 | 未声明 |
+| `GET /universe/stargates/{stargate_id}/` | 公开/未声明 | 公开 | 无分页参数 | 未声明 |
+| `GET /route/{origin}/{destination}/` | 公开/未声明 | 公开 | 无分页参数 | 未声明 |
 | `GET /universe/types/` | 公开/未声明 | 扩展字段未声明，需读描述 | page | 未声明 |
 | `GET /universe/types/{type_id}/` | 公开/未声明 | 扩展字段未声明，需读描述 | 无分页参数 | 未声明 |
 
@@ -72,5 +76,8 @@ x-required-roles 为空不能解释为无权限要求；例如成员角色列表
 - `GET /corporations/{corporation_id}/structures/`：corporation_id、fuel_expires、name、next_reinforce_apply、next_reinforce_hour、profile_id、reinforce_hour、services、state、state_timer_end、state_timer_start、structure_id、system_id、type_id、unanchors_at
 - `GET /universe/structures/`：见快照 schema（标量/引用）
 - `GET /universe/structures/{structure_id}/`：name、owner_id、position、solar_system_id、type_id
+- `GET /universe/systems/{system_id}/`：name、constellation_id、security_status、position(x/y/z)、stargates、stations（星域由星座层级关联）
+- `GET /universe/stargates/{stargate_id}/`：system_id、destination(system_id/stargate_id)、position、type_id
+- `GET /route/{origin}/{destination}/`：按跳跃顺序返回的 solar_system_id 数组
 
 完整定义、required/可空字段、批次上限、枚举和错误返回见 [国服快照](../../references/serenity-swagger-2026-09-06.json)，机器可读索引见 [endpoint-index.json](../../references/endpoint-index.json)。

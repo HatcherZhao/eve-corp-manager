@@ -31,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 import top.continew.admin.eve.model.EveMarketDetailResp;
 import top.continew.admin.eve.model.EveMarketItemResp;
 import top.continew.admin.eve.model.EveMarketSyncResp;
+import top.continew.admin.eve.model.enums.EveMineralPriceCategory;
 import top.continew.admin.eve.service.EveMarketService;
 import top.continew.starter.extension.crud.model.resp.PageResp;
 
@@ -66,6 +67,17 @@ public class EveMarketController {
         return marketService.page(page, size, keyword, List
             .of(blank(marketCategoryL1), blank(marketCategoryL2), blank(marketCategoryL3), blank(marketCategoryL4), blank(marketCategoryL5), blank(marketCategoryL6)), Boolean.TRUE
                 .equals(unclassified));
+    }
+
+    /** 按军团月矿、普通矿物、冰矿或全部月矿目录读取吉他单价。 */
+    @GetMapping("/minerals")
+    @Operation(summary = "查询矿物吉他参考价")
+    @SaCheckPermission("eve:market:view")
+    public PageResp<EveMarketItemResp> minerals(@RequestParam(defaultValue = "1") @Min(1) int page,
+                                                @RequestParam(defaultValue = "20") @Min(1) @Max(20) int size,
+                                                @RequestParam EveMineralPriceCategory category,
+                                                @RequestParam(required = false) String keyword) {
+        return marketService.mineralPage(page, size, keyword, category);
     }
 
     /** 查看物品的吉他报价、买卖单与每日价格历史。 */

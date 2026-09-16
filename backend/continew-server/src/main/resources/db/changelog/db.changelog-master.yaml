@@ -114,3 +114,9 @@ databaseChangeLog:
       file: db/changelog/mysql/eve/042_moon_mining_compression_valuation.sql
   - include:
       file: db/changelog/mysql/eve/043_asset_valuation.sql
+  - include:
+      file: db/changelog/mysql/eve/044_star_map.sql
+  - include:
+      file: db/changelog/mysql/eve/045_mineral_price_directory.sql
+  - include:
+      file: db/changelog/mysql/eve/046_mineral_price_directory_menu_id_fix.sql

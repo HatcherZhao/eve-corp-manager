@@ -125,8 +125,10 @@ public class EveMiningLedgerService {
             .orderByDesc(EveMiningLedgerDO::getRecordedAt, EveMiningLedgerDO::getQuantity)
             .orderByAsc(EveMiningLedgerDO::getCharacterName, EveMiningLedgerDO::getTypeName);
         Page<EveMiningLedgerDO> result = ledgerMapper.selectPage(new Page<>(page, size), query);
-        return new PageResp<>(result.getRecords().stream().map(EveMiningLedgerService::toResp).toList(), result
-            .getTotal());
+        return new PageResp<>(result.getRecords()
+            .stream()
+            .map(item -> toResp(item, corporation.getCorporationId()))
+            .toList(), result.getTotal());
     }
 
     /** 在数据库内汇总当前筛选条件，避免页面为统计重复加载全部明细。 */
@@ -140,12 +142,15 @@ public class EveMiningLedgerService {
         UserContext context = UserContextHolder.getContext();
         EveCorporationDO corporation = requireCurrentCorporation(context.getTenantId());
         Map<String, Object> summary = ledgerMapper.summarize(context.getTenantId(), corporation
-            .getId(), observerId, characterId, typeId, fromDate, toDate, normalizeKeyword(keyword));
+            .getId(), corporation.getCorporationId(), observerId, characterId, typeId, fromDate, toDate,
+            normalizeKeyword(keyword));
         return new EveMiningLedgerSummaryResp(number(summary.get("quantity")).longValue(), number(summary
             .get("entryCount")).longValue(), number(summary.get("observerCount")).intValue(), number(summary
                 .get("characterCount")).intValue(), number(summary.get("mineralTypeCount"))
                     .intValue(), toLocalDate(summary.get("latestRecordedAt")), toLocalDateTime(summary
-                        .get("latestSynchronizedAt")));
+                        .get("latestSynchronizedAt")), number(summary.get("externalQuantity")).longValue(), number(
+                            summary.get("externalEntryCount")).longValue(), number(summary
+                                .get("externalCharacterCount")).intValue());
     }
 
     /**
@@ -181,30 +186,44 @@ public class EveMiningLedgerService {
         EveCorporationDO corporation = requireCurrentCorporation(context.getTenantId());
         String normalizedKeyword = normalizeKeyword(keyword);
         Map<String, Object> summary = ledgerMapper.summarize(context.getTenantId(), corporation
-            .getId(), null, null, null, fromDate, toDate, normalizedKeyword);
+            .getId(), corporation.getCorporationId(), null, null, null, fromDate, toDate, normalizedKeyword);
         EveMiningAnalyticsResp.CorporationOverview overview = new EveMiningAnalyticsResp.CorporationOverview(corporation
             .getName(), corporation.getTicker(), number(summary.get("quantity")).longValue(), number(summary
                 .get("entryCount")).longValue(), number(summary.get("observerCount")).intValue(), number(summary
-                    .get("characterCount")).intValue(), number(summary.get("mineralTypeCount")).intValue());
+                    .get("characterCount")).intValue(), number(summary.get("mineralTypeCount")).intValue(), number(
+                        summary.get("externalQuantity")).longValue(), number(summary.get("externalEntryCount"))
+                            .longValue(), number(summary.get("externalCharacterCount")).intValue());
         List<EveMiningAnalyticsResp.TimelinePoint> timeline = ledgerMapper.summarizeTimeline(context
-            .getTenantId(), corporation.getId(), fromDate, toDate, normalizedKeyword)
+            .getTenantId(), corporation.getId(), corporation.getCorporationId(), fromDate, toDate, normalizedKeyword)
             .stream()
             .map(item -> new EveMiningAnalyticsResp.TimelinePoint(toLocalDate(item.get("recordedAt")), number(item
-                .get("quantity")).longValue(), number(item.get("entryCount")).longValue()))
+                .get("quantity")).longValue(), number(item.get("entryCount")).longValue(), number(item
+                    .get("externalQuantity")).longValue()))
             .toList();
         List<EveMiningAnalyticsResp.ObserverRanking> observers = ledgerMapper.summarizeObservers(context
-            .getTenantId(), corporation.getId(), fromDate, toDate, normalizedKeyword, ANALYTICS_RANKING_LIMIT)
+            .getTenantId(), corporation.getId(), corporation.getCorporationId(), fromDate, toDate, normalizedKeyword)
             .stream()
             .map(item -> new EveMiningAnalyticsResp.ObserverRanking(text(item.get("observerName")), number(item
-                .get("quantity")).longValue(), number(item.get("entryCount")).longValue()))
+                .get("quantity")).longValue(), number(item.get("entryCount")).longValue(), number(item
+                    .get("externalQuantity")).longValue()))
             .toList();
         List<EveMiningAnalyticsResp.CharacterRanking> characters = ledgerMapper.summarizeCharacters(context
-            .getTenantId(), corporation.getId(), fromDate, toDate, normalizedKeyword, ANALYTICS_RANKING_LIMIT)
+            .getTenantId(), corporation.getId(), corporation.getCorporationId(), fromDate, toDate, normalizedKeyword,
+                ANALYTICS_RANKING_LIMIT)
             .stream()
             .map(item -> new EveMiningAnalyticsResp.CharacterRanking(text(item.get("characterName")), number(item
-                .get("quantity")).longValue(), number(item.get("entryCount")).longValue()))
+                .get("quantity")).longValue(), number(item.get("entryCount")).longValue(), number(item
+                    .get("externalQuantity")).longValue()))
             .toList();
-        return new EveMiningAnalyticsResp(overview, timeline, observers, characters);
+        List<EveMiningAnalyticsResp.MineralRanking> minerals = ledgerMapper.summarizeMinerals(context.getTenantId(),
+            corporation.getId(), corporation.getCorporationId(), fromDate, toDate, normalizedKeyword,
+            ANALYTICS_RANKING_LIMIT)
+            .stream()
+            .map(item -> new EveMiningAnalyticsResp.MineralRanking(number(item.get("typeId")).intValue(), text(item
+                .get("typeName")), number(item.get("quantity")).longValue(), number(item.get("entryCount"))
+                    .longValue(), number(item.get("externalQuantity")).longValue()))
+            .toList();
+        return new EveMiningAnalyticsResp(overview, timeline, observers, characters, minerals);
     }
 
     /** 同步当前军团的完整观察者清单和所有可读取账本页。 */
@@ -670,11 +689,12 @@ public class EveMiningLedgerService {
     }
 
     /** 转换为不含数据源令牌、站内授权或敏感内部关系的页面数据。 */
-    private static EveMiningLedgerResp toResp(EveMiningLedgerDO source) {
+    private static EveMiningLedgerResp toResp(EveMiningLedgerDO source, Long corporationId) {
         return new EveMiningLedgerResp(source.getId(), source.getObserverId(), source.getObserverName(), String
             .valueOf(source.getCharacterId()), source.getCharacterName(), String.valueOf(source
                 .getRecordedCorporationId()), source.getTypeId(), source.getTypeName(), source.getRecordedAt(), source
-                    .getQuantity(), source.getLastSeenAt(), source.getSourceExpiresAt());
+                    .getQuantity(), source.getLastSeenAt(), source.getSourceExpiresAt(), Objects.equals(source
+                        .getRecordedCorporationId(), corporationId));
     }
 
     /** 观察者与一条原始账本记录及其响应缓存元数据。 */

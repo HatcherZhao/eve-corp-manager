@@ -79,6 +79,8 @@ public class EveOfficialNewsService {
         .compile("(?is)<span\\s+class=\\\"kindname\\\"[^>]*data-name=\\\"([^\\\"]+)\\\"");
     private static final Pattern SUMMARY_PATTERN = Pattern
         .compile("(?is)<span\\s+class=\\\"comment\\\"[^>]*>(.*?)</span>");
+    private static final Pattern VERSION_ITEM_PATTERN = Pattern
+        .compile("(?is)<div\\b[^>]*\\bclass=\\\"[^\"]*\\bgallery_item\\b[^\"]*\\\"[^>]*>\\s*<img\\b[^>]*\\bsrc=\\\"([^\"]+)\\\"[^>]*>\\s*<a\\b(?=[^>]*\\bhref=\\\"([^\"]+)\\\")(?=[^>]*\\btitle=\\\"([^\"]+)\\\")[^>]*>");
     private static final Pattern TITLE_PATTERN = Pattern.compile("(?is)<h1\\s+class=\\\"artTitle\\\"[^>]*>(.*?)</h1>");
     private static final Pattern DATE_PATTERN = Pattern
         .compile("(?is)<span\\s+class=\\\"artDate\\\"[^>]*>([^<]+)</span>");
@@ -116,10 +118,15 @@ public class EveOfficialNewsService {
             .eq(EveOfficialNewsDO::getDeleted, 0L)
             .orderByDesc(EveOfficialNewsDO::getPublishedAt)
             .orderByDesc(EveOfficialNewsDO::getId);
-        if (category != null && !category.isBlank() && !"ALL".equals(category)) {
+        if (Source.VERSION.code.equals(category)) {
+            // 现代版本日志发布在官网“更新通知”栏目，历史版本保留在独立的版本专题页。
+            query.and(item -> item.eq(EveOfficialNewsDO::getSourceCode, Source.UPDATE_NOTICE.code)
+                .or()
+                .eq(EveOfficialNewsDO::getSourceCode, Source.VERSION.code));
+        } else if (category != null && !category.isBlank() && !"ALL".equals(category)) {
             query.eq(EveOfficialNewsDO::getSourceCode, category);
         } else {
-            query.ne(EveOfficialNewsDO::getSourceCode, Source.VERSION.code);
+            query.notIn(EveOfficialNewsDO::getSourceCode, Source.UPDATE_NOTICE.code, Source.VERSION.code);
         }
         if (keyword != null && !keyword.isBlank()) {
             String value = keyword.trim();
@@ -226,10 +233,10 @@ public class EveOfficialNewsService {
         EveOfficialNewsDO existing = newsMapper.selectOne(new LambdaQueryWrapper<EveOfficialNewsDO>()
             .eq(EveOfficialNewsDO::getOriginalUrl, item.url)
             .eq(EveOfficialNewsDO::getDeleted, 0L));
-        boolean shouldFetchContent = existing == null || existing.getLastContentCheckedAt() == null || existing
+        boolean shouldFetchContent = source != Source.VERSION && (existing == null || existing.getLastContentCheckedAt() == null || existing
             .getLastContentCheckedAt()
             .plus(properties.getContentRecheckInterval())
-            .isBefore(synchronizedAt);
+            .isBefore(synchronizedAt));
         ArticleDetail detail = shouldFetchContent ? parseDetail(item, downloadHtml(item.url)) : null;
         if (existing == null) {
             EveOfficialNewsDO created = new EveOfficialNewsDO();
@@ -260,6 +267,15 @@ public class EveOfficialNewsService {
         target.setSummary(item.summary);
         target.setOriginalUrl(item.url);
         target.setLastSyncedAt(synchronizedAt);
+        if (source == Source.VERSION) {
+            // 版本专题页使用官网原页嵌入阅读，列表仅维护标题、封面和专题地址。
+            target.setContentHtml(null);
+            target.setContentText(item.title);
+            target.setCoverUrl(item.coverUrl);
+            target.setContentHash(sha256(item.url + item.title + item.coverUrl));
+            target.setLastContentCheckedAt(synchronizedAt);
+            return;
+        }
         if (detail != null) {
             target.setContentHtml(detail.safeHtml);
             target.setContentText(detail.text);
@@ -304,6 +320,9 @@ public class EveOfficialNewsService {
 
     /** 从官网栏目 HTML 提取稳定列表项，并为页面结构小改保留受限的通用链接回退。 */
     private static List<ListItem> parseList(Source source, String html) {
+        if (source == Source.VERSION) {
+            return parseVersionList(html);
+        }
         List<ListItem> items = parseListWithPattern(source, html, LIST_ITEM_PATTERN);
         return items.isEmpty() ? parseListWithPattern(source, html, GENERIC_LINK_PATTERN) : items;
     }
@@ -324,7 +343,23 @@ public class EveOfficialNewsService {
             }
             String category = extract(KIND_PATTERN, innerHtml);
             String summary = normalizeText(extract(SUMMARY_PATTERN, innerHtml));
-            result.add(new ListItem(title, summary, category == null ? source.label : category, url));
+            result.add(new ListItem(title, summary, category == null ? source.label : category, url, null));
+        }
+        return result;
+    }
+
+    /** 解析官网版本专题的图文卡片；该页不是标准新闻列表，不能复用新闻正则。 */
+    static List<ListItem> parseVersionList(String html) {
+        List<ListItem> result = new ArrayList<>();
+        Matcher matcher = VERSION_ITEM_PATTERN.matcher(html);
+        while (matcher.find()) {
+            String title = normalizeText(matcher.group(3));
+            String url = normalizeArticleUrl(Source.VERSION.listUrl, matcher.group(2));
+            String coverUrl = normalizeImageUrl(Source.VERSION.listUrl, matcher.group(1));
+            if (title.isBlank() || url == null || coverUrl == null || result.stream().anyMatch(item -> item.url.equals(url))) {
+                continue;
+            }
+            result.add(new ListItem(title, "", Source.VERSION.label, url, coverUrl));
         }
         return result;
     }
@@ -440,6 +475,15 @@ public class EveOfficialNewsService {
             requireOfficialArticleUri(uri.toString());
             return uri.toString();
         } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** 将版本专题的封面相对地址解析为经过域名白名单校验的 HTTPS 图片地址。 */
+    private static String normalizeImageUrl(String listUrl, String rawUrl) {
+        try {
+            return allowedUrl(URI.create(listUrl).resolve(rawUrl).normalize().toString(), true);
+        } catch (IllegalArgumentException e) {
             return null;
         }
     }
@@ -583,7 +627,7 @@ public class EveOfficialNewsService {
     }
 
     /** 官网栏目页中的单篇新闻摘要。 */
-    private record ListItem(String title, String summary, String category, String url) {
+    record ListItem(String title, String summary, String category, String url, String coverUrl) {
     }
 
     /** 官网原文页解析结果。 */

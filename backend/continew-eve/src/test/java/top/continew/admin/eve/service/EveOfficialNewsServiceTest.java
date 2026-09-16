@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import top.continew.starter.core.exception.BusinessException;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -69,5 +70,19 @@ class EveOfficialNewsServiceTest {
         assertThat(EveOfficialNewsService.parsePublishedAt("2026-08-27")).isEqualTo(LocalDateTime
             .of(2026, 8, 27, 0, 0));
         assertThat(EveOfficialNewsService.parsePublishedAt("不是日期")).isNull();
+    }
+
+    /** 版本专题页中的图文卡片应同步为可阅读的版本条目，不能被新闻列表规则忽略。 */
+    @Test
+    void shouldParseOfficialVersionCards() {
+        String html = "<div class=\"gallery_item tsslide\"><img src=\"https://xz.res.netease.com/eve/version.jpg\" alt=\"版本封面\"><a class=\"tbnLink\" href=\"yc121-12.html\" target=\"_blank\" title=\"YC121.12\"></a></div>";
+
+        List<EveOfficialNewsService.ListItem> items = EveOfficialNewsService.parseVersionList(html);
+
+        assertThat(items).singleElement().satisfies(item -> {
+            assertThat(item.title()).isEqualTo("YC121.12");
+            assertThat(item.url()).isEqualTo("https://evepc.163.com/updates/yc121-12.html");
+            assertThat(item.coverUrl()).isEqualTo("https://xz.res.netease.com/eve/version.jpg");
+        });
     }
 }

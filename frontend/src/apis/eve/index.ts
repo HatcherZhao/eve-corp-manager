@@ -17,6 +17,95 @@ export interface EveCapability {
   requiredGameRole?: string
 }
 
+export interface EveStarMapCoverage {
+  indexedSystemCount: number
+  synchronizedSystemCount: number
+  stargateCount: number
+  lastSuccessfulAt?: string
+  lastFailureAt?: string
+  failureCode?: string
+}
+
+export interface EveStarMapAnnotation {
+  id: string
+  systemId: string
+  category: string
+  title: string
+  note?: string
+  colorKey: string
+  expiresAt?: string
+}
+
+export interface EveStarMapGraph {
+  coverage: EveStarMapCoverage
+  nodes: Array<{
+    systemId: string
+    name: string
+    regionId?: string
+    constellationId?: string
+    securityStatus?: number
+    x?: number
+    y?: number
+    hasStructure: boolean
+    hasMoonExtraction: boolean
+    hasAsset: boolean
+    trackedMemberCount: number
+  }>
+  edges: Array<{ fromSystemId: string, toSystemId: string }>
+  annotations: EveStarMapAnnotation[]
+}
+
+export interface EveStarMapSuggestion {
+  systemId: string
+  name: string
+  regionName?: string
+  constellationName?: string
+  breadcrumb: string
+}
+
+export interface EveStarMapSystem {
+  systemId: string
+  name: string
+  regionId?: string
+  regionName?: string
+  constellationId?: string
+  constellationName?: string
+  securityStatus?: number
+  synchronizedAt?: string
+  neighbors: Array<{ systemId: string, name: string }>
+  structures: Array<{ structureId: string, name?: string, typeName?: string, state?: string, fuelExpiresAt?: string }>
+  annotations: Array<Omit<EveStarMapAnnotation, 'systemId'>>
+}
+
+export interface EveStarMapRoute {
+  id?: string
+  title: string
+  description?: string
+  originSystemId: string
+  destinationSystemId: string
+  jumpCount: number
+  validatedAt?: string
+  archived: boolean
+  points: Array<{ order: number, systemId: string, systemName: string, kind: 'ORIGIN' | 'VIA' | 'DESTINATION' | 'COMPUTED' }>
+}
+
+export interface EveStarMapRouteReq {
+  title: string
+  description?: string
+  originSystemId: string
+  destinationSystemId: string
+  viaSystemIds?: string[]
+}
+
+export interface EveStarMapAnnotationReq {
+  systemId: string
+  category: string
+  title: string
+  note?: string
+  colorKey?: string
+  expiresAt?: string
+}
+
 export interface EveContext {
   tenantId: string
   character?: { id: string, characterId: string, name: string }
@@ -317,6 +406,8 @@ export interface EveMiningLedger {
   quantity: number
   lastSeenAt: string
   sourceExpiresAt?: string
+  /** 国服账本记录当日是否属于当前军团；false 表示外部角色采集。 */
+  currentCorporationMember: boolean
 }
 
 export interface EveMiningLedgerQuery extends PageQuery {
@@ -337,6 +428,9 @@ export interface EveMiningLedgerSummary {
   mineralTypeCount: number
   latestRecordedAt?: string
   latestSynchronizedAt?: string
+  externalQuantity: number
+  externalEntryCount: number
+  externalCharacterCount: number
 }
 
 /** 当前筛选范围内按高密度月矿吉他卖单计算的压缩后估值。 */
@@ -371,21 +465,34 @@ export interface EveMiningAnalytics {
     observerCount: number
     characterCount: number
     mineralTypeCount: number
+    externalQuantity: number
+    externalEntryCount: number
+    externalCharacterCount: number
   }
   timeline: Array<{
     recordedAt: string
     quantity: number
     entryCount: number
+    externalQuantity: number
   }>
   observers: Array<{
     observerName?: string
     quantity: number
     entryCount: number
+    externalQuantity: number
   }>
   characters: Array<{
     characterName?: string
     quantity: number
     entryCount: number
+    externalQuantity: number
+  }>
+  minerals: Array<{
+    typeId: number
+    typeName: string
+    quantity: number
+    entryCount: number
+    externalQuantity: number
   }>
 }
 
@@ -501,6 +608,14 @@ export interface EveMarketQuery extends PageQuery {
   marketCategoryL5?: string
   marketCategoryL6?: string
   unclassified?: boolean
+}
+
+/** 矿物价格页固定的四类目录。 */
+export type EveMineralPriceCategory = 'CORPORATION_MOON' | 'ORE' | 'ICE' | 'MOON'
+
+export interface EveMineralPriceQuery extends PageQuery {
+  category: EveMineralPriceCategory
+  keyword?: string
 }
 
 /** 吉他市场订单簿中的单条买单或卖单。 */
@@ -780,6 +895,56 @@ export function getEveContext() {
   return http.get<EveContext>('/eve/me/context')
 }
 
+/** 查询星图公开底图同步覆盖率。 */
+export function getEveStarMapCoverage() {
+  return http.get<EveStarMapCoverage>('/eve/starmap/coverage')
+}
+
+/** 查询受节点上限保护的二维星图。 */
+export function getEveStarMapGraph(regionId?: string) {
+  return http.get<EveStarMapGraph>('/eve/starmap/graph', { regionId })
+}
+
+/** 搜索静态资料中已收录的星系。 */
+export function suggestEveStarMapSystems(keyword: string) {
+  return http.get<EveStarMapSuggestion[]>('/eve/starmap/systems/suggest', { keyword })
+}
+
+/** 查询星系详情及当前用户可查看的军团运营摘要。 */
+export function getEveStarMapSystem(systemId: string) {
+  return http.get<EveStarMapSystem>(`/eve/starmap/systems/${systemId}`)
+}
+
+/** 创建军团星图运营标注。 */
+export function createEveStarMapAnnotation(data: EveStarMapAnnotationReq) {
+  return http.post<EveStarMapAnnotation>('/eve/starmap/annotations', data)
+}
+
+/** 更新军团星图运营标注。 */
+export function updateEveStarMapAnnotation(annotationId: string, data: EveStarMapAnnotationReq) {
+  return http.put<EveStarMapAnnotation>(`/eve/starmap/annotations/${annotationId}`, data)
+}
+
+/** 归档军团星图运营标注。 */
+export function archiveEveStarMapAnnotation(annotationId: string) {
+  return http.del<void>(`/eve/starmap/annotations/${annotationId}`)
+}
+
+/** 调用国服路由接口预览一条路线。 */
+export function previewEveStarMapRoute(data: EveStarMapRouteReq) {
+  return http.post<EveStarMapRoute>('/eve/starmap/routes/preview', data)
+}
+
+/** 保存经过国服验证的军团共享路线。 */
+export function createEveStarMapRoute(data: EveStarMapRouteReq) {
+  return http.post<EveStarMapRoute>('/eve/starmap/routes', data)
+}
+
+/** 查询当前军团路线库。 */
+export function getEveStarMapRoutes() {
+  return http.get<EveStarMapRoute[]>('/eve/starmap/routes')
+}
+
 /** 查询当前军团各数据模块的同步新鲜度与脱敏失败分类。 */
 export function getEveDataFreshness() {
   return http.get<EveDataFreshness[]>('/eve/me/data-freshness')
@@ -930,6 +1095,11 @@ export function getEveStaticTypeCategories() {
 /** 按本系统的物品资料分类读取吉他贸易中心的参考报价。 */
 export function getEveMarket(query: EveMarketQuery) {
   return http.get<PageRes<EveMarketItem[]>>('/eve/market', query)
+}
+
+/** 按军团月矿、普通矿物、冰矿或全部月矿读取吉他参考单价。 */
+export function getEveMineralPrices(query: EveMineralPriceQuery) {
+  return http.get<PageRes<EveMarketItem[]>>('/eve/market/minerals', query)
 }
 
 /** 读取物品的吉他报价、买卖单与每日价格历史。 */

@@ -44,4 +44,12 @@ public interface EveCorporationMemberTrackingMapper extends BaseMapper<EveCorpor
         "</script>"})
     List<EveCorporationMemberTrackingDO> selectByRosterMemberIds(@Param("tenantId") Long tenantId,
                                                                  @Param("rosterMemberIds") List<Long> rosterMemberIds);
+
+    /** 按当前军团读取成员追踪快照，仅供已完成本站追踪权限校验的星图图层调用。 */
+    @Select("SELECT tracking.* FROM eve_corporation_member_tracking tracking INNER JOIN eve_corporation_roster_member roster "
+        + "ON roster.id = tracking.roster_member_id AND roster.tenant_id = tracking.tenant_id AND roster.deleted = 0 "
+        + "WHERE tracking.tenant_id = #{tenantId} AND roster.corporation_ref_id = #{corporationRefId} "
+        + "AND roster.status = 'ACTIVE' AND tracking.deleted = 0")
+    List<EveCorporationMemberTrackingDO> selectActiveByCorporation(@Param("tenantId") Long tenantId,
+                                                                   @Param("corporationRefId") Long corporationRefId);
 }

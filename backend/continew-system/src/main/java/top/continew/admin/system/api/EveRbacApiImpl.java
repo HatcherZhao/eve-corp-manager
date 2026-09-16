@@ -75,6 +75,9 @@ public class EveRbacApiImpl implements EveRbacApi {
         ALLOWED_PERMISSIONS.put("eve:members:organize", "成员分组与备注");
         ALLOWED_PERMISSIONS.put("eve:members:export", "成员数据导出");
         ALLOWED_PERMISSIONS.put("eve:members:history:view", "成员同步历史");
+        ALLOWED_PERMISSIONS.put("eve:starmap:view", "军团星图与路线查看");
+        ALLOWED_PERMISSIONS.put("eve:starmap:annotation:manage", "星图运营标注维护");
+        ALLOWED_PERMISSIONS.put("eve:starmap:route:manage", "军团路线维护");
     }
 
     private final RoleMapper roleMapper;

@@ -14,18 +14,20 @@
  * limitations under the License.
  */
 
-package top.continew.admin.eve.model;
-
-import java.time.LocalDate;
-import java.time.LocalDateTime;
+package top.continew.admin.eve.model.enums;
 
 /**
- * 当前筛选条件下的采矿账本汇总。
+ * 矿物价格目录的固定分类。
  *
  * @author zhaoyuqing
  */
-public record EveMiningLedgerSummaryResp(long quantity, long entryCount, int observerCount, int characterCount,
-                                         int mineralTypeCount, LocalDate latestRecordedAt,
-                                         LocalDateTime latestSynchronizedAt, long externalQuantity,
-                                         long externalEntryCount, int externalCharacterCount) {
+public enum EveMineralPriceCategory {
+    /** 当前军团月矿观察者账本中出现过的月矿品类。 */
+    CORPORATION_MOON,
+    /** evedata 标注为标准矿石的全部普通矿物。 */
+    ORE,
+    /** evedata 标注为冰矿的全部冰矿。 */
+    ICE,
+    /** evedata 标注为卫星矿石的全部月矿。 */
+    MOON
 }
