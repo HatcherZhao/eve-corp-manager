@@ -17,21 +17,28 @@
 package top.continew.admin.controller.eve;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import cn.dev33.satoken.annotation.SaIgnore;
+import com.feiniaojin.gracefulresponse.api.ExcludeFromGracefulResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import top.continew.admin.eve.model.EveOfficialNewsResp;
+import top.continew.admin.eve.model.EveOfficialNewsDocumentResp;
 import top.continew.admin.eve.model.EveOfficialNewsSyncResp;
 import top.continew.admin.eve.model.EveOfficialNewsSyncStatusResp;
 import top.continew.admin.eve.service.EveOfficialNewsService;
 import top.continew.starter.extension.crud.model.resp.PageResp;
+
+import java.time.Duration;
 
 /**
  * 网易 EVE 国服官网新闻活动的站内阅读与同步接口。
@@ -63,6 +70,28 @@ public class EveOfficialNewsController {
     @SaCheckPermission("eve:news:view")
     public EveOfficialNewsResp detail(@RequestParam String originalUrl) {
         return officialNewsService.detail(originalUrl);
+    }
+
+    /** 获取供 sandbox iframe 呈现的官网原页静态文档。 */
+    @GetMapping("/document")
+    @Operation(summary = "查询官网资讯原页文档")
+    @SaCheckPermission("eve:news:view")
+    public EveOfficialNewsDocumentResp articleDocument(@RequestParam String originalUrl) {
+        return new EveOfficialNewsDocumentResp(officialNewsService.articleDocument(originalUrl));
+    }
+
+    /** 将网易封面图片转为本站响应，避免浏览器直接跨站加载时被防盗链拦截。 */
+    @ExcludeFromGracefulResponse
+    @SaIgnore
+    @GetMapping("/image")
+    @Operation(summary = "读取官网资讯图片")
+    public ResponseEntity<byte[]> image(@RequestParam String url) {
+        EveOfficialNewsService.OfficialImage image = officialNewsService.image(url);
+        return ResponseEntity.ok()
+            .contentType(image.contentType())
+            .contentLength(image.body().length)
+            .cacheControl(CacheControl.maxAge(Duration.ofDays(30)).cachePublic().staleIfError(Duration.ofDays(365)))
+            .body(image.body());
     }
 
     /** 查询页面右上角使用的单行同步状态。 */

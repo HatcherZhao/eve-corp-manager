@@ -871,6 +871,11 @@ export interface EveOfficialNewsQuery extends PageQuery {
   keyword?: string
 }
 
+/** 已剥离主动内容、可用于 sandbox iframe 的官网原页文档。 */
+export interface EveOfficialNewsDocument {
+  document: string
+}
+
 /** 官网资讯各栏目最近一次检查结果，供页面显示数据新鲜度。 */
 export interface EveOfficialNewsSyncStatus {
   lastSuccessfulAt?: string
@@ -1225,6 +1230,11 @@ export function getEveOfficialNews(query: EveOfficialNewsQuery) {
 /** 按官网原文地址读取已净化的完整资讯正文。 */
 export function getEveOfficialNewsDetail(originalUrl: string) {
   return http.get<EveOfficialNews>('/eve/news/detail', { originalUrl })
+}
+
+/** 获取可放入 sandbox iframe 的官网原页静态文档。 */
+export function getEveOfficialNewsArticleDocument(originalUrl: string) {
+  return http.get<EveOfficialNewsDocument>('/eve/news/document', { originalUrl })
 }
 
 /** 查询国服官网资讯最近一次同步状态。 */

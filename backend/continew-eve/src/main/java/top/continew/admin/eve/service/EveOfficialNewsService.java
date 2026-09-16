@@ -22,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -88,6 +89,12 @@ public class EveOfficialNewsService {
     private static final Pattern ATTRIBUTE_PATTERN = Pattern
         .compile("(?is)\\b%s\\s*=\\s*(?:\\\"([^\\\"]*)\\\"|'([^']*)'|([^\\s>]+))");
     private static final Pattern FIRST_IMAGE_PATTERN = Pattern.compile("(?is)<img\\s+src=\\\"([^\\\"]+)\\\"");
+    private static final Pattern BASE_TAG_PATTERN = Pattern.compile("(?is)<base\\b[^>]*>");
+    private static final Pattern META_REFRESH_PATTERN = Pattern.compile("(?is)<meta\\b(?=[^>]*\\bhttp-equiv\\s*=\\s*(?:\\\"refresh\\\"|'refresh'|refresh))[^>]*>");
+    private static final Pattern SCRIPT_BLOCK_PATTERN = Pattern.compile("(?is)<script\\b[^>]*>.*?</script\\s*>");
+    private static final Pattern ACTIVE_EMBED_PATTERN = Pattern.compile("(?is)<(iframe|object|embed|form)\\b[^>]*>.*?</\\1\\s*>");
+    private static final Pattern SELF_CLOSING_ACTIVE_EMBED_PATTERN = Pattern.compile("(?is)<(iframe|object|embed|form)\\b[^>]*/\\s*>");
+    private static final Pattern HEAD_OPENING_PATTERN = Pattern.compile("(?is)<head\\b[^>]*>");
     private static final DateTimeFormatter PUBLISHED_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final Set<String> SAFE_TAGS = Set
         .of("p", "br", "strong", "b", "em", "i", "u", "ul", "ol", "li", "table", "thead", "tbody", "tr", "td", "th", "a", "img", "blockquote", "h2", "h3", "h4");
@@ -148,6 +155,39 @@ public class EveOfficialNewsService {
      * 不向界面暴露本站数据库主键。</p>
      */
     public EveOfficialNewsResp detail(String originalUrl) {
+        return toResponse(requireStoredNews(originalUrl), true);
+    }
+
+    /**
+     * 获取一篇官网文章的受控原页文档。
+     *
+     * <p>原页仅作为 sandbox iframe 的 srcdoc 使用，避免浏览器直接嵌入官网被拒绝，同时禁止远程脚本、表单与框架执行。</p>
+     */
+    public String articleDocument(String originalUrl) {
+        EveOfficialNewsDO news = requireStoredNews(originalUrl);
+        return renderOfficialDocument(downloadHtml(news.getOriginalUrl()), news.getOriginalUrl());
+    }
+
+    /** 代理固定网易图片域名的封面，规避官网静态资源的跨站防盗链。 */
+    public OfficialImage image(String rawUrl) {
+        URI uri = requireOfficialImageUri(rawUrl);
+        try {
+            ResponseEntity<byte[]> response = restClient.get().uri(uri).retrieve().toEntity(byte[].class);
+            byte[] body = response.getBody();
+            MediaType contentType = response.getHeaders().getContentType();
+            if (body == null || body.length == 0 || body.length > properties.getMaxImageBytes() || response.getHeaders()
+                .getContentLength() > properties.getMaxImageBytes() || contentType == null || !"image".equalsIgnoreCase(contentType
+                    .getType())) {
+                throw new BusinessException("官网资讯图片无效或超过大小限制");
+            }
+            return new OfficialImage(body, contentType);
+        } catch (RestClientException e) {
+            throw new BusinessException("请求官网资讯图片失败");
+        }
+    }
+
+    /** 读取已入库文章，防止接口将任意白名单 URL 变成可代理请求。 */
+    private EveOfficialNewsDO requireStoredNews(String originalUrl) {
         if (originalUrl == null || originalUrl.isBlank()) {
             throw new BusinessException("官网资讯地址不能为空");
         }
@@ -157,7 +197,7 @@ public class EveOfficialNewsService {
         if (news == null) {
             throw new BusinessException("官网资讯不存在或尚未同步");
         }
-        return toResponse(news, true);
+        return news;
     }
 
     /** 返回任意资讯栏目最近一次同步状态，供阅读页简洁提示新鲜度。 */
@@ -316,6 +356,41 @@ public class EveOfficialNewsService {
         } catch (IllegalArgumentException e) {
             throw new BusinessException("官网资讯地址无效");
         }
+    }
+
+    /** 仅允许固定的网易静态资源主机，避免图片代理成为任意地址请求入口。 */
+    static URI requireOfficialImageUri(String rawUrl) {
+        try {
+            URI uri = URI.create(rawUrl).normalize();
+            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getUserInfo() != null || uri.getHost() == null || !IMAGE_HOSTS
+                .contains(uri.getHost().toLowerCase(Locale.ROOT)) || (uri.getPort() != -1 && uri.getPort() != 443)) {
+                throw new IllegalArgumentException("not official image url");
+            }
+            return uri;
+        } catch (IllegalArgumentException e) {
+            throw new BusinessException("官网资讯图片地址无效");
+        }
+    }
+
+    /**
+     * 将官网完整页面处理为适合沙箱文档的静态副本。
+     *
+     * <p>保留官网样式、图片与排版；删除会主动执行的标签，并以 CSP 作为第二道防线。base 仅解析官网相对资源，不能指向任意站点。</p>
+     */
+    static String renderOfficialDocument(String rawHtml, String officialUrl) {
+        URI officialUri = requireOfficialArticleUri(officialUrl);
+        String sanitized = BASE_TAG_PATTERN.matcher(rawHtml).replaceAll("");
+        sanitized = META_REFRESH_PATTERN.matcher(sanitized).replaceAll("");
+        sanitized = SCRIPT_BLOCK_PATTERN.matcher(sanitized).replaceAll("");
+        sanitized = ACTIVE_EMBED_PATTERN.matcher(sanitized).replaceAll("");
+        sanitized = SELF_CLOSING_ACTIVE_EMBED_PATTERN.matcher(sanitized).replaceAll("");
+        String metadata = "<meta charset=\"utf-8\"><meta name=\"referrer\" content=\"no-referrer\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src https: data:; style-src https: 'unsafe-inline'; font-src https: data:; media-src https:; script-src 'none'; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri https://evepc.163.com\"><base href=\""
+            + officialUri + "\">";
+        Matcher head = HEAD_OPENING_PATTERN.matcher(sanitized);
+        if (head.find()) {
+            return new StringBuilder(sanitized).insert(head.end(), metadata).toString();
+        }
+        return "<!doctype html><html><head>" + metadata + "</head><body>" + sanitized + "</body></html>";
     }
 
     /** 从官网栏目 HTML 提取稳定列表项，并为页面结构小改保留受限的通用链接回退。 */
@@ -628,6 +703,10 @@ public class EveOfficialNewsService {
 
     /** 官网栏目页中的单篇新闻摘要。 */
     record ListItem(String title, String summary, String category, String url, String coverUrl) {
+    }
+
+    /** 已验证的官网图片响应，控制器据此保持正确媒体类型。 */
+    public record OfficialImage(byte[] body, MediaType contentType) {
     }
 
     /** 官网原文页解析结果。 */

@@ -64,6 +64,27 @@ class EveOfficialNewsServiceTest {
             .requireOfficialArticleUri("https://evepc.163.com/account/login")).isInstanceOf(BusinessException.class);
     }
 
+    /** 沙箱原页必须固定官网资源基址，并清除主动跳转、脚本和嵌入式内容。 */
+    @Test
+    void shouldRenderOfficialDocumentAsSafeSandboxContent() {
+        String document = EveOfficialNewsService.renderOfficialDocument("<html><head><base href=\"https://bad.example\"><meta http-equiv=\"refresh\" content=\"0;url=https://bad.example\"><script>alert(1)</script></head><body><link rel=\"stylesheet\" href=\"css/article.css\"><p>正文</p><iframe src=\"https://bad.example\"></iframe></body></html>", "https://evepc.163.com/news/a.html");
+
+        assertThat(document)
+            .contains("<base href=\"https://evepc.163.com/news/a.html\">", "Content-Security-Policy", "css/article.css", "正文")
+            .doesNotContain("bad.example", "<script", "<iframe", "http-equiv=\"refresh\"");
+    }
+
+    /** 官网图片代理只接受固定的网易 HTTPS 静态资源域名。 */
+    @Test
+    void shouldRejectNonOfficialImageUri() {
+        assertThat(EveOfficialNewsService.requireOfficialImageUri("https://xz.res.netease.com/eve/cover.jpg").getHost())
+            .isEqualTo("xz.res.netease.com");
+        assertThatThrownBy(() -> EveOfficialNewsService.requireOfficialImageUri("https://example.com/cover.jpg"))
+            .isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> EveOfficialNewsService.requireOfficialImageUri("https://evepc.163.com:8443/cover.jpg"))
+            .isInstanceOf(BusinessException.class);
+    }
+
     /** 官网发布日没有时分秒时固定归一到当天零点，异常值不阻断同步。 */
     @Test
     void shouldParseOfficialPublishedDateSafely() {

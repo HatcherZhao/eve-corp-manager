@@ -41,6 +41,8 @@ public class EveOfficialNewsProperties {
     private Duration timeout = Duration.ofSeconds(20);
     /** 单个 HTML 文档允许的最大体积。 */
     private long maxDocumentBytes = 2 * 1024 * 1024;
+    /** 单张官网资讯图片允许的最大体积。 */
+    private long maxImageBytes = 4 * 1024 * 1024;
     /** 已存在文章的正文复核间隔，官网改稿后会更新本地快照。 */
     private Duration contentRecheckInterval = Duration.ofHours(6);
 
@@ -52,6 +54,9 @@ public class EveOfficialNewsProperties {
         }
         if (maxDocumentBytes <= 0) {
             throw new IllegalStateException("官网资讯 HTML 最大体积必须大于零");
+        }
+        if (maxImageBytes <= 0) {
+            throw new IllegalStateException("官网资讯图片最大体积必须大于零");
         }
         if (contentRecheckInterval == null || contentRecheckInterval.isZero() || contentRecheckInterval.isNegative()) {
             throw new IllegalStateException("官网资讯正文复核间隔必须大于零");

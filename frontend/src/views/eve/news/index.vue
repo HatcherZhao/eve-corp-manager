@@ -7,6 +7,7 @@ import {
   type EveOfficialNews,
   type EveOfficialNewsSyncStatus,
   getEveOfficialNews,
+  getEveOfficialNewsArticleDocument,
   getEveOfficialNewsDetail,
   getEveOfficialNewsSyncStatus,
   syncEveOfficialNews,
@@ -24,6 +25,7 @@ const loadError = ref(false)
 const records = ref<EveOfficialNews[]>([])
 const total = ref(0)
 const detail = ref<EveOfficialNews>()
+const articleDocument = ref('')
 const detailVisible = ref(false)
 const syncStatus = ref<EveOfficialNewsSyncStatus>()
 const query = reactive({ page: 1, size: 12, keyword: '', category: 'ALL' })
@@ -40,6 +42,8 @@ const categoryOptions = [
   { value: 'MAINTENANCE', label: '维护' },
 ]
 
+const officialNewsImageBaseUrl = `${String(import.meta.env.VITE_API_PREFIX || '').replace(/\/$/, '')}/eve/news/image`
+
 /** 将服务端 UTC 时间转为用户易读的本地时间。 */
 function formatTime(value?: string) {
   return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '—'
@@ -50,11 +54,27 @@ async function openDetail(record: EveOfficialNews) {
   detailVisible.value = true
   detailLoading.value = true
   detail.value = undefined
+  articleDocument.value = ''
   try {
-    detail.value = (await getEveOfficialNewsDetail(record.originalUrl)).data
+    const [detailResponse, documentResponse] = await Promise.all([
+      getEveOfficialNewsDetail(record.originalUrl),
+      getEveOfficialNewsArticleDocument(record.originalUrl),
+    ])
+    detail.value = detailResponse.data
+    articleDocument.value = documentResponse.data.document
   } finally {
     detailLoading.value = false
   }
+}
+
+/** 通过本站图片代理加载官网封面，避免网易静态资源跨站防盗链。 */
+function officialNewsImageUrl(url?: string) {
+  return url ? `${officialNewsImageBaseUrl}?url=${encodeURIComponent(url)}` : ''
+}
+
+/** 上游临时移除封面时收起无效图片，保留正文列表的可读性。 */
+function hideBrokenCover(event: Event) {
+  (event.currentTarget as HTMLImageElement).style.display = 'none'
 }
 
 async function loadNews() {
@@ -164,7 +184,7 @@ watch(() => route.path, resetForRoute)
       </a-empty>
       <a-spin v-else :loading="loading" class="eve-official-news__loading">
         <article v-for="record in records" :key="record.originalUrl" class="eve-official-news__item" @click="openDetail(record)">
-          <img v-if="record.coverUrl" class="eve-official-news__cover" :src="record.coverUrl" :alt="`${record.title}封面`" loading="lazy">
+          <img v-if="record.coverUrl" class="eve-official-news__cover" :src="officialNewsImageUrl(record.coverUrl)" :alt="`${record.title}封面`" loading="lazy" @error="hideBrokenCover">
           <div class="eve-official-news__item-main">
             <div class="eve-official-news__item-meta">
               <a-tag color="arcoblue" size="small">{{ record.categoryLabel }}</a-tag>
@@ -190,9 +210,10 @@ watch(() => route.path, resetForRoute)
           <p class="eve-official-news__article-notice">以下内容直接呈现国服官网原页，保留原始排版、图片和链接。</p>
           <iframe
             class="eve-official-news__official-frame"
-            :src="detail.originalUrl"
+            :srcdoc="articleDocument"
             :title="`${detail.title} - 国服官网原文`"
-            referrerpolicy="strict-origin-when-cross-origin"
+            sandbox
+            referrerpolicy="no-referrer"
           />
           <a :href="detail.originalUrl" target="_blank" rel="noopener noreferrer" class="eve-official-news__source-link">在新标签页打开官网原文 <icon-launch /></a>
         </article>
