@@ -590,6 +590,7 @@ export interface EveMarketQuote {
   sellVolume?: number
   sourceUpdatedAt?: string
   synchronizedAt?: string
+  freshnessExpiresAt?: string
   stale: boolean
 }
 
@@ -647,6 +648,7 @@ export interface EveMarketDetail {
   buyOrders: EveMarketOrder[]
   sellOrders: EveMarketOrder[]
   history: EveMarketHistory[]
+  historySynchronizedAt?: string
   servedFromCache: boolean
   upstreamMessage?: string
 }
@@ -1108,8 +1110,8 @@ export function getEveMineralPrices(query: EveMineralPriceQuery) {
 }
 
 /** 读取物品的吉他报价、买卖单与每日价格历史。 */
-export function getEveMarketDetail(typeId: number, forceRefresh = false) {
-  return http.get<EveMarketDetail>(`/eve/market/${typeId}`, { forceRefresh })
+export function getEveMarketDetail(typeId: number) {
+  return http.get<EveMarketDetail>(`/eve/market/${typeId}`)
 }
 
 /** CEO 或总监手动更新单个物品的吉他订单簿和历史数据。 */

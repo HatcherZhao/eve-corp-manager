@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import dayjs from 'dayjs'
 import { computed, onMounted, reactive, ref } from 'vue'
+import MarketPriceFreshness from '../components/MarketPriceFreshness.vue'
 import {
   type EveMarketItem,
   type EveMineralPriceCategory,
@@ -25,10 +25,6 @@ const currentCategory = computed(() => categories.find((item) => item.key === qu
 /** 价格只代表吉他市场的每单位报价，不推断任何角色或军团的持有量。 */
 function formatIsk(value?: number) {
   return value === undefined || value === null ? '暂无报价' : `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} ISK`
-}
-
-function timeText(value?: string) {
-  return value ? dayjs(value).format('MM-DD HH:mm') : '—'
 }
 
 /** 切换价格目录后从第一页重新读取，关键词仍可用于同类矿物的快速定位。 */
@@ -105,7 +101,7 @@ onMounted(loadPrices)
           </a-table-column>
           <a-table-column title="最高收购价" :width="145" align="right" nowrap><template #cell="{ record }"><strong class="eve-mineral-prices__buy">{{ formatIsk(record.quote?.highestBuyPrice) }}</strong></template></a-table-column>
           <a-table-column title="最低卖出价" :width="145" align="right" nowrap><template #cell="{ record }"><strong>{{ formatIsk(record.quote?.lowestSellPrice) }}</strong></template></a-table-column>
-          <a-table-column title="报价更新时间" :width="130" align="right"><template #cell="{ record }"><span class="eve-mineral-prices__time">{{ timeText(record.quote?.synchronizedAt || record.quote?.sourceUpdatedAt) }}</span></template></a-table-column>
+          <a-table-column title="价格新鲜度" :width="132" align="right"><template #cell="{ record }"><MarketPriceFreshness :synchronized-at="record.quote?.synchronizedAt" :freshness-expires-at="record.quote?.freshnessExpiresAt" /></template></a-table-column>
         </template>
       </a-table>
       <a-empty v-if="!loading && !records.length" description="暂无符合条件的矿物；本军团月矿需先同步月矿开采统计" />

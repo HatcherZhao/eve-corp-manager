@@ -3,6 +3,7 @@ import { Message } from '@arco-design/web-vue'
 import dayjs from 'dayjs'
 import type { EChartsOption } from 'echarts'
 import { computed, onMounted, reactive, ref } from 'vue'
+import MarketPriceFreshness from '../components/MarketPriceFreshness.vue'
 import {
   type EveMarketDetail,
   type EveMarketItem,
@@ -144,10 +145,10 @@ function reset() {
 }
 
 /** 打开物品详情，默认由服务端按缓存时效补齐订单簿和历史。 */
-async function openDetail(record: EveMarketItem, forceRefresh = false) {
+async function openDetail(record: EveMarketItem) {
   detailLoading.value = true
   try {
-    detail.value = (await getEveMarketDetail(record.type.typeId, forceRefresh)).data
+    detail.value = (await getEveMarketDetail(record.type.typeId)).data
   } finally {
     detailLoading.value = false
   }
@@ -292,7 +293,7 @@ onMounted(() => Promise.all([loadCategories(), loadMarket()]))
             <a-table-column title="最高求购" :width="175" align="right"><template #cell="{ record }"><strong class="eve-market-page__price eve-market-page__buy">{{ formatPrice(record.quote?.highestBuyPrice) }}</strong></template></a-table-column>
             <a-table-column title="最低卖出" :width="175" align="right"><template #cell="{ record }"><strong class="eve-market-page__price eve-market-page__sell">{{ formatPrice(record.quote?.lowestSellPrice) }}</strong></template></a-table-column>
             <a-table-column title="买卖价差" :width="175" align="right"><template #cell="{ record }"><span class="eve-market-page__price">{{ spread(record) === undefined ? '—' : formatPrice(spread(record)) }}</span></template></a-table-column>
-            <a-table-column title="更新时间" :width="118"><template #cell="{ record }"><span class="eve-market-page__updated" :class="{ 'eve-market-page__updated--stale': record.quote?.stale }">{{ formatTime(record.quote?.synchronizedAt) }}</span></template></a-table-column>
+            <a-table-column title="价格新鲜度" :width="128"><template #cell="{ record }"><MarketPriceFreshness :synchronized-at="record.quote?.synchronizedAt" :freshness-expires-at="record.quote?.freshnessExpiresAt" /></template></a-table-column>
           </template>
         </a-table>
         <a-pagination v-if="total" v-model:current="query.page" v-model:page-size="query.size" :total="total" show-total @change="loadMarket" />
@@ -311,7 +312,7 @@ onMounted(() => Promise.all([loadCategories(), loadMarket()]))
           <section class="eve-market-page__quote-grid">
             <article><span>最高求购</span><strong class="eve-market-page__buy">{{ formatPrice(detail.quote?.highestBuyPrice) }}</strong><small>总量 {{ formatVolume(detail.quote?.buyVolume) }}</small></article>
             <article><span>最低卖出</span><strong class="eve-market-page__sell">{{ formatPrice(detail.quote?.lowestSellPrice) }}</strong><small>总量 {{ formatVolume(detail.quote?.sellVolume) }}</small></article>
-            <article><span>行情时间</span><strong>{{ formatTime(detail.quote?.synchronizedAt) }}</strong><small>{{ detail.servedFromCache ? '展示最近缓存' : '已读取服务器缓存' }}</small></article>
+            <article><span>行情时间</span><strong>{{ formatTime(detail.quote?.synchronizedAt) }}</strong><MarketPriceFreshness :synchronized-at="detail.quote?.synchronizedAt" :freshness-expires-at="detail.quote?.freshnessExpiresAt" /><small>{{ detail.servedFromCache ? '展示最近缓存' : '已读取服务器缓存' }}</small></article>
           </section>
           <a-tabs default-active-key="orders" class="eve-market-page__tabs">
             <a-tab-pane key="orders" title="市场订单">
@@ -321,7 +322,7 @@ onMounted(() => Promise.all([loadCategories(), loadMarket()]))
               </section>
             </a-tab-pane>
             <a-tab-pane key="history" title="价格历史">
-              <section class="eve-market-page__history"><div class="eve-market-page__history-heading"><div><h3>每日价格趋势</h3><p>显示最近 {{ detailHistory.length }} 天收盘价与成交量，可拖拽或滚动缩放时间轴。</p></div><small>数据仅供参考</small></div><Chart v-if="detailHistory.length" :option="historyChartOption" height="390px" /><a-empty v-else description="暂无可用价格历史" /></section>
+              <section class="eve-market-page__history"><div class="eve-market-page__history-heading"><div><h3>每日价格趋势</h3><p>显示最近 {{ detailHistory.length }} 天收盘价与成交量，可拖拽或滚动缩放时间轴。</p></div><small>数据仅供参考</small></div><Chart v-if="detailHistory.length" :option="historyChartOption" height="390px" /><a-empty v-else :description="detail.historySynchronizedAt ? '该物品暂无历史成交数据' : '价格历史正在由后台补齐'" /></section>
             </a-tab-pane>
             <a-tab-pane key="reference" title="物品资料"><a-descriptions :column="1" bordered><a-descriptions-item label="市场分类">{{ categoryPath(detail.type) }}</a-descriptions-item><a-descriptions-item label="物品说明"><p class="eve-market-page__description">{{ detail.type.typeDescription || '暂无说明' }}</p></a-descriptions-item></a-descriptions></a-tab-pane>
           </a-tabs>

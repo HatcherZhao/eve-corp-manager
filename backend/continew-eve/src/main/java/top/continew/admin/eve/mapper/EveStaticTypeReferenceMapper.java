@@ -55,8 +55,8 @@ public interface EveStaticTypeReferenceMapper extends BaseMapper<EveStaticTypeRe
         WHERE `reference`.`market_category_l1` <> ''
           AND (`snapshot`.`history_synchronized_at` IS NULL
             OR `snapshot`.`history_synchronized_at` < DATE_SUB(NOW(), INTERVAL 1 DAY))
-        -- 优先补齐用户已经浏览过、已有报价快照的物品，再渐进覆盖其余基础资料。
-        ORDER BY CASE WHEN `snapshot`.`type_id` IS NULL THEN 1 ELSE 0 END ASC,
+        -- 从未同步过的物品必须先完成首轮覆盖，不能被每日重刷的旧快照长期挤占。
+        ORDER BY CASE WHEN `snapshot`.`history_synchronized_at` IS NULL THEN 0 ELSE 1 END ASC,
                  `snapshot`.`history_synchronized_at` ASC,
                  `reference`.`type_id` ASC
         LIMIT #{limit}

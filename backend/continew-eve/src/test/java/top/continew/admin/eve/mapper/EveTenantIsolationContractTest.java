@@ -69,6 +69,13 @@ class EveTenantIsolationContractTest {
         assertSqlContains(staleAuthorization, "status = 'ACTIVE'", "deleted = 0", "expires_at IS NOT NULL", "LIMIT #{limit}");
     }
 
+    /** 价格历史首轮覆盖必须优先于已同步物品的每日重刷，避免未访问物品永久缺少曲线。 */
+    @Test
+    void shouldPrioritizeUninitializedMarketHistories() throws Exception {
+        Method historyWarmup = EveStaticTypeReferenceMapper.class.getMethod("selectHistoryWarmupTypeIds", int.class);
+        assertSqlContains(historyWarmup, "`history_synchronized_at` IS NULL THEN 0 ELSE 1", "`history_synchronized_at` < DATE_SUB(NOW(), INTERVAL 1 DAY)");
+    }
+
     /** 校验方法显式声明跳过租户行拦截。 */
     private static void assertTenantIgnored(Method method) {
         InterceptorIgnore ignore = method.getAnnotation(InterceptorIgnore.class);

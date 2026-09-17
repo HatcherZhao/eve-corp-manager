@@ -202,18 +202,16 @@ public class EveMarketService {
         return corporation;
     }
 
-    /**
-     * 读取单物品完整行情。缺少或过期的订单、历史会同步更新；上游异常仅降级为缓存结果。
-     */
-    public EveMarketDetailResp detail(int typeId, boolean forceRefresh) {
+    /** 读取单物品完整行情；用户查看仅按需更新报价和订单，历史日线由后台独立维护。 */
+    public EveMarketDetailResp detail(int typeId) {
         EveStaticTypeReferenceResp type = requireType(typeId);
         EveMarketSnapshotDO before = snapshotMapper.selectById(typeId);
-        boolean shouldRefresh = forceRefresh || needsDetailRefresh(before);
+        boolean shouldRefresh = needsDetailRefresh(before);
         boolean servedFromCache = false;
         String message = null;
         if (properties.isEnabled() && shouldRefresh) {
             try {
-                refreshDetail(typeId);
+                refreshDetail(typeId, false);
             } catch (RuntimeException e) {
                 servedFromCache = before != null;
                 message = before == null ? "暂时无法读取吉他行情，请稍后重试" : "上游暂时不可用，正在展示最近缓存";
@@ -228,7 +226,9 @@ public class EveMarketService {
             throw new BusinessException("吉他市场同步未启用，暂无可用缓存");
         }
         touch(typeId, snapshot);
-        return new EveMarketDetailResp(type, toQuote(snapshot), readOrders(snapshot, "BUY"), readOrders(snapshot, "SELL"), readHistory(snapshot), servedFromCache, message);
+        return new EveMarketDetailResp(type, toQuote(snapshot), readOrders(snapshot, "BUY"), readOrders(snapshot,
+            "SELL"), readHistory(snapshot), snapshot == null ? null : snapshot.getHistorySynchronizedAt(),
+            servedFromCache, message);
     }
 
     /** CEO 或总监可主动强制更新某个物品的完整买卖盘与日线。 */
@@ -238,7 +238,7 @@ public class EveMarketService {
             return new EveMarketSyncResp(false, "吉他市场同步未启用", LocalDateTime.now());
         }
         try {
-            refreshDetail(typeId);
+            refreshDetail(typeId, true);
             return new EveMarketSyncResp(true, "已更新吉他行情、订单与历史", LocalDateTime.now());
         } catch (RuntimeException e) {
             log.warn("手动刷新吉他市场失败，typeId={}, errorType={}", typeId, e.getClass().getSimpleName());
@@ -262,7 +262,7 @@ public class EveMarketService {
                 continue;
             }
             try {
-                refreshDetailInternal(candidate.getTypeId());
+                refreshDetailInternal(candidate.getTypeId(), false);
             } catch (RuntimeException e) {
                 recordFailure(candidate.getTypeId(), "上游暂时不可用");
                 log.debug("近期吉他市场缓存刷新失败，typeId={}, errorType={}", candidate.getTypeId(), e.getClass().getSimpleName());
@@ -390,31 +390,32 @@ public class EveMarketService {
         }
     }
 
-    /** 刷新一个物品的报价、订单簿和日线；并发请求会复用已有缓存结果。 */
-    private void refreshDetail(int typeId) {
+    /** 刷新一个物品的报价和订单簿；仅管理员主动刷新时同时更新日线。 */
+    private void refreshDetail(int typeId, boolean includeHistory) {
         if (!refreshingTypes.add(typeId)) {
             return;
         }
         try {
-            refreshDetailInternal(typeId);
+            refreshDetailInternal(typeId, includeHistory);
         } finally {
             refreshingTypes.remove(typeId);
         }
     }
 
-    /** 完整刷新单物品并在所有上游数据可用后一次性更新详情缓存。 */
+    /** 刷新详情缓存；历史日线只由后台补温或管理员手动刷新请求。 */
     @Transactional(rollbackFor = Exception.class)
-    protected void refreshDetailInternal(int typeId) {
+    protected void refreshDetailInternal(int typeId, boolean includeHistory) {
         QuoteData quote = requestQuotes(List.of(typeId)).get(typeId);
         if (quote == null) {
             throw new BusinessException("上游未返回该物品的吉他报价");
         }
         JsonNode sellPayload = requestJson("/order/?typeid=" + typeId + "&regionid=0&orders=sell&server=cn");
         JsonNode buyPayload = requestJson("/order/?typeid=" + typeId + "&regionid=0&orders=buy&server=cn");
-        JsonNode historyPayload = requestJson("/query_history/?typeid=" + typeId + "&regionid=0&server=cn");
         List<EveMarketOrderResp> sellOrders = parseOrders(sellPayload.path("sell"), "SELL");
         List<EveMarketOrderResp> buyOrders = parseOrders(buyPayload.path("buy"), "BUY");
-        List<EveMarketHistoryResp> history = parseHistory(historyPayload);
+        List<EveMarketHistoryResp> history = includeHistory
+            ? parseHistory(requestJson("/query_history/?typeid=" + typeId + "&regionid=0&server=cn"))
+            : null;
         LocalDateTime now = LocalDateTime.now();
         EveMarketSnapshotDO snapshot = snapshotMapper.selectById(typeId);
         if (snapshot == null) {
@@ -430,10 +431,12 @@ public class EveMarketService {
         snapshot.setSourceUpdatedAt(now);
         snapshot.setQuoteSynchronizedAt(now);
         snapshot.setDetailSynchronizedAt(now);
-        snapshot.setHistorySynchronizedAt(now);
         snapshot.setBuyOrdersJson(writeJson(buyOrders));
         snapshot.setSellOrdersJson(writeJson(sellOrders));
-        snapshot.setHistoryJson(writeJson(history));
+        if (includeHistory) {
+            snapshot.setHistorySynchronizedAt(now);
+            snapshot.setHistoryJson(writeJson(history));
+        }
         snapshot.setLastFailureMessage(null);
         snapshot.setUpdateTime(now);
         snapshotMapper.updateById(snapshot);
@@ -629,13 +632,18 @@ public class EveMarketService {
             .isBefore(LocalDateTime.now().minus(properties.getDetailRefreshInterval()));
     }
 
+    /** 将缓存报价连同服务端计算的有效截止时间返回给页面。 */
     private EveMarketQuoteResp toQuote(EveMarketSnapshotDO snapshot) {
         if (snapshot == null) {
             return null;
         }
+        LocalDateTime synchronizedAt = snapshot.getQuoteSynchronizedAt();
+        LocalDateTime freshnessExpiresAt = synchronizedAt == null
+            ? null
+            : synchronizedAt.plus(properties.getQuoteRefreshInterval());
         return new EveMarketQuoteResp(snapshot.getHighestBuyPrice(), snapshot.getLowestSellPrice(), snapshot
             .getBuyVolume(), snapshot.getSellVolume(), snapshot.getSourceUpdatedAt(), snapshot
-                .getQuoteSynchronizedAt(), needsQuoteRefresh(snapshot));
+                .getQuoteSynchronizedAt(), freshnessExpiresAt, needsQuoteRefresh(snapshot));
     }
 
     private String writeJson(Object source) {

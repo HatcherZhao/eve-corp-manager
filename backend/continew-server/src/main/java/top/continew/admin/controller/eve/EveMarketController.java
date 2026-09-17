@@ -84,9 +84,8 @@ public class EveMarketController {
     @GetMapping("/{typeId}")
     @Operation(summary = "查询单物品吉他市场详情")
     @SaCheckPermission("eve:market:view")
-    public EveMarketDetailResp detail(@PathVariable @Min(1) int typeId,
-                                      @RequestParam(defaultValue = "false") boolean forceRefresh) {
-        return marketService.detail(typeId, forceRefresh);
+    public EveMarketDetailResp detail(@PathVariable @Min(1) int typeId) {
+        return marketService.detail(typeId);
     }
 
     /** CEO 或总监立刻刷新一个物品的吉他订单簿和价格历史。 */

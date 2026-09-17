@@ -16,10 +16,12 @@
 
 package top.continew.admin.eve.model;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /** 单物品市场详情，包含静态资料、报价、买卖盘及历史走势。 */
 public record EveMarketDetailResp(EveStaticTypeReferenceResp type, EveMarketQuoteResp quote,
                                   List<EveMarketOrderResp> buyOrders, List<EveMarketOrderResp> sellOrders,
-                                  List<EveMarketHistoryResp> history, boolean servedFromCache, String upstreamMessage) {
+                                  List<EveMarketHistoryResp> history, LocalDateTime historySynchronizedAt,
+                                  boolean servedFromCache, String upstreamMessage) {
 }

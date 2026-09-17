@@ -105,9 +105,9 @@ eve:
     detail-refresh-interval: "${EVE_MARKET_DETAIL_REFRESH_INTERVAL:PT30M}"
     recent-refresh-interval: "${EVE_MARKET_RECENT_REFRESH_INTERVAL:PT30M}"
     recent-refresh-limit: ${EVE_MARKET_RECENT_REFRESH_LIMIT:40}
-    # 价格历史独立轮转：约 15 次/分钟，覆盖全体可交易物品约需一天，接口不会因页面访问才触发。
+    # 价格历史独立轮转：约 30 次/分钟，首轮覆盖约 11 小时；接口不会因用户浏览而触发。
     history-warmup-interval: "${EVE_MARKET_HISTORY_WARMUP_INTERVAL:PT20S}"
-    history-warmup-limit: ${EVE_MARKET_HISTORY_WARMUP_LIMIT:5}
+    history-warmup-limit: ${EVE_MARKET_HISTORY_WARMUP_LIMIT:10}
     # 报价接口每次合并二十项；每 15 秒一批，约四小时轮转一遍全部可交易物品。
     quote-warmup-interval: "${EVE_MARKET_QUOTE_WARMUP_INTERVAL:PT15S}"
     quote-warmup-limit: ${EVE_MARKET_QUOTE_WARMUP_LIMIT:20}
