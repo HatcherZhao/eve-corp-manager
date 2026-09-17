@@ -22,14 +22,14 @@ docker compose config
 在仓库根目录执行：
 
 ```bash
-scripts/g010/01-package-production-images.sh 20260917-3
+scripts/g010/01-package-production-images.sh
 ```
 
 该脚本构建后端 fat JAR、前端静态文件及 `linux/amd64` 的 API/Web 镜像，在 `output/docker/` 生成镜像包与 SHA-256 校验文件。该目录已被 Git 忽略，适合通过受控文件传输交付：
 
 ```text
-eve-corp-manager-20260917-3.tar.gz
-eve-corp-manager-20260917-3.tar.gz.sha256
+eve-corp-manager-0.1.0.tar.gz
+eve-corp-manager-0.1.0.tar.gz.sha256
 ```
 
 若 JAR 与前端 `dist` 已通过本地验证，可加 `--skip-build` 仅执行镜像打包。M4 等 ARM 主机若无法获取 Nginx amd64 基础镜像，可设置 `WEB_BASE_IMAGE=eve-corp-manager-web:已验证标签` 使用本机已有的同架构 Web 镜像作基底。
@@ -40,10 +40,10 @@ eve-corp-manager-20260917-3.tar.gz.sha256
 
 ```bash
 cd /srv/eve-corp-manager
-sha256sum -c eve-corp-manager-20260917-3.tar.gz.sha256
-gzip -dc eve-corp-manager-20260917-3.tar.gz | docker load
+sha256sum -c eve-corp-manager-0.1.0.tar.gz.sha256
+gzip -dc eve-corp-manager-0.1.0.tar.gz | docker load
 
-# 确认 .env 内 IMAGE_TAG=20260917-3
+# 确认 .env 内 IMAGE_TAG=0.1.0
 docker compose config
 docker compose up -d --no-build
 docker compose ps

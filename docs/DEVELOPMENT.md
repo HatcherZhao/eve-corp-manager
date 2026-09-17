@@ -72,4 +72,4 @@ mvn -B -ntp -Pfat_jar -pl continew-server -am -Dspotless.apply.skip=true test
 
 ## 6. 生产镜像打包
 
-生产 Docker 交付规则、服务器发布步骤与网关配置见 [生产部署指南](../deploy/production/README.md)。使用 `scripts/g010/01-package-production-images.sh <YYYYMMDD-N>` 生成可上传的 `linux/amd64` 镜像包和 SHA-256 校验文件；脚本不会上传、部署或删除任何镜像。
+生产 Docker 交付规则、服务器发布步骤与网关配置见 [生产部署指南](../deploy/production/README.md)。项目处于开发阶段，使用 `0.次版本.修订号`，当前版本见根目录 `VERSION`。使用 `scripts/g010/01-package-production-images.sh` 生成可上传的 `linux/amd64` 镜像包和 SHA-256 校验文件；脚本不会上传、部署或删除任何镜像。

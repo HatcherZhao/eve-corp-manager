@@ -8,13 +8,21 @@ readonly OUTPUT_DIR="${PROJECT_ROOT}/output/docker"
 
 usage() {
   cat <<'EOF'
-用法：scripts/g010/01-package-production-images.sh <YYYYMMDD-N> [--skip-build]
+用法：scripts/g010/01-package-production-images.sh [VERSION] [--skip-build]
 
 构建 linux/amd64 API、Web 镜像，并输出 tar.gz 与 SHA-256 校验文件。
+VERSION 默认读取仓库根目录 VERSION；显式传入时必须与该文件一致。
 --skip-build 仅使用已存在的后端 JAR 和 frontend/dist 进行镜像打包。
 可选环境变量 WEB_BASE_IMAGE 可指定已验证的 Web 基础镜像。
 EOF
 }
+
+readonly VERSION_FILE="${PROJECT_ROOT}/VERSION"
+if [[ ! -f "${VERSION_FILE}" ]]; then
+  echo "缺少版本文件：${VERSION_FILE}" >&2
+  exit 1
+fi
+repository_version="$(tr -d '[:space:]' < "${VERSION_FILE}")"
 
 version=""
 skip_build=false
@@ -34,13 +42,29 @@ for argument in "$@"; do
   esac
 done
 
-if [[ ! "${version}" =~ ^[0-9]{8}-[0-9]+$ ]]; then
-  echo "版本号必须为 YYYYMMDD-N，例如 20260917-3。" >&2
+if [[ -z "${version}" ]]; then
+  version="${repository_version}"
+fi
+if [[ ! "${version}" =~ ^0\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+  echo "开发阶段版本必须为 0.次版本.修订号，例如 0.1.0。" >&2
+  exit 2
+fi
+if [[ "${version}" != "${repository_version}" ]]; then
+  echo "传入版本 ${version} 与 VERSION 中的 ${repository_version} 不一致。" >&2
   exit 2
 fi
 
 command -v docker >/dev/null || { echo "未找到 docker。" >&2; exit 1; }
 docker buildx version >/dev/null || { echo "Docker Buildx 不可用。" >&2; exit 1; }
+if ! grep -Fq "<revision>${version}</revision>" "${PROJECT_ROOT}/backend/pom.xml"; then
+  echo "backend/pom.xml 的 revision 未同步为 ${version}。" >&2
+  exit 1
+fi
+frontend_version="$(node -p "require('${PROJECT_ROOT}/frontend/package.json').version")"
+if [[ "${frontend_version}" != "${version}" ]]; then
+  echo "frontend/package.json 的 version 未同步为 ${version}。" >&2
+  exit 1
+fi
 
 if [[ "${skip_build}" == false ]]; then
   (
