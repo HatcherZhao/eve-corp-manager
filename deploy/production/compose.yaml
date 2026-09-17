@@ -30,7 +30,7 @@ services:
       EVE_SERENITY_CLIENT_SECRET: ${EVE_SERENITY_CLIENT_SECRET:-}
       EVE_IMAGE_CACHE_DIR: /data/eve-images
     volumes:
-      - /home/eve-corp-manager/data/eve-images:/data/eve-images
+      - "${EVE_IMAGE_CACHE_HOST_DIR:-./data/eve-images}:/data/eve-images"
     networks:
       - eve-internal
     deploy:
@@ -51,7 +51,7 @@ services:
     depends_on:
       - api
     ports:
-      - "${APP_BIND_IP:?Set APP_BIND_IP to vm-app private address}:18080:80"
+      - "${APP_BIND_IP:-127.0.0.1}:18080:80"
     networks:
       - eve-internal
     deploy:

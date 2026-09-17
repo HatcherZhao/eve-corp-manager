@@ -1,47 +1,65 @@
-# 生产部署
+# Docker 部署指南
 
-本目录部署到 vm-app 的 `/home/eve-corp-manager`。Compose 仅运行本项目 API 与 Web 容器；MySQL 和 Redis 复用 vm-common，分别为 `eve_corp_manager` 与 Redis `db14`。
+本目录提供面向 GitHub 使用者的生产部署模板。它运行 API 与 Web 两个容器，要求部署者自行提供 MySQL 8、Redis 7、HTTPS 证书和反向代理。默认 Web 仅监听 `127.0.0.1:18080`，适合由同机 Nginx/Caddy 终止 HTTPS；如果网关在另一台主机，改为受限的私网地址，切勿直接暴露到公网。
 
-## 发布镜像
+## 1. 准备配置
 
-在本机先构建当前版本的后端 JAR 和前端静态文件，再以 `linux/amd64` 构建镜像。vm-app 的镜像加速器可能无法拉取基础镜像，因此生产机只加载已构建镜像，不在服务器上构建。
+在 Linux x86_64 Docker 主机创建发布目录，例如 `/srv/eve-corp-manager`。把 `compose.yaml`、`.env.example`、`scripts/` 放入该目录，再生成仅服务器可读的 `.env`：
 
 ```bash
-cd backend
-mvn -B -ntp -Pfat_jar -pl continew-server -am -Dspotless.apply.skip=true package
-cd ../frontend
-nvm use && corepack enable && pnpm install --frozen-lockfile && pnpm build
-cd ..
-docker buildx build --platform linux/amd64 --load -f deploy/production/Dockerfile.api -t eve-corp-manager-api:20260911-1 .
-docker buildx build --platform linux/amd64 --load -f deploy/production/Dockerfile.web -t eve-corp-manager-web:20260911-1 .
-docker save eve-corp-manager-api:20260911-1 eve-corp-manager-web:20260911-1 | gzip > /tmp/eve-corp-manager-20260911-1.tar.gz
+cd /srv/eve-corp-manager
+cp .env.example .env
+./scripts/01-prepare-image-cache-directory.sh
+docker compose config
 ```
 
-## vm-app 发布
+编辑 `.env`：填写 `APP_URL`、MySQL/Redis 连接信息、独立的业务库账号、JWT/字段密钥和管理员初始密码。`REDIS_DB=14` 是项目默认逻辑库，可按自己的 Redis 规划调整。`EVE_IMAGE_CACHE_HOST_DIR` 是游戏头像与物品图标缓存目录，应使用持久化磁盘并保留读写权限。
 
-将压缩镜像、`compose.yaml` 与填写后的 `.env` 上传到 `/home/eve-corp-manager/deploy/production/`，并执行：
+`.env`、数据库数据、授权令牌和 `data/eve-images` 都不应提交到 Git 或打入镜像。首次 API 启动会通过 Liquibase 创建结构和公开基础数据；不要从其他环境导入用户、军团或授权数据。
+
+## 2. 构建离线镜像包
+
+在仓库根目录执行：
 
 ```bash
-cd /home/eve-corp-manager/deploy/production
-./scripts/01-prepare-image-cache-directory.sh
-gzip -dc /home/eve-corp-manager/eve-corp-manager-20260911-1.tar.gz | docker load
+scripts/g010/01-package-production-images.sh 20260917-3
+```
+
+该脚本构建后端 fat JAR、前端静态文件及 `linux/amd64` 的 API/Web 镜像，在 `output/docker/` 生成镜像包与 SHA-256 校验文件。该目录已被 Git 忽略，适合通过受控文件传输交付：
+
+```text
+eve-corp-manager-20260917-3.tar.gz
+eve-corp-manager-20260917-3.tar.gz.sha256
+```
+
+若 JAR 与前端 `dist` 已通过本地验证，可加 `--skip-build` 仅执行镜像打包。M4 等 ARM 主机若无法获取 Nginx amd64 基础镜像，可设置 `WEB_BASE_IMAGE=eve-corp-manager-web:已验证标签` 使用本机已有的同架构 Web 镜像作基底。
+
+## 3. 导入与启动
+
+把压缩包与校验文件上传到发布目录，校验、导入，并将 `.env` 的 `IMAGE_TAG` 改为相同版本：
+
+```bash
+cd /srv/eve-corp-manager
+sha256sum -c eve-corp-manager-20260917-3.tar.gz.sha256
+gzip -dc eve-corp-manager-20260917-3.tar.gz | docker load
+
+# 确认 .env 内 IMAGE_TAG=20260917-3
 docker compose config
 docker compose up -d --no-build
 docker compose ps
 docker compose logs --tail 200 api web
+curl -fsS http://127.0.0.1:18080/ >/dev/null
 ```
 
-持久化目录为 `/home/eve-corp-manager/data/eve-images`，保存角色、军团、建筑、舰船和物品图片缓存。发布前必须运行 `scripts/01-prepare-image-cache-directory.sh`，使 API 容器的 `appuser` 可以自动下载和更新图片；不要删除此目录。`APP_BIND_IP=10.10.0.62` 仅将 Web 入口暴露给蓝队云内网反向代理。
+确认两个容器均为 `running`、API 已完成 Liquibase、站点可访问后，再删除上传包。清理旧镜像前先确认没有容器使用它；不要对宿主机执行广泛的 Docker 清理命令。
 
-发布验证通过后，立即删除本项目的旧版本 API 与 Web 镜像标签和镜像；本项目不保留镜像回滚副本。删除前应确认运行中的容器已经使用本次发布的镜像标签。
+## 4. HTTPS 反向代理
 
-## 蓝队云网关
+[gateway/nginx.conf.example](gateway/nginx.conf.example) 是同机 Nginx 的最小示例。替换域名、证书路径和上游地址后执行 `nginx -t && systemctl reload nginx`。反向代理必须保留同源的 `/api/` 与 `/websocket` 请求，避免破坏登录、WebSocket 和 EVE 授权回调。
 
-将 `gateway/eve.codeagent.cc.conf` 安装为 `/etc/nginx/conf.d/business/eve.codeagent.cc.conf`，然后执行：
+## 5. 常用排查
 
-```bash
-nginx -t && systemctl reload nginx
-curl --resolve eve.codeagent.cc:9443:127.0.0.1 https://eve.codeagent.cc:9443/
-```
-
-网关复用现有 `codeagent.cc` 证书，并将请求转发到 vm-app 私网地址 `10.10.0.62:18080`。
+- `docker compose config`：检查缺失或拼写错误的环境变量。
+- `docker compose logs -f api`：检查 MySQL、Redis、Liquibase 与授权续期。
+- `docker compose logs -f web`：检查 Web 服务器与反代请求。
+- 镜像打包失败：确认已安装 Docker Buildx、JDK 17、Node.js 22，并检查 `backend/continew-server/target/continew-admin.jar` 与 `frontend/dist/index.html` 是否存在。

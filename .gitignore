@@ -4,6 +4,7 @@
 secrets/
 private-data/
 logs/
+output/docker/
 *.log
 node_modules/
 target/

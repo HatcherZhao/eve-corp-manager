@@ -136,7 +136,7 @@ flowchart LR
 | 后端 | Java 17 · Spring Boot · MySQL · Redis | `http://127.0.0.1:8000` |
 | 前端 | Vue 3 · TypeScript · Vite | `http://127.0.0.1:5173` |
 
-启动前请阅读：[本地启动说明](docs/DEVELOPMENT.md) · [构建与验证记录](docs/VALIDATION.md) · [技术架构](docs/design/architecture.md) · [发布说明](docs/PUBLISH.md)
+启动前请阅读：[本地启动说明](docs/DEVELOPMENT.md) · [Docker 部署指南](deploy/production/README.md) · [构建与验证记录](docs/VALIDATION.md) · [技术架构](docs/design/architecture.md) · [发布说明](docs/PUBLISH.md)
 
 ## 安全与边界
 

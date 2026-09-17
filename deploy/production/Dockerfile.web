@@ -1,4 +1,6 @@
-FROM nginx:1.27-alpine
+# 默认使用官方 Nginx；网络受限时可传入已验证的同架构 Web 镜像作为基底。
+ARG WEB_BASE_IMAGE=nginx:1.27-alpine
+FROM ${WEB_BASE_IMAGE}
 
 COPY frontend/dist/ /usr/share/nginx/html/
 COPY deploy/production/web-nginx.conf /etc/nginx/conf.d/default.conf
