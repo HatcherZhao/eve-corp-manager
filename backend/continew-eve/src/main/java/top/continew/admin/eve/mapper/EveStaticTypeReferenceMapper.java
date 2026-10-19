@@ -35,10 +35,7 @@ import java.util.List;
 public interface EveStaticTypeReferenceMapper extends BaseMapper<EveStaticTypeReferenceDO> {
 
     /** 查询当前军团月矿观察者账本中出现过的月矿类型，数量仅用于识别品类而不会下发。 */
-    @Select("SELECT DISTINCT ledger.type_id FROM eve_mining_ledger AS ledger "
-        + "INNER JOIN eve_static_type_reference AS reference ON reference.type_id = ledger.type_id "
-        + "WHERE ledger.tenant_id = #{tenantId} AND ledger.corporation_ref_id = #{corporationRefId} "
-        + "AND ledger.deleted = 0 AND reference.market_category_l4 = '卫星矿石'")
+    @Select("SELECT DISTINCT ledger.type_id FROM eve_mining_ledger AS ledger " + "INNER JOIN eve_static_type_reference AS reference ON reference.type_id = ledger.type_id " + "WHERE ledger.tenant_id = #{tenantId} AND ledger.corporation_ref_id = #{corporationRefId} " + "AND ledger.deleted = 0 AND reference.market_category_l4 = '卫星矿石'")
     List<Integer> selectCorporationMoonOreTypeIds(@Param("tenantId") Long tenantId,
                                                   @Param("corporationRefId") Long corporationRefId);
 
@@ -53,15 +50,20 @@ public interface EveStaticTypeReferenceMapper extends BaseMapper<EveStaticTypeRe
         FROM `eve_static_type_reference` AS `reference`
         LEFT JOIN `eve_market_snapshot` AS `snapshot` ON `snapshot`.`type_id` = `reference`.`type_id`
         WHERE `reference`.`market_category_l1` <> ''
-          AND (`snapshot`.`history_synchronized_at` IS NULL
+          AND (`snapshot`.`history_next_request_at` IS NULL OR `snapshot`.`history_next_request_at` <= NOW()
+            OR (`snapshot`.`history_source` IS NOT NULL AND `snapshot`.`history_source` <> #{source}))
+          AND (`snapshot`.`history_source` IS NULL OR `snapshot`.`history_source` <> #{source}
+            OR `snapshot`.`history_synchronized_at` IS NULL
             OR `snapshot`.`history_synchronized_at` < DATE_SUB(NOW(), INTERVAL 1 DAY))
-        -- 从未同步过的物品必须先完成首轮覆盖，不能被每日重刷的旧快照长期挤占。
-        ORDER BY CASE WHEN `snapshot`.`history_synchronized_at` IS NULL THEN 0 ELSE 1 END ASC,
+        -- 已被页面或估值实际使用的物品优先补温，但每轮仍只处理极少数请求。
+        ORDER BY CASE WHEN `snapshot`.`last_accessed_at` >= DATE_SUB(NOW(), INTERVAL 1 DAY) THEN 0 ELSE 1 END ASC,
+                 -- 从未同步过的物品必须先完成首轮覆盖，不能被每日重刷的旧快照长期挤占。
+                 CASE WHEN `snapshot`.`history_synchronized_at` IS NULL THEN 0 ELSE 1 END ASC,
                  `snapshot`.`history_synchronized_at` ASC,
                  `reference`.`type_id` ASC
         LIMIT #{limit}
         """)
-    List<Integer> selectHistoryWarmupTypeIds(@Param("limit") int limit);
+    List<Integer> selectHistoryWarmupTypeIds(@Param("limit") int limit, @Param("source") String source);
 
     /**
      * 选择需要更新报价的可交易物品，供后台轮转刷新整个市场目录。

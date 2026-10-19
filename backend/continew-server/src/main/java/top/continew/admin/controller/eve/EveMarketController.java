@@ -24,13 +24,11 @@ import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import top.continew.admin.eve.model.EveMarketDetailResp;
 import top.continew.admin.eve.model.EveMarketItemResp;
-import top.continew.admin.eve.model.EveMarketSyncResp;
 import top.continew.admin.eve.model.enums.EveMineralPriceCategory;
 import top.continew.admin.eve.service.EveMarketService;
 import top.continew.starter.extension.crud.model.resp.PageResp;
@@ -86,14 +84,6 @@ public class EveMarketController {
     @SaCheckPermission("eve:market:view")
     public EveMarketDetailResp detail(@PathVariable @Min(1) int typeId) {
         return marketService.detail(typeId);
-    }
-
-    /** CEO 或总监立刻刷新一个物品的吉他订单簿和价格历史。 */
-    @PostMapping("/{typeId}/sync")
-    @Operation(summary = "立即刷新单物品吉他市场")
-    @SaCheckPermission("eve:market:sync")
-    public EveMarketSyncResp synchronize(@PathVariable @Min(1) int typeId) {
-        return marketService.synchronize(typeId);
     }
 
     private static String blank(String value) {

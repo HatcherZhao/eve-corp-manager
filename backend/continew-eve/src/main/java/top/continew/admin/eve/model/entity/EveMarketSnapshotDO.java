@@ -27,7 +27,7 @@ import java.time.LocalDateTime;
 /**
  * 全站共享的吉他市场物品缓存快照。
  *
- * <p>订单簿和历史走势保留其上游 JSON，避免页面打开时让每个用户重复访问第三方数据源。</p>
+ * <p>订单簿和历史走势保留官方 ESI 的后台同步快照，避免页面打开时重复访问上游。</p>
  *
  * @author zhaoyuqing
  */
@@ -55,6 +55,10 @@ public class EveMarketSnapshotDO {
     private LocalDateTime detailSynchronizedAt;
     /** 最近一次成功更新价格历史的时间。 */
     private LocalDateTime historySynchronizedAt;
+    /** 历史数据来源及区域版本；为空的旧缓存不得按官方日均价展示。 */
+    private String historySource;
+    /** 根据官方缓存期限及失败退避计算的下次历史请求时间。 */
+    private LocalDateTime historyNextRequestAt;
     /** 最近抓取到的买单 JSON。 */
     private String buyOrdersJson;
     /** 最近抓取到的卖单 JSON。 */

@@ -14,10 +14,13 @@
  * limitations under the License.
  */
 
-package top.continew.admin.eve.model;
+package top.continew.admin.eve.model.serenity;
 
-import java.time.LocalDateTime;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
-/** 手动刷新单个吉他物品行情的执行回执。 */
-public record EveMarketSyncResp(boolean refreshed, String message, LocalDateTime synchronizedAt) {
+/** 国服 ESI 按区域聚合的每日市场成交数据。 */
+public record SerenityMarketHistoryResponse(BigDecimal average, LocalDate date, BigDecimal highest, BigDecimal lowest,
+                                            @JsonProperty("order_count") Long orderCount, Long volume) {
 }

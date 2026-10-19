@@ -120,3 +120,5 @@ databaseChangeLog:
       file: db/changelog/mysql/eve/045_mineral_price_directory.sql
   - include:
       file: db/changelog/mysql/eve/046_mineral_price_directory_menu_id_fix.sql
+  - include:
+      file: db/changelog/mysql/eve/052_market_esi_cache_safety.sql

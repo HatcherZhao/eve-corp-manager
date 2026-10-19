@@ -16,21 +16,10 @@
 
 package top.continew.admin.eve.service;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestClient;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
-import org.xml.sax.InputSource;
+import top.continew.admin.eve.client.SerenityEsiClient;
 import top.continew.admin.common.context.UserContextHolder;
 import top.continew.admin.eve.config.EveMarketProperties;
 import top.continew.admin.eve.mapper.EveCorporationMapper;
@@ -41,25 +30,26 @@ import top.continew.admin.eve.model.EveMarketHistoryResp;
 import top.continew.admin.eve.model.EveMarketItemResp;
 import top.continew.admin.eve.model.EveMarketOrderResp;
 import top.continew.admin.eve.model.EveMarketQuoteResp;
-import top.continew.admin.eve.model.EveMarketSyncResp;
 import top.continew.admin.eve.model.EveStaticTypeReferenceResp;
 import top.continew.admin.eve.model.entity.EveCorporationDO;
 import top.continew.admin.eve.model.entity.EveMarketSnapshotDO;
 import top.continew.admin.eve.model.entity.EveStaticTypeReferenceDO;
 import top.continew.admin.eve.model.enums.EveMineralPriceCategory;
+import top.continew.admin.eve.model.serenity.SerenityMarketHistoryResponse;
+import top.continew.admin.eve.model.serenity.SerenityMarketOrderResponse;
 import top.continew.starter.core.exception.BusinessException;
 import top.continew.starter.extension.crud.model.resp.PageResp;
 
-import javax.xml.XMLConstants;
-import javax.xml.parsers.DocumentBuilderFactory;
-import java.io.StringReader;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -68,9 +58,9 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 提供以吉他贸易中心为固定口径的市场查询和服务器端缓存。
  *
- * <p>物品分类和名称来自本系统的 evedata 基础信息；市场数据由 CEVE Market 的公开国服接口读取。
- * 页面不会直接请求第三方：列表按页批量刷新报价，详情缓存订单簿与每日历史，上游故障时继续提供最后
- * 成功快照。</p>
+ * <p>物品分类和名称来自本系统随应用交付的 evedata 基础信息；市场订单与区域成交历史只由后台经国服
+ * 官方 ESI 同步。页面与手动操作严格只读取本地快照，上游故障时继续提供最后成功快照，避免用户访问
+ * 形成对官方接口的突发请求。</p>
  *
  * @author zhaoyuqing
  */
@@ -78,10 +68,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 public class EveMarketService {
 
-    /** 吉他星系 ID，市场估值和报价均以此为唯一默认口径。 */
-    private static final long JITA_SOLAR_SYSTEM_ID = 30000142L;
-    /** CEVE Market 文档约定的单次 marketstat 最大物品数。 */
-    private static final int MARKETSTAT_BATCH_SIZE = 20;
     /** 单个订单簿保留的最多订单，足以展示深度且防止详情响应过大。 */
     private static final int ORDER_LIMIT = 100;
     private static final int HISTORY_LIMIT = 366;
@@ -92,14 +78,15 @@ public class EveMarketService {
     private final EveMarketSnapshotMapper snapshotMapper;
     private final EveStaticTypeReferenceMapper typeReferenceMapper;
     private final EveStaticReferenceService staticReferenceService;
+    private final SerenityEsiClient serenityEsiClient;
     private final ObjectMapper objectMapper;
-    private final RestClient restClient;
+    private final EveMarketSnapshotStore snapshotStore;
 
-    /** 单实例内按物品合并并发详情刷新，避免同一物品被多个用户重复拉取。 */
+    /** 单实例内避免同一物品被多个后台历史补温任务重复处理。 */
     private final Set<Integer> refreshingTypes = ConcurrentHashMap.newKeySet();
 
     /**
-     * 创建吉他市场服务，并明确注入独立的市场 HTTP 客户端。
+     * 创建吉他市场服务；所有上游访问统一收敛到受全局节流器保护的国服 ESI 客户端。
      *
      * @param properties             市场同步配置
      * @param contextService         当前军团上下文服务
@@ -107,8 +94,9 @@ public class EveMarketService {
      * @param snapshotMapper         行情缓存数据访问器
      * @param typeReferenceMapper    静态物品资料访问器
      * @param staticReferenceService 基础信息查询服务
-     * @param objectMapper           JSON 解析器
-     * @param restClient             吉他公开市场 HTTP 客户端
+     * @param serenityEsiClient      国服 ESI 客户端
+     * @param objectMapper           JSON 序列化器
+     * @param snapshotStore          完整订单快照的事务发布器
      */
     public EveMarketService(EveMarketProperties properties,
                             EveContextService contextService,
@@ -116,20 +104,22 @@ public class EveMarketService {
                             EveMarketSnapshotMapper snapshotMapper,
                             EveStaticTypeReferenceMapper typeReferenceMapper,
                             EveStaticReferenceService staticReferenceService,
+                            SerenityEsiClient serenityEsiClient,
                             ObjectMapper objectMapper,
-                            @Qualifier("eveMarketRestClient") RestClient restClient) {
+                            EveMarketSnapshotStore snapshotStore) {
         this.properties = properties;
         this.contextService = contextService;
         this.corporationMapper = corporationMapper;
         this.snapshotMapper = snapshotMapper;
         this.typeReferenceMapper = typeReferenceMapper;
         this.staticReferenceService = staticReferenceService;
+        this.serenityEsiClient = serenityEsiClient;
         this.objectMapper = objectMapper;
-        this.restClient = restClient;
+        this.snapshotStore = snapshotStore;
     }
 
     /**
-     * 按基础信息分类分页查看市场。报价未命中或过期时，当前页最多二十项会合并为一个上游请求。
+     * 按基础信息分类分页查看市场，只读取本地快照。
      */
     public PageResp<EveMarketItemResp> page(int page,
                                             int size,
@@ -152,8 +142,7 @@ public class EveMarketService {
         PageResp<EveStaticTypeReferenceResp> types;
         if (EveMineralPriceCategory.CORPORATION_MOON == category) {
             EveCorporationDO corporation = requireCurrentCorporation();
-            List<Integer> typeIds = typeReferenceMapper.selectCorporationMoonOreTypeIds(UserContextHolder
-                .getContext()
+            List<Integer> typeIds = typeReferenceMapper.selectCorporationMoonOreTypeIds(UserContextHolder.getContext()
                 .getTenantId(), corporation.getId());
             types = staticReferenceService.pageTypesByIds(page, size, keyword, categoryPath, typeIds);
         } else {
@@ -165,9 +154,6 @@ public class EveMarketService {
     /** 为静态目录中的每种矿物附加同一时点的吉他报价缓存。 */
     private PageResp<EveMarketItemResp> attachQuotes(PageResp<EveStaticTypeReferenceResp> types) {
         List<Integer> typeIds = types.getList().stream().map(EveStaticTypeReferenceResp::typeId).toList();
-        if (properties.isEnabled()) {
-            refreshQuotesIfNecessary(typeIds);
-        }
         Map<Integer, EveMarketSnapshotDO> snapshots = findSnapshots(typeIds);
         return new PageResp<>(types.getList()
             .stream()
@@ -189,9 +175,7 @@ public class EveMarketService {
     private EveCorporationDO requireCurrentCorporation() {
         Long tenantId = UserContextHolder.getContext().getTenantId();
         var context = contextService.getCurrentContext();
-        Long corporationId = context.corporation() == null
-            ? null
-            : context.corporation().corporationId();
+        Long corporationId = context.corporation() == null ? null : context.corporation().corporationId();
         if (corporationId == null) {
             throw new BusinessException("请先选择所属军团后再查看军团月矿价格");
         }
@@ -202,95 +186,46 @@ public class EveMarketService {
         return corporation;
     }
 
-    /** 读取单物品完整行情；用户查看仅按需更新报价和订单，历史日线由后台独立维护。 */
+    /** 读取单物品完整行情；所有内容均来自后台同步的本地快照，不在用户请求中访问 ESI。 */
     public EveMarketDetailResp detail(int typeId) {
         EveStaticTypeReferenceResp type = requireType(typeId);
-        EveMarketSnapshotDO before = snapshotMapper.selectById(typeId);
-        boolean shouldRefresh = needsDetailRefresh(before);
-        boolean servedFromCache = false;
-        String message = null;
-        if (properties.isEnabled() && shouldRefresh) {
-            try {
-                refreshDetail(typeId, false);
-            } catch (RuntimeException e) {
-                servedFromCache = before != null;
-                message = before == null ? "暂时无法读取吉他行情，请稍后重试" : "上游暂时不可用，正在展示最近缓存";
-                log.warn("吉他市场详情刷新失败，typeId={}, errorType={}", typeId, e.getClass().getSimpleName());
-            }
-        } else if (!properties.isEnabled()) {
-            servedFromCache = before != null;
-            message = "吉他市场同步已关闭，正在展示最近缓存";
-        }
         EveMarketSnapshotDO snapshot = snapshotMapper.selectById(typeId);
-        if (snapshot == null && !properties.isEnabled()) {
-            throw new BusinessException("吉他市场同步未启用，暂无可用缓存");
+        boolean stale = snapshot == null || needsQuoteRefresh(snapshot) || needsDetailRefresh(snapshot);
+        boolean servedFromCache = stale;
+        String message = null;
+        if (!properties.isEnabled()) {
+            message = snapshot == null ? "吉他市场同步未启用，暂无可用缓存" : "吉他市场同步已关闭，正在展示最近缓存";
+        } else if (snapshot == null) {
+            message = "吉他市场正在等待国服 ESI 的首轮后台同步";
+        } else if (stale) {
+            message = "行情正在等待下一轮国服 ESI 后台同步，当前展示最近缓存";
         }
         touch(typeId, snapshot);
-        return new EveMarketDetailResp(type, toQuote(snapshot), readOrders(snapshot, "BUY"), readOrders(snapshot,
-            "SELL"), readHistory(snapshot), snapshot == null ? null : snapshot.getHistorySynchronizedAt(),
-            servedFromCache, message);
-    }
-
-    /** CEO 或总监可主动强制更新某个物品的完整买卖盘与日线。 */
-    public EveMarketSyncResp synchronize(int typeId) {
-        requireType(typeId);
-        if (!properties.isEnabled()) {
-            return new EveMarketSyncResp(false, "吉他市场同步未启用", LocalDateTime.now());
-        }
-        try {
-            refreshDetail(typeId, true);
-            return new EveMarketSyncResp(true, "已更新吉他行情、订单与历史", LocalDateTime.now());
-        } catch (RuntimeException e) {
-            log.warn("手动刷新吉他市场失败，typeId={}, errorType={}", typeId, e.getClass().getSimpleName());
-            recordFailure(typeId, "上游暂时不可用");
-            return new EveMarketSyncResp(false, "暂时无法读取吉他行情，已保留最近缓存", LocalDateTime.now());
-        }
-    }
-
-    /** 定时低频刷新近期真正被查看过的物品，避免全量扫描两万余个市场类型。 */
-    public void refreshRecentSnapshots() {
-        if (!properties.isEnabled()) {
-            return;
-        }
-        LocalDateTime accessThreshold = LocalDateTime.now().minusDays(7);
-        List<EveMarketSnapshotDO> candidates = snapshotMapper.selectList(new LambdaQueryWrapper<EveMarketSnapshotDO>()
-            .gt(EveMarketSnapshotDO::getLastAccessedAt, accessThreshold)
-            .orderByAsc(EveMarketSnapshotDO::getDetailSynchronizedAt)
-            .last("LIMIT " + properties.getRecentRefreshLimit()));
-        for (EveMarketSnapshotDO candidate : candidates) {
-            if (!needsDetailRefresh(candidate) || !refreshingTypes.add(candidate.getTypeId())) {
-                continue;
-            }
-            try {
-                refreshDetailInternal(candidate.getTypeId(), false);
-            } catch (RuntimeException e) {
-                recordFailure(candidate.getTypeId(), "上游暂时不可用");
-                log.debug("近期吉他市场缓存刷新失败，typeId={}, errorType={}", candidate.getTypeId(), e.getClass().getSimpleName());
-            } finally {
-                refreshingTypes.remove(candidate.getTypeId());
-            }
-        }
+        return new EveMarketDetailResp(type, toQuote(snapshot), readOrders(snapshot, "BUY"), readOrders(snapshot, "SELL"), readHistory(snapshot), hasOfficialHistory(snapshot)
+            ? snapshot.getHistorySynchronizedAt()
+            : null, servedFromCache, message);
     }
 
     /**
      * 低频补齐全站物品的价格历史。历史由公开接口直接提供，不依赖用户先点开每个物品。
      *
-     * <p>每次只处理受限数量且只请求历史接口；订单簿仍在用户查看详情时才读取，避免对上游造成
-     * 不必要的三倍请求量。</p>
+     * <p>每次只处理受限数量且只请求一个区域历史接口；订单簿仅由全量后台同步读取，避免形成
+     * 按页面、按物品的突发抓取。</p>
      */
     public void warmPriceHistories() {
         if (!properties.isEnabled()) {
             return;
         }
-        for (Integer typeId : typeReferenceMapper.selectHistoryWarmupTypeIds(properties.getHistoryWarmupLimit())) {
+        for (Integer typeId : typeReferenceMapper.selectHistoryWarmupTypeIds(properties
+            .getHistoryWarmupLimit(), historySource())) {
             if (!refreshingTypes.add(typeId)) {
                 continue;
             }
             try {
                 refreshHistory(typeId);
             } catch (RuntimeException e) {
-                recordFailure(typeId, "上游暂时不可用");
-                log.debug("吉他市场价格历史补温失败，typeId={}, errorType={}", typeId, e.getClass().getSimpleName());
+                recordFailure(typeId, "国服 ESI 市场历史暂时不可用");
+                log.debug("国服 ESI 市场历史补温失败，typeId={}, errorType={}", typeId, e.getClass().getSimpleName());
             } finally {
                 refreshingTypes.remove(typeId);
             }
@@ -298,29 +233,23 @@ public class EveMarketService {
     }
 
     /**
-     * 轮转刷新全部可交易物品的吉他报价，数据维护不依赖任何用户页面访问。
+     * 按官方 ESI 的区域订单快照更新全部吉他报价和订单簿。
      *
-     * <p>公开报价接口可一次读取二十个物品，因此该任务以批量方式运行；用户查看列表时的按页刷新
-     * 仅用于缩短当前页面的等待时间，不是行情数据存在的前提。</p>
+     * <p>该方法只由带分布式锁的后台任务调用。每一页请求均通过 {@link SerenityEsiClient} 的全局
+     * 节流器串行执行，只有全部页面读取成功才开始写入本地快照，避免半次抓取覆盖最后成功数据。</p>
      */
-    public void warmMarketQuotes() {
+    public LocalDateTime synchronizeMarketOrders() {
         if (!properties.isEnabled()) {
-            return;
+            return null;
         }
-        List<Integer> typeIds = typeReferenceMapper.selectQuoteSyncTypeIds(properties.getQuoteWarmupLimit());
-        if (typeIds.isEmpty()) {
-            return;
-        }
-        try {
-            refreshQuotes(typeIds);
-        } catch (RuntimeException e) {
-            typeIds.forEach(typeId -> recordFailure(typeId, "上游暂时不可用"));
-            log.debug("吉他市场全量报价补温失败，count={}, errorType={}", typeIds.size(), e.getClass().getSimpleName());
-        }
+        MarketOrders orders = readJitaOrders();
+        persistMarketOrders(orders.byType());
+        log.info("国服 ESI 吉他市场订单同步完成，typeCount={}", orders.byType().size());
+        return orders.expiresAt();
     }
 
     /**
-     * 为月矿压缩估值按需补齐少量高密度矿的报价，仍复用报价缓存时效。
+     * 为月矿压缩估值标记少量高密度矿报价的使用状态，不在业务请求中访问官方接口。
      *
      * @param typeIds 需要估值的高密度月矿类型 ID
      */
@@ -328,228 +257,151 @@ public class EveMarketService {
         if (!properties.isEnabled() || typeIds == null || typeIds.isEmpty()) {
             return;
         }
-        List<Integer> distinctIds = typeIds.stream().filter(id -> id != null && id > 0).distinct().toList();
-        for (int start = 0; start < distinctIds.size(); start += MARKETSTAT_BATCH_SIZE) {
-            refreshQuotesIfNecessary(distinctIds.subList(start, Math.min(start + MARKETSTAT_BATCH_SIZE, distinctIds
-                .size())));
+        for (Integer typeId : typeIds.stream().filter(id -> id != null && id > 0).distinct().toList()) {
+            touch(typeId, snapshotMapper.selectById(typeId));
         }
     }
 
-    /** 批量刷新当前分页的报价；未过期项保留本地快照，避免翻页频繁请求公开上游。 */
-    private void refreshQuotesIfNecessary(List<Integer> typeIds) {
-        if (typeIds.isEmpty()) {
-            return;
+    /** 读取一轮完整区域订单，只在所有页面成功后才返回可落库数据。 */
+    private MarketOrders readJitaOrders() {
+        var firstPage = serenityEsiClient.getMarketOrdersWithMetadata(properties.getRegionId(), 1);
+        LocalDateTime expiresAt = firstPage.expiresAt();
+        Map<Integer, List<SerenityMarketOrderResponse>> result = new HashMap<>();
+        collectJitaOrders(result, firstPage.body());
+        for (int page = 2; page <= firstPage.pageCount(); page++) {
+            var nextPage = serenityEsiClient.getMarketOrdersWithMetadata(properties.getRegionId(), page);
+            collectJitaOrders(result, nextPage.body());
+            if (nextPage.expiresAt() != null && (expiresAt == null || nextPage.expiresAt().isAfter(expiresAt))) {
+                expiresAt = nextPage.expiresAt();
+            }
         }
-        Map<Integer, EveMarketSnapshotDO> existing = findSnapshots(typeIds);
-        List<Integer> staleIds = typeIds.stream().filter(typeId -> needsQuoteRefresh(existing.get(typeId))).toList();
-        if (staleIds.isEmpty()) {
-            return;
-        }
-        try {
-            refreshQuotes(staleIds);
-        } catch (RuntimeException e) {
-            staleIds.forEach(typeId -> recordFailure(typeId, "上游暂时不可用"));
-            log.debug("吉他市场分页报价刷新失败，count={}, errorType={}", staleIds.size(), e.getClass().getSimpleName());
-        }
+        return new MarketOrders(result, expiresAt);
     }
 
-    /** 调用公开 marketstat 批量接口并将价格基线写入本地。 */
-    @Transactional(rollbackFor = Exception.class)
-    protected void refreshQuotes(Collection<Integer> typeIds) {
-        List<Integer> distinctIds = typeIds.stream()
-            .filter(id -> id != null && id > 0)
-            .distinct()
-            .limit(MARKETSTAT_BATCH_SIZE)
-            .toList();
-        if (distinctIds.isEmpty()) {
-            return;
-        }
-        Map<Integer, QuoteData> quotes = requestQuotes(distinctIds);
-        LocalDateTime now = LocalDateTime.now();
-        for (Integer typeId : distinctIds) {
-            QuoteData quote = quotes.get(typeId);
-            if (quote == null) {
+    /** 将一页区域订单过滤为既定吉他口径；可选空间站配置会进一步收窄范围。 */
+    private void collectJitaOrders(Map<Integer, List<SerenityMarketOrderResponse>> ordersByType,
+                                   Collection<SerenityMarketOrderResponse> orders) {
+        for (SerenityMarketOrderResponse order : orders) {
+            if (order.typeId() == null || order.typeId() <= 0 || order.systemId() == null || order
+                .locationId() == null || order.price() == null || order.volumeRemain() == null || order
+                    .systemId() != properties.getSolarSystemId() || (properties.getStationId() != null && !properties
+                        .getStationId()
+                        .equals(order.locationId()))) {
                 continue;
             }
-            EveMarketSnapshotDO snapshot = snapshotMapper.selectById(typeId);
-            if (snapshot == null) {
-                snapshot = new EveMarketSnapshotDO();
-                snapshot.setTypeId(typeId);
-                snapshot.setCreateTime(now);
-                snapshotMapper.insert(snapshot);
-            }
+            ordersByType.computeIfAbsent(order.typeId(), ignored -> new ArrayList<>()).add(order);
+        }
+    }
+
+    /** 把一轮完整订单快照转换成报价和有限深度订单簿后落库。 */
+    private void persistMarketOrders(Map<Integer, List<SerenityMarketOrderResponse>> ordersByType) {
+        LocalDateTime now = LocalDateTime.now();
+        Map<Long, String> stationNames = resolveStationNames(ordersByType.values());
+        List<EveMarketSnapshotDO> snapshots = new ArrayList<>();
+        for (Map.Entry<Integer, List<SerenityMarketOrderResponse>> entry : ordersByType.entrySet()) {
+            List<EveMarketOrderResp> buyOrders = toOrders(entry.getValue(), true, stationNames);
+            List<EveMarketOrderResp> sellOrders = toOrders(entry.getValue(), false, stationNames);
+            QuoteData quote = quote(buyOrders, sellOrders, entry.getValue());
+            EveMarketSnapshotDO snapshot = new EveMarketSnapshotDO();
+            snapshot.setTypeId(entry.getKey());
+            snapshot.setCreateTime(now);
             snapshot.setHighestBuyPrice(quote.highestBuyPrice());
             snapshot.setLowestSellPrice(quote.lowestSellPrice());
             snapshot.setBuyVolume(quote.buyVolume());
             snapshot.setSellVolume(quote.sellVolume());
             snapshot.setSourceUpdatedAt(now);
             snapshot.setQuoteSynchronizedAt(now);
+            snapshot.setDetailSynchronizedAt(now);
+            snapshot.setBuyOrdersJson(writeJson(buyOrders));
+            snapshot.setSellOrdersJson(writeJson(sellOrders));
             snapshot.setLastFailureMessage(null);
             snapshot.setUpdateTime(now);
-            snapshotMapper.updateById(snapshot);
+            snapshots.add(snapshot);
         }
+        snapshotStore.replaceOrders(snapshots, now);
     }
 
-    /** 刷新一个物品的报价和订单簿；仅管理员主动刷新时同时更新日线。 */
-    private void refreshDetail(int typeId, boolean includeHistory) {
-        if (!refreshingTypes.add(typeId)) {
-            return;
+    /** 从自有静态资料解析空间站名称；未知位置不影响订单或报价入库。 */
+    private Map<Long, String> resolveStationNames(Collection<List<SerenityMarketOrderResponse>> orderGroups) {
+        Set<Long> stationIds = new LinkedHashSet<>();
+        orderGroups.forEach(orders -> orders.forEach(order -> stationIds.add(order.locationId())));
+        if (stationIds.isEmpty()) {
+            return Map.of();
         }
-        try {
-            refreshDetailInternal(typeId, includeHistory);
-        } finally {
-            refreshingTypes.remove(typeId);
-        }
+        Map<Long, String> names = new HashMap<>();
+        staticReferenceService.findLocations("STATION", stationIds)
+            .forEach((stationId, reference) -> names.put(stationId, reference.getReferenceName()));
+        return names;
     }
 
-    /** 刷新详情缓存；历史日线只由后台补温或管理员手动刷新请求。 */
-    @Transactional(rollbackFor = Exception.class)
-    protected void refreshDetailInternal(int typeId, boolean includeHistory) {
-        QuoteData quote = requestQuotes(List.of(typeId)).get(typeId);
-        if (quote == null) {
-            throw new BusinessException("上游未返回该物品的吉他报价");
-        }
-        JsonNode sellPayload = requestJson("/order/?typeid=" + typeId + "&regionid=0&orders=sell&server=cn");
-        JsonNode buyPayload = requestJson("/order/?typeid=" + typeId + "&regionid=0&orders=buy&server=cn");
-        List<EveMarketOrderResp> sellOrders = parseOrders(sellPayload.path("sell"), "SELL");
-        List<EveMarketOrderResp> buyOrders = parseOrders(buyPayload.path("buy"), "BUY");
-        List<EveMarketHistoryResp> history = includeHistory
-            ? parseHistory(requestJson("/query_history/?typeid=" + typeId + "&regionid=0&server=cn"))
-            : null;
-        LocalDateTime now = LocalDateTime.now();
-        EveMarketSnapshotDO snapshot = snapshotMapper.selectById(typeId);
-        if (snapshot == null) {
-            snapshot = new EveMarketSnapshotDO();
-            snapshot.setTypeId(typeId);
-            snapshot.setCreateTime(now);
-            snapshotMapper.insert(snapshot);
-        }
-        snapshot.setHighestBuyPrice(quote.highestBuyPrice());
-        snapshot.setLowestSellPrice(quote.lowestSellPrice());
-        snapshot.setBuyVolume(quote.buyVolume());
-        snapshot.setSellVolume(quote.sellVolume());
-        snapshot.setSourceUpdatedAt(now);
-        snapshot.setQuoteSynchronizedAt(now);
-        snapshot.setDetailSynchronizedAt(now);
-        snapshot.setBuyOrdersJson(writeJson(buyOrders));
-        snapshot.setSellOrdersJson(writeJson(sellOrders));
-        if (includeHistory) {
-            snapshot.setHistorySynchronizedAt(now);
-            snapshot.setHistoryJson(writeJson(history));
-        }
-        snapshot.setLastFailureMessage(null);
-        snapshot.setUpdateTime(now);
-        snapshotMapper.updateById(snapshot);
-    }
-
-    /** 仅补齐价格历史，不提前请求用户尚未查看的买卖订单。 */
-    @Transactional(rollbackFor = Exception.class)
-    protected void refreshHistory(int typeId) {
-        JsonNode historyPayload = requestJson("/query_history/?typeid=" + typeId + "&regionid=0&server=cn");
-        List<EveMarketHistoryResp> history = parseHistory(historyPayload);
-        LocalDateTime now = LocalDateTime.now();
-        EveMarketSnapshotDO snapshot = snapshotMapper.selectById(typeId);
-        if (snapshot == null) {
-            snapshot = new EveMarketSnapshotDO();
-            snapshot.setTypeId(typeId);
-            snapshot.setCreateTime(now);
-            snapshotMapper.insert(snapshot);
-        }
-        snapshot.setHistoryJson(writeJson(history));
-        snapshot.setHistorySynchronizedAt(now);
-        snapshot.setLastFailureMessage(null);
-        snapshot.setUpdateTime(now);
-        snapshotMapper.updateById(snapshot);
-    }
-
-    /** 从公开 marketstat XML 解析当前最高求购、最低卖出和总量。 */
-    private Map<Integer, QuoteData> requestQuotes(List<Integer> typeIds) {
-        StringBuilder endpoint = new StringBuilder("/api/marketstat?");
-        for (Integer typeId : typeIds) {
-            endpoint.append("typeid=").append(typeId).append('&');
-        }
-        endpoint.append("usesystem=").append(JITA_SOLAR_SYSTEM_ID);
-        String xml = restClient.get().uri(properties.getBaseUrl() + endpoint).retrieve().body(String.class);
-        if (xml == null || xml.isBlank()) {
-            throw new BusinessException("市场上游未返回报价数据");
-        }
-        try {
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            factory.setExpandEntityReferences(false);
-            Document document = factory.newDocumentBuilder().parse(new InputSource(new StringReader(xml)));
-            Map<Integer, QuoteData> result = new HashMap<>();
-            NodeList nodes = document.getElementsByTagName("type");
-            for (int index = 0; index < nodes.getLength(); index++) {
-                Element type = (Element)nodes.item(index);
-                int typeId = Integer.parseInt(type.getAttribute("id"));
-                Element buy = child(type, "buy");
-                Element sell = child(type, "sell");
-                result
-                    .put(typeId, new QuoteData(decimal(childText(buy, "max")), decimal(childText(sell, "min")), longValue(childText(buy, "volume")), longValue(childText(sell, "volume"))));
-            }
-            return result;
-        } catch (Exception e) {
-            throw new BusinessException("无法解析吉他市场报价");
-        }
-    }
-
-    /** 请求网站详情页面同源使用的公开 JSON 接口；请求只在服务器缓存刷新时发起。 */
-    private JsonNode requestJson(String endpoint) {
-        String body = restClient.get()
-            .uri(properties.getBaseUrl() + endpoint)
-            .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
-            .retrieve()
-            .body(String.class);
-        if (body == null || body.isBlank()) {
-            throw new BusinessException("市场上游未返回详情数据");
-        }
-        try {
-            return objectMapper.readTree(body);
-        } catch (Exception e) {
-            throw new BusinessException("无法解析吉他市场详情");
-        }
-    }
-
-    /** 解析并限制订单深度，卖单由低到高、买单由高到低呈现。 */
-    private static List<EveMarketOrderResp> parseOrders(JsonNode source, String side) {
-        if (!source.isArray()) {
-            return List.of();
-        }
+    /** 转换并按价格截取展示所需的订单深度。 */
+    private static List<EveMarketOrderResp> toOrders(Collection<SerenityMarketOrderResponse> source,
+                                                     boolean buyOrder,
+                                                     Map<Long, String> stationNames) {
         List<EveMarketOrderResp> result = new ArrayList<>();
-        for (JsonNode item : source) {
-            result.add(new EveMarketOrderResp(side, longValue(item.path("stationid").asText()), item.path("stationname")
-                .asText(null), decimal(item.path("price").asText()), longValue(item.path("vol")
-                    .asText()), localDate(item.path("issued").asText(null)), localDateTime(item.path("reported")
-                        .asText(null)), intValue(item.path("range").asText())));
+        for (SerenityMarketOrderResponse order : source) {
+            if (order.buyOrder() != buyOrder) {
+                continue;
+            }
+            result.add(new EveMarketOrderResp(buyOrder ? "BUY" : "SELL", order.locationId(), stationNames.get(order
+                .locationId()), order.price(), order.volumeRemain(), localDate(order.issuedAt()), null, null));
         }
         Comparator<EveMarketOrderResp> price = Comparator.comparing(EveMarketOrderResp::price, Comparator
             .nullsLast(Comparator.naturalOrder()));
-        result.sort("BUY".equals(side) ? price.reversed() : price);
+        result.sort(buyOrder ? price.reversed() : price);
         return result.size() <= ORDER_LIMIT ? List.copyOf(result) : List.copyOf(result.subList(0, ORDER_LIMIT));
     }
 
-    /** 解析最近一年的每日价格走势；最新日期排在最后，便于直接绘制时间轴。 */
-    private static List<EveMarketHistoryResp> parseHistory(JsonNode source) {
-        if (!source.isArray()) {
-            return List.of();
+    /** 从完整订单集合计算估值使用的最高买价、最低卖价和总挂单量。 */
+    private static QuoteData quote(List<EveMarketOrderResp> buyOrders,
+                                   List<EveMarketOrderResp> sellOrders,
+                                   Collection<SerenityMarketOrderResponse> allOrders) {
+        long buyVolume = allOrders.stream()
+            .filter(SerenityMarketOrderResponse::buyOrder)
+            .map(SerenityMarketOrderResponse::volumeRemain)
+            .filter(value -> value != null)
+            .mapToLong(Long::longValue)
+            .sum();
+        long sellVolume = allOrders.stream()
+            .filter(order -> !order.buyOrder())
+            .map(SerenityMarketOrderResponse::volumeRemain)
+            .filter(value -> value != null)
+            .mapToLong(Long::longValue)
+            .sum();
+        return new QuoteData(buyOrders.isEmpty() ? null : buyOrders.get(0).price(), sellOrders.isEmpty()
+            ? null
+            : sellOrders.get(0).price(), buyVolume, sellVolume);
+    }
+
+    /** 仅补齐国服 ESI 的区域历史，不在用户请求中按物品拉取。 */
+    protected void refreshHistory(int typeId) {
+        var response = serenityEsiClient.getMarketHistoryWithMetadata(properties.getRegionId(), typeId);
+        List<EveMarketHistoryResp> history = response.body()
+            .stream()
+            .map(EveMarketService::toHistory)
+            .sorted(Comparator.comparing(EveMarketHistoryResp::date))
+            .toList();
+        if (history.size() > HISTORY_LIMIT) {
+            history = List.copyOf(history.subList(history.size() - HISTORY_LIMIT, history.size()));
         }
-        List<EveMarketHistoryResp> result = new ArrayList<>();
-        for (JsonNode item : source) {
-            LocalDate date = localDate(item.path("date").asText(null));
-            if (date != null) {
-                result.add(new EveMarketHistoryResp(date, decimal(item.path("open").asText()), decimal(item
-                    .path("close")
-                    .asText()), decimal(item.path("high").asText()), decimal(item.path("low").asText()), longValue(item
-                        .path("volume")
-                        .asText())));
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime nextRequestAt = now.plusDays(1);
+        if (response.expiresAt() != null) {
+            LocalDateTime localExpiresAt = response.expiresAt()
+                .atOffset(ZoneOffset.UTC)
+                .atZoneSameInstant(java.time.ZoneId.systemDefault())
+                .toLocalDateTime();
+            if (localExpiresAt.isAfter(nextRequestAt)) {
+                nextRequestAt = localExpiresAt;
             }
         }
-        result.sort(Comparator.comparing(EveMarketHistoryResp::date));
-        return result.size() <= HISTORY_LIMIT
-            ? List.copyOf(result)
-            : List.copyOf(result.subList(result.size() - HISTORY_LIMIT, result.size()));
+        snapshotMapper.upsertHistory(typeId, writeJson(history), historySource(), now, nextRequestAt);
+    }
+
+    /** 将官方区域历史映射为现有图表字段；ESI 不提供开盘和收盘时统一以日均价展示。 */
+    private static EveMarketHistoryResp toHistory(SerenityMarketHistoryResponse source) {
+        return new EveMarketHistoryResp(source.date(), source.average(), source.average(), source.highest(), source
+            .lowest(), source.volume());
     }
 
     /** 从本地快照恢复订单，损坏缓存仅降级为空集合而不影响市场页面。 */
@@ -569,7 +421,7 @@ public class EveMarketService {
 
     /** 从本地快照恢复历史日线。 */
     private List<EveMarketHistoryResp> readHistory(EveMarketSnapshotDO snapshot) {
-        if (snapshot == null || snapshot.getHistoryJson() == null || snapshot.getHistoryJson().isBlank()) {
+        if (!hasOfficialHistory(snapshot) || snapshot.getHistoryJson() == null || snapshot.getHistoryJson().isBlank()) {
             return List.of();
         }
         try {
@@ -585,8 +437,7 @@ public class EveMarketService {
             return Map.of();
         }
         Map<Integer, EveMarketSnapshotDO> result = new HashMap<>();
-        snapshotMapper.selectList(new LambdaQueryWrapper<EveMarketSnapshotDO>()
-            .in(EveMarketSnapshotDO::getTypeId, typeIds)).forEach(item -> result.put(item.getTypeId(), item));
+        snapshotMapper.selectByIds(typeIds).forEach(item -> result.put(item.getTypeId(), item));
         return result;
     }
 
@@ -602,24 +453,28 @@ public class EveMarketService {
                     .getSourceUpdatedAt());
     }
 
-    /** 更新最后访问时间，供后台仅刷新实际被使用过的市场缓存。 */
+    /** 更新最后访问时间，用于识别实际使用过的本地市场快照。 */
     private void touch(int typeId, EveMarketSnapshotDO snapshot) {
         if (snapshot == null) {
             return;
         }
-        snapshot.setLastAccessedAt(LocalDateTime.now());
-        snapshotMapper.updateById(snapshot);
+        snapshotMapper.touch(typeId, LocalDateTime.now());
     }
 
     /** 记录简短失败状态，不能覆盖已经成功保存的报价、订单或历史。 */
     private void recordFailure(int typeId, String message) {
-        EveMarketSnapshotDO snapshot = snapshotMapper.selectById(typeId);
-        if (snapshot == null) {
-            return;
-        }
-        snapshot.setLastFailureMessage(message);
-        snapshot.setUpdateTime(LocalDateTime.now());
-        snapshotMapper.updateById(snapshot);
+        LocalDateTime now = LocalDateTime.now();
+        snapshotMapper.recordHistoryFailure(typeId, message, historySource(), now, now.plusHours(1));
+    }
+
+    /** 历史来源包含区域，切换配置后也不能误用其他区域的缓存。 */
+    private String historySource() {
+        return "SERENITY_ESI_REGION_V1:" + properties.getRegionId();
+    }
+
+    /** 只对当前官方来源的历史开放展示，旧第三方缓存原样保留等待替换。 */
+    private boolean hasOfficialHistory(EveMarketSnapshotDO snapshot) {
+        return snapshot != null && historySource().equals(snapshot.getHistorySource());
     }
 
     private boolean needsQuoteRefresh(EveMarketSnapshotDO snapshot) {
@@ -654,66 +509,16 @@ public class EveMarketService {
         }
     }
 
-    private static Element child(Element source, String name) {
-        if (source == null) {
-            return null;
-        }
-        NodeList nodes = source.getChildNodes();
-        for (int index = 0; index < nodes.getLength(); index++) {
-            Node node = nodes.item(index);
-            if (node instanceof Element element && name.equals(element.getTagName())) {
-                return element;
-            }
-        }
-        return null;
-    }
-
-    private static String childText(Element source, String name) {
-        Element child = child(source, name);
-        return child == null ? null : child.getTextContent();
-    }
-
-    private static BigDecimal decimal(String value) {
-        try {
-            return value == null || value.isBlank() ? null : new BigDecimal(value);
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
-    private static Long longValue(String value) {
-        try {
-            return value == null || value.isBlank() ? null : Long.parseLong(value);
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
-    private static Integer intValue(String value) {
-        try {
-            return value == null || value.isBlank() ? null : Integer.parseInt(value);
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
-    private static LocalDate localDate(String value) {
-        try {
-            return value == null || value.isBlank() ? null : LocalDate.parse(value);
-        } catch (RuntimeException e) {
-            return null;
-        }
-    }
-
-    private static LocalDateTime localDateTime(String value) {
-        try {
-            return value == null || value.isBlank() ? null : LocalDateTime.parse(value.replace(' ', 'T'));
-        } catch (RuntimeException e) {
-            return null;
-        }
+    /** 将 ESI 的 UTC 订单时间转换为展示用日期。 */
+    private static LocalDate localDate(Instant value) {
+        return value == null ? null : value.atZone(ZoneOffset.UTC).toLocalDate();
     }
 
     /** 单个物品的市场统计值。 */
     private record QuoteData(BigDecimal highestBuyPrice, BigDecimal lowestSellPrice, Long buyVolume, Long sellVolume) {
+    }
+
+    /** 完整区域订单与最晚官方缓存期限，用于跨实例调度门禁。 */
+    private record MarketOrders(Map<Integer, List<SerenityMarketOrderResponse>> byType, LocalDateTime expiresAt) {
     }
 }

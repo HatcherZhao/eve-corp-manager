@@ -24,9 +24,10 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 
 /**
- * 吉他贸易中心公开市场数据的读取与缓存配置。
+ * 吉他贸易中心市场数据的同步与缓存配置。
  *
- * <p>市场资料为全站共享的公开参考数据，不依赖军团或角色授权。</p>
+ * <p>市场资料为全站共享的公开参考数据，只由后台通过国服官方 ESI 同步，
+ * 页面与手动操作不会直接向上游发起请求。</p>
  *
  * @author zhaoyuqing
  */
@@ -37,46 +38,37 @@ public class EveMarketProperties {
 
     /** 是否启用公开市场数据读取。 */
     private boolean enabled = true;
-    /** CEVE Market 的国服公开数据根地址。 */
-    private String baseUrl = "https://www.ceve-market.org";
-    /** 上游连接与读取超时。 */
-    private Duration timeout = Duration.ofSeconds(15);
-    /** 列表报价的最短更新间隔，打开分页时最多一次批量查询二十个物品。 */
-    private Duration quoteRefreshInterval = Duration.ofMinutes(15);
-    /** 订单与日线详情的最短更新间隔。 */
-    private Duration detailRefreshInterval = Duration.ofMinutes(30);
-    /** 定时任务刷新近期浏览过物品的间隔。 */
-    private Duration recentRefreshInterval = Duration.ofMinutes(30);
-    /** 定时任务单轮最多刷新多少个近期浏览物品，保护公开上游。 */
-    private int recentRefreshLimit = 40;
-    /** 全量历史补温单轮最多处理的物品数，单项仅请求一次历史接口。 */
-    private int historyWarmupLimit = 5;
-    /** 全量报价轮转单轮最多处理的物品数，接口每次最多合并二十项。 */
-    private int quoteWarmupLimit = 20;
+    /** The Forge 区域 ID，吉他所在地的官方市场订单目录。 */
+    private long regionId = 10000002L;
+    /** 吉他星系 ID；订单同步只保留该星系订单，保持既有市场口径。 */
+    private long solarSystemId = 30000142L;
+    /** 可选的固定空间站 ID；为空时包含吉他星系全部公开订单。 */
+    private Long stationId;
+    /** 完整订单簿同步间隔；同步过程中全部请求经全局 ESI 节流器串行执行。 */
+    private Duration orderSyncInterval = Duration.ofMinutes(30);
+    /** 报价在页面上的最大新鲜度，超过后仅显示本地快照的过期状态。 */
+    private Duration quoteRefreshInterval = Duration.ofMinutes(45);
+    /** 订单簿详情在页面上的最大新鲜度，超过后不触发按需抓取。 */
+    private Duration detailRefreshInterval = Duration.ofMinutes(45);
+    /** 区域历史补温间隔；每轮只请求极少数物品，避免向官方 ESI 形成高频扫描。 */
+    private Duration historyWarmupInterval = Duration.ofMinutes(5);
+    /** 区域历史补温单轮最多处理的物品数。 */
+    private int historyWarmupLimit = 1;
 
     /** 校验缓存窗口与批量上限，避免错误配置放大第三方请求。 */
     @PostConstruct
     public void validate() {
-        if (baseUrl == null || !baseUrl.startsWith("https://")) {
-            throw new IllegalStateException("EVE 市场数据源必须使用 HTTPS 地址");
+        if (regionId <= 0 || solarSystemId <= 0 || (stationId != null && stationId <= 0)) {
+            throw new IllegalStateException("EVE 市场区域、星系或空间站配置无效");
         }
-        if (timeout == null || timeout.isZero() || timeout.isNegative()) {
-            throw new IllegalStateException("EVE 市场请求超时必须大于零");
-        }
-        if (quoteRefreshInterval == null || quoteRefreshInterval.isNegative() || quoteRefreshInterval
-            .isZero() || detailRefreshInterval == null || detailRefreshInterval.isNegative() || detailRefreshInterval
-                .isZero() || recentRefreshInterval == null || recentRefreshInterval
-                    .isNegative() || recentRefreshInterval.isZero()) {
+        if (orderSyncInterval == null || orderSyncInterval.isNegative() || orderSyncInterval.isZero()
+            || quoteRefreshInterval == null || quoteRefreshInterval.isNegative() || quoteRefreshInterval.isZero()
+            || detailRefreshInterval == null || detailRefreshInterval.isNegative() || detailRefreshInterval.isZero()
+            || historyWarmupInterval == null || historyWarmupInterval.isNegative() || historyWarmupInterval.isZero()) {
             throw new IllegalStateException("EVE 市场缓存间隔必须大于零");
         }
-        if (recentRefreshLimit < 1 || recentRefreshLimit > 100) {
-            throw new IllegalStateException("EVE 市场近期刷新数量必须在 1 到 100 之间");
-        }
-        if (historyWarmupLimit < 1 || historyWarmupLimit > 100) {
-            throw new IllegalStateException("EVE 市场历史补温数量必须在 1 到 100 之间");
-        }
-        if (quoteWarmupLimit < 1 || quoteWarmupLimit > 20) {
-            throw new IllegalStateException("EVE 市场报价补温数量必须在 1 到 20 之间");
+        if (historyWarmupLimit < 1 || historyWarmupLimit > 10) {
+            throw new IllegalStateException("EVE 市场历史补温数量必须在 1 到 10 之间");
         }
     }
 }

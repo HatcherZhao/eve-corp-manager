@@ -653,13 +653,6 @@ export interface EveMarketDetail {
   upstreamMessage?: string
 }
 
-/** 手动刷新单物品吉他市场的执行结果。 */
-export interface EveMarketSyncResult {
-  refreshed: boolean
-  message: string
-  synchronizedAt: string
-}
-
 export interface EveStaticLocationReference {
   referenceType: 'REGION' | 'CONSTELLATION' | 'SOLAR_SYSTEM' | 'NPC_STATION' | 'PUBLIC_STRUCTURE'
   referenceId: string
@@ -1112,11 +1105,6 @@ export function getEveMineralPrices(query: EveMineralPriceQuery) {
 /** 读取物品的吉他报价、买卖单与每日价格历史。 */
 export function getEveMarketDetail(typeId: number) {
   return http.get<EveMarketDetail>(`/eve/market/${typeId}`)
-}
-
-/** CEO 或总监手动更新单个物品的吉他订单簿和历史数据。 */
-export function syncEveMarketDetail(typeId: number) {
-  return http.post<EveMarketSyncResult>(`/eve/market/${typeId}/sync`)
 }
 
 /** 导出当前筛选条件下的物品类型资料。 */

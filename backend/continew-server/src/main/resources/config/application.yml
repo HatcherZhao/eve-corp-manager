@@ -97,29 +97,18 @@ spring.servlet.multipart:
   max-request-size: 20MB
 eve:
   market:
-    # 吉他市场页面只由服务端读取公开数据源并缓存；列表一页最多合并为一次 20 项报价请求。
+    # 市场页面只读本地快照；后台经官方 ESI 受控同步，禁止用户访问触发上游抓取。
     enabled: ${EVE_MARKET_ENABLED:true}
-    base-url: "${EVE_MARKET_BASE_URL:https://www.ceve-market.org}"
-    timeout: "${EVE_MARKET_TIMEOUT:PT15S}"
-    quote-refresh-interval: "${EVE_MARKET_QUOTE_REFRESH_INTERVAL:PT15M}"
-    detail-refresh-interval: "${EVE_MARKET_DETAIL_REFRESH_INTERVAL:PT30M}"
-    recent-refresh-interval: "${EVE_MARKET_RECENT_REFRESH_INTERVAL:PT30M}"
-    recent-refresh-limit: ${EVE_MARKET_RECENT_REFRESH_LIMIT:40}
-    # 价格历史独立轮转：约 30 次/分钟，首轮覆盖约 11 小时；接口不会因用户浏览而触发。
-    history-warmup-interval: "${EVE_MARKET_HISTORY_WARMUP_INTERVAL:PT20S}"
-    history-warmup-limit: ${EVE_MARKET_HISTORY_WARMUP_LIMIT:10}
-    # 报价接口每次合并二十项；每 15 秒一批，约四小时轮转一遍全部可交易物品。
-    quote-warmup-interval: "${EVE_MARKET_QUOTE_WARMUP_INTERVAL:PT15S}"
-    quote-warmup-limit: ${EVE_MARKET_QUOTE_WARMUP_LIMIT:20}
-  reference:
-    remote-sync:
-      # 每日从公开资料源下载；内容、结构或导入校验失败时保留当前数据库快照。
-      enabled: ${EVE_REFERENCE_REMOTE_SYNC_ENABLED:true}
-      source-url: "${EVE_REFERENCE_REMOTE_SYNC_URL:https://www.ceve-market.org/dumps/evedata.xlsx}"
-      cron: "${EVE_REFERENCE_REMOTE_SYNC_CRON:0 15 4 * * *}"
-      zone: "${EVE_REFERENCE_REMOTE_SYNC_ZONE:Asia/Shanghai}"
-      timeout: "${EVE_REFERENCE_REMOTE_SYNC_TIMEOUT:PT2M}"
-      max-download-bytes: ${EVE_REFERENCE_REMOTE_SYNC_MAX_DOWNLOAD_BYTES:10485760}
+    region-id: ${EVE_MARKET_REGION_ID:10000002}
+    solar-system-id: ${EVE_MARKET_SOLAR_SYSTEM_ID:30000142}
+    # 默认保留吉他星系内全部公开订单；可通过 EVE_MARKET_STATION_ID=60003760 固定到吉他 4-4。
+    # 每轮约 132 页的区域订单读取均遵循 eve.serenity.auto-sync.upstream-request-interval。
+    order-sync-interval: "${EVE_MARKET_ORDER_SYNC_INTERVAL:PT30M}"
+    quote-refresh-interval: "${EVE_MARKET_QUOTE_REFRESH_INTERVAL:PT45M}"
+    detail-refresh-interval: "${EVE_MARKET_DETAIL_REFRESH_INTERVAL:PT45M}"
+    # 区域历史每轮最多一个物品，避免历史补温占满官方 ESI 请求配额。
+    history-warmup-interval: "${EVE_MARKET_HISTORY_WARMUP_INTERVAL:PT5M}"
+    history-warmup-limit: ${EVE_MARKET_HISTORY_WARMUP_LIMIT:1}
   image-cache:
     # 部署时应将该目录挂载到持久化数据卷，避免应用升级或重启后重复拉取国服图片。
     cache-directory: ${EVE_IMAGE_CACHE_DIR:./data/eve-images}

@@ -27,6 +27,8 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.ResourceAccessException;
 import top.continew.admin.eve.config.SerenityProperties;
+import top.continew.admin.eve.config.SerenityHttpClientConfiguration;
+import top.continew.admin.eve.service.EveUpstreamRequestPacer;
 import top.continew.admin.eve.model.serenity.SerenityCorporationMemberTrackingResponse;
 import top.continew.admin.eve.model.serenity.SerenityCorporationAssetResponse;
 import top.continew.admin.eve.model.serenity.SerenityCorporationDivisionResponse;
@@ -44,6 +46,8 @@ import top.continew.admin.eve.model.serenity.SerenityGameMailHeaderResponse;
 import top.continew.admin.eve.model.serenity.SerenityGameMailRecipient;
 import top.continew.admin.eve.model.serenity.SerenityGameMailSendRequest;
 import top.continew.admin.eve.model.serenity.SerenityGameNotificationResponse;
+import top.continew.admin.eve.model.serenity.SerenityMarketHistoryResponse;
+import top.continew.admin.eve.model.serenity.SerenityMarketOrderResponse;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -59,6 +63,10 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.argThat;
 
 /**
  * 国服 ESI 客户端响应元数据测试。
@@ -78,6 +86,104 @@ class SerenityEsiClientTest {
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
         client = new SerenityEsiClient(builder.build(), properties);
+    }
+
+    /** HTTP 异常归类前必须把限流响应头交给全局节流器，不能丢失服务端退避指令。 */
+    @Test
+    void shouldFeedRateLimitResponseBackBeforeClassifyingFailure() {
+        SerenityProperties properties = new SerenityProperties();
+        properties.getEsi().setBaseUrl("https://esi.example.test/latest");
+        EveUpstreamRequestPacer pacer = mock(EveUpstreamRequestPacer.class);
+        RestClient.Builder builder = new SerenityHttpClientConfiguration().serenityRestClient(properties, pacer)
+            .mutate();
+        MockRestServiceServer limitedServer = MockRestServiceServer.bindTo(builder).build();
+        limitedServer
+            .expect(requestTo("https://esi.example.test/latest/markets/10000002/orders/?datasource=serenity&order_type=all&page=1"))
+            .andRespond(withStatus(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, "120"));
+        SerenityEsiClient limitedClient = new SerenityEsiClient(builder.build(), properties, pacer);
+
+        assertThatThrownBy(() -> limitedClient.getMarketOrdersWithMetadata(10000002L, 1))
+            .isInstanceOf(SerenityEsiClientException.class);
+
+        verify(pacer).observeResponse(argThat(status -> status.value() == 429), argThat(headers -> "120".equals(headers
+            .getFirst(HttpHeaders.RETRY_AFTER))));
+        limitedServer.verify();
+    }
+
+    /** 共享缓存交回的 ETag 必须实际出现在官方请求头中。 */
+    @Test
+    void shouldSendIfNoneMatchWhenMarketCacheRevalidates() {
+        SerenityProperties properties = new SerenityProperties();
+        properties.getEsi().setBaseUrl("https://esi.example.test/latest");
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer conditionalServer = MockRestServiceServer.bindTo(builder).build();
+        conditionalServer
+            .expect(requestTo("https://esi.example.test/latest/markets/10000002/history/?datasource=serenity&type_id=34"))
+            .andExpect(header(HttpHeaders.IF_NONE_MATCH, "\"history-v1\""))
+            .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+        EveMarketEsiCache cache = mock(EveMarketEsiCache.class);
+        org.mockito.Mockito.when(cache.get(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers
+            .any())).thenAnswer(call -> {
+                java.util.function.Function<String, org.springframework.http.ResponseEntity<String>> fetch = call
+                    .getArgument(1);
+                return fetch.apply("\"history-v1\"");
+            });
+        SerenityEsiClient conditionalClient = new SerenityEsiClient(builder
+            .build(), properties, null, cache, new com.fasterxml.jackson.databind.ObjectMapper()
+                .findAndRegisterModules());
+
+        assertThat(conditionalClient.getMarketHistoryWithMetadata(10000002L, 34).body()).isEmpty();
+        conditionalServer.verify();
+    }
+
+    /** 市场订单必须固定走国服 ESI，并保留分页和缓存元数据供后台统一调度。 */
+    @Test
+    void shouldRequestPublicMarketOrdersWithPageMetadata() {
+        server
+            .expect(once(), requestTo("https://esi.example.test/latest/markets/10000002/orders/?datasource=serenity&order_type=all&page=2"))
+            .andExpect(method(HttpMethod.GET))
+            .andRespond(withSuccess("""
+                [{"is_buy_order":false,"issued":"2026-09-09T01:00:00Z","location_id":60003760,
+                  "order_id":9001,"price":8.72,"range":"region","system_id":30000142,
+                  "type_id":34,"volume_remain":200,"volume_total":300}]
+                """, MediaType.APPLICATION_JSON).header(HttpHeaders.EXPIRES, "Wed, 09 Sep 2026 12:00:00 GMT")
+                .header(HttpHeaders.ETAG, "\"market-orders-v1\"")
+                .header("X-Pages", "132"));
+
+        SerenityEsiPagedResponse<SerenityMarketOrderResponse> response = client
+            .getMarketOrdersWithMetadata(10000002L, 2);
+
+        assertThat(response.pageCount()).isEqualTo(132);
+        assertThat(response.etag()).isEqualTo("\"market-orders-v1\"");
+        assertThat(response.body()).singleElement().satisfies(order -> {
+            assertThat(order.typeId()).isEqualTo(34);
+            assertThat(order.systemId()).isEqualTo(30000142L);
+            assertThat(order.volumeRemain()).isEqualTo(200L);
+        });
+        server.verify();
+    }
+
+    /** 市场历史是区域级数据，客户端必须请求明确区域而非伪造吉他单站端点。 */
+    @Test
+    void shouldRequestRegionalMarketHistory() {
+        server
+            .expect(once(), requestTo("https://esi.example.test/latest/markets/10000002/history/?datasource=serenity&type_id=34"))
+            .andExpect(method(HttpMethod.GET))
+            .andRespond(withSuccess("""
+                [{"average":8.72,"date":"2026-09-09","highest":9.10,"lowest":8.20,
+                  "order_count":10,"volume":2000}]
+                """, MediaType.APPLICATION_JSON).header(HttpHeaders.ETAG, "\"market-history-v1\""));
+
+        SerenityEsiResponse<java.util.List<SerenityMarketHistoryResponse>> response = client
+            .getMarketHistoryWithMetadata(10000002L, 34);
+
+        assertThat(response.etag()).isEqualTo("\"market-history-v1\"");
+        assertThat(response.body()).singleElement().satisfies(history -> {
+            assertThat(history.date()).isEqualTo(LocalDate.of(2026, 9, 9));
+            assertThat(history.volume()).isEqualTo(2000L);
+        });
+        server.verify();
     }
 
     /** 角色查询应保留上游 Expires 和 ETag，不再伪造接口数据时间。 */

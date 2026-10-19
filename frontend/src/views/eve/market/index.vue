@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Message } from '@arco-design/web-vue'
 import dayjs from 'dayjs'
 import type { EChartsOption } from 'echarts'
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -11,18 +10,14 @@ import {
   getEveMarket,
   getEveMarketDetail,
   getEveStaticTypeCategories,
-  syncEveMarketDetail,
 } from '@/apis/eve'
 import { useChart } from '@/hooks'
-import { useUserStore } from '@/stores'
 
 defineOptions({ name: 'EveMarket' })
 
-const userStore = useUserStore()
 const loading = ref(false)
 const categoryLoading = ref(false)
 const detailLoading = ref(false)
-const syncing = ref(false)
 const records = ref<EveMarketItem[]>([])
 const total = ref(0)
 const categoryTree = ref<MarketCategoryTreeNode[]>([])
@@ -31,7 +26,6 @@ const selectedCategoryKeys = ref<string[]>([])
 const expandedCategoryKeys = ref<string[]>([])
 const detail = ref<EveMarketDetail>()
 const query = reactive({ page: 1, size: 20, keyword: '' })
-const canSync = computed(() => userStore.permissions.includes('eve:market:sync') || userStore.permissions.includes('*:*:*'))
 const activeCategoryLabel = computed(() => selectedCategory.value?.name || '吉他行情')
 const detailHistory = computed(() => detail.value?.history.slice(-120) || [])
 const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
@@ -92,7 +86,7 @@ function findCategory(nodes: MarketCategoryTreeNode[], key: string): MarketCateg
   }
 }
 
-/** 吉他行情列表一次最多加载二十项，服务端会合并为一次公开报价请求。 */
+/** 吉他行情列表只读取服务端已同步的本地快照。 */
 async function loadMarket() {
   loading.value = true
   try {
@@ -144,7 +138,7 @@ function reset() {
   loadMarket()
 }
 
-/** 打开物品详情，默认由服务端按缓存时效补齐订单簿和历史。 */
+/** 打开物品详情，只读取服务端后台同步的订单簿和历史快照。 */
 async function openDetail(record: EveMarketItem) {
   detailLoading.value = true
   try {
@@ -157,24 +151,6 @@ async function openDetail(record: EveMarketItem) {
 /** 整行点击只负责打开行情，避免表格事件对象被误作强制刷新参数。 */
 function openDetailFromRow(record: EveMarketItem) {
   void openDetail(record)
-}
-
-/** 管理角色可直接更新当前物品；完成后同步刷新列表中同一条报价。 */
-async function syncDetail() {
-  if (!detail.value) return
-  syncing.value = true
-  try {
-    const { data } = await syncEveMarketDetail(detail.value.type.typeId)
-    if (data.refreshed) {
-      detail.value = (await getEveMarketDetail(detail.value.type.typeId)).data
-      await loadMarket()
-      Message.success(data.message)
-    } else {
-      Message.warning(data.message)
-    }
-  } finally {
-    syncing.value = false
-  }
 }
 
 function formatPrice(value?: number) {
@@ -198,7 +174,7 @@ function spread(item: EveMarketItem) {
 const chartTextColor = (isDark: boolean) => (isDark ? 'rgba(255, 255, 255, .68)' : '#4E5969')
 const chartGridColor = (isDark: boolean) => (isDark ? 'rgba(255, 255, 255, .12)' : '#E5E6EB')
 
-/** 日线以收盘价呈现，并将成交量放在独立轴，避免量级压扁价格趋势。 */
+/** 官方 ESI 的区域日均价与成交量分轴展示，避免量级压扁价格趋势。 */
 const { chartOption: historyChartOption } = useChart((isDark): EChartsOption => ({
   animation: !prefersReducedMotion,
   animationDuration: 640,
@@ -236,7 +212,7 @@ const { chartOption: historyChartOption } = useChart((isDark): EChartsOption => 
   }],
   dataZoom: [{ type: 'inside', xAxisIndex: [0, 1], startValue: Math.max(0, detailHistory.value.length - 45), endValue: Math.max(0, detailHistory.value.length - 1) }],
   series: [{
-    name: '收盘价',
+    name: '区域日均价',
     type: 'line',
     smooth: true,
     showSymbol: false,
@@ -306,13 +282,12 @@ onMounted(() => Promise.all([loadCategories(), loadMarket()]))
         <template v-if="detail">
           <section class="eve-market-page__detail-header">
             <div class="eve-market-page__detail-identity"><EveTypeIcon :type-id="detail.type.typeId" :size="56" :alt="`${detail.type.typeName}图标`" /><div><h2>{{ detail.type.typeName }}</h2><p>{{ categoryPath(detail.type) }}</p></div></div>
-            <a-button v-if="canSync" type="primary" :loading="syncing" @click="syncDetail"><template #icon><icon-refresh /></template>刷新行情</a-button>
           </section>
           <a-alert v-if="detail.upstreamMessage" type="warning" :show-icon="true" class="eve-market-page__cache-warning">{{ detail.upstreamMessage }}</a-alert>
           <section class="eve-market-page__quote-grid">
             <article><span>最高求购</span><strong class="eve-market-page__buy">{{ formatPrice(detail.quote?.highestBuyPrice) }}</strong><small>总量 {{ formatVolume(detail.quote?.buyVolume) }}</small></article>
             <article><span>最低卖出</span><strong class="eve-market-page__sell">{{ formatPrice(detail.quote?.lowestSellPrice) }}</strong><small>总量 {{ formatVolume(detail.quote?.sellVolume) }}</small></article>
-            <article><span>行情时间</span><strong>{{ formatTime(detail.quote?.synchronizedAt) }}</strong><MarketPriceFreshness :synchronized-at="detail.quote?.synchronizedAt" :freshness-expires-at="detail.quote?.freshnessExpiresAt" /><small>{{ detail.servedFromCache ? '展示最近缓存' : '已读取服务器缓存' }}</small></article>
+            <article><span>行情时间</span><strong>{{ formatTime(detail.quote?.synchronizedAt) }}</strong><MarketPriceFreshness :synchronized-at="detail.quote?.synchronizedAt" :freshness-expires-at="detail.quote?.freshnessExpiresAt" /><small>{{ !detail.quote ? '等待首轮同步' : detail.servedFromCache ? '展示最近缓存' : '已读取服务器缓存' }}</small></article>
           </section>
           <a-tabs default-active-key="orders" class="eve-market-page__tabs">
             <a-tab-pane key="orders" title="市场订单">
@@ -322,7 +297,7 @@ onMounted(() => Promise.all([loadCategories(), loadMarket()]))
               </section>
             </a-tab-pane>
             <a-tab-pane key="history" title="价格历史">
-              <section class="eve-market-page__history"><div class="eve-market-page__history-heading"><div><h3>每日价格趋势</h3><p>显示最近 {{ detailHistory.length }} 天收盘价与成交量，可拖拽或滚动缩放时间轴。</p></div><small>数据仅供参考</small></div><Chart v-if="detailHistory.length" :option="historyChartOption" height="390px" /><a-empty v-else :description="detail.historySynchronizedAt ? '该物品暂无历史成交数据' : '价格历史正在由后台补齐'" /></section>
+              <section class="eve-market-page__history"><div class="eve-market-page__history-heading"><div><h3>The Forge 区域成交趋势</h3><p>官方 ESI 仅提供区域级历史；显示最近 {{ detailHistory.length }} 天日均成交价与成交量，可拖拽或滚动缩放时间轴。</p></div><small>数据仅供参考</small></div><Chart v-if="detailHistory.length" :option="historyChartOption" height="390px" /><a-empty v-else :description="detail.historySynchronizedAt ? '该物品暂无区域历史成交数据' : '区域价格历史正在由后台低频补齐'" /></section>
             </a-tab-pane>
             <a-tab-pane key="reference" title="物品资料"><a-descriptions :column="1" bordered><a-descriptions-item label="市场分类">{{ categoryPath(detail.type) }}</a-descriptions-item><a-descriptions-item label="物品说明"><p class="eve-market-page__description">{{ detail.type.typeDescription || '暂无说明' }}</p></a-descriptions-item></a-descriptions></a-tab-pane>
           </a-tabs>

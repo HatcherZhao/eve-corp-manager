@@ -25,6 +25,9 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpHeaders;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import top.continew.admin.eve.config.SerenityProperties;
 import top.continew.admin.eve.service.EveUpstreamRequestPacer;
 import top.continew.admin.eve.model.serenity.SerenityCharacterResponse;
@@ -53,6 +56,8 @@ import top.continew.admin.eve.model.serenity.SerenityGameMailUpdateRequest;
 import top.continew.admin.eve.model.serenity.SerenityGameNotificationResponse;
 import top.continew.admin.eve.model.serenity.SerenityUniverseSystemResponse;
 import top.continew.admin.eve.model.serenity.SerenityUniverseStargateResponse;
+import top.continew.admin.eve.model.serenity.SerenityMarketOrderResponse;
+import top.continew.admin.eve.model.serenity.SerenityMarketHistoryResponse;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -70,20 +75,34 @@ public class SerenityEsiClient {
     private final RestClient restClient;
     private final SerenityProperties properties;
     private final EveUpstreamRequestPacer requestPacer;
+    private final EveMarketEsiCache marketCache;
+    private final ObjectMapper marketObjectMapper;
 
     /** 兼容现有单元测试创建的未接入 Spring 节流器客户端。 */
     public SerenityEsiClient(@Qualifier("serenityRestClient") RestClient restClient, SerenityProperties properties) {
         this(restClient, properties, null);
     }
 
-    /** 创建受全局节流器保护的国服 ESI 客户端。 */
-    @Autowired
+    /** 为已有客户端测试保留只注入节流器的构造方式。 */
     public SerenityEsiClient(@Qualifier("serenityRestClient") RestClient restClient,
                              SerenityProperties properties,
                              EveUpstreamRequestPacer requestPacer) {
+        this(restClient, properties, requestPacer, null, new ObjectMapper().findAndRegisterModules()
+            .disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES));
+    }
+
+    /** 创建受全局节流器与共享市场响应缓存保护的国服 ESI 客户端。 */
+    @Autowired
+    public SerenityEsiClient(@Qualifier("serenityRestClient") RestClient restClient,
+                             SerenityProperties properties,
+                             EveUpstreamRequestPacer requestPacer,
+                             EveMarketEsiCache marketCache,
+                             ObjectMapper objectMapper) {
         this.restClient = restClient;
         this.properties = properties;
         this.requestPacer = requestPacer;
+        this.marketCache = marketCache;
+        this.marketObjectMapper = objectMapper;
     }
 
     /** 查询公开角色资料。 */
@@ -105,6 +124,55 @@ public class SerenityEsiClient {
                 .uri(endpoint("/corporations/{id}/"), corporationId)
                 .retrieve()
                 .body(SerenityCorporationResponse.class));
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
+    /**
+     * 读取国服指定区域的一页公开市场订单。
+     *
+     * <p>调用方必须复用响应的分页信息并在本地统一聚合，禁止由页面或单物品操作直接触发请求。</p>
+     *
+     * @param regionId EVE 区域 ID
+     * @param page     从 1 开始的页码
+     * @return 含订单、缓存元数据和总页数的响应
+     */
+    public SerenityEsiPagedResponse<SerenityMarketOrderResponse> getMarketOrdersWithMetadata(Long regionId, int page) {
+        if (regionId == null || regionId <= 0 || page < 1) {
+            throw new IllegalArgumentException("国服市场订单查询参数无效");
+        }
+        try {
+            ResponseEntity<String> response = marketResponse(baseEndpoint("/markets/" + regionId + "/orders/") + "&order_type=all&page=" + page);
+            return new SerenityEsiPagedResponse<>(List
+                .of(marketBody(response, SerenityMarketOrderResponse[].class)), expiresAt(response), response
+                    .getHeaders()
+                    .getETag(), pageCount(response));
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
+    /**
+     * 读取国服指定区域内某物品的每日成交历史。
+     *
+     * <p>ESI 历史只精确到区域，调用方不得将其标注为单一空间站成交历史。</p>
+     *
+     * @param regionId EVE 区域 ID
+     * @param typeId   物品类型 ID
+     * @return 含每日成交数据和缓存元数据的响应
+     */
+    public SerenityEsiResponse<List<SerenityMarketHistoryResponse>> getMarketHistoryWithMetadata(Long regionId,
+                                                                                                 Integer typeId) {
+        if (regionId == null || regionId <= 0 || typeId == null || typeId <= 0) {
+            throw new IllegalArgumentException("国服市场历史查询参数无效");
+        }
+        try {
+            ResponseEntity<String> response = marketResponse(baseEndpoint("/markets/" + regionId + "/history/") + "&type_id=" + typeId);
+            return new SerenityEsiResponse<>(List
+                .of(marketBody(response, SerenityMarketHistoryResponse[].class)), expiresAt(response), response
+                    .getHeaders()
+                    .getETag());
         } catch (RestClientException e) {
             throw classify(e);
         }
@@ -418,10 +486,7 @@ public class SerenityEsiClient {
     /** 读取国服公开星系目录，供星图同步建立可续跑的索引。 */
     public List<Long> getUniverseSystemIds() {
         try {
-            Long[] response = restClient.get()
-                .uri(endpoint("/universe/systems/"))
-                .retrieve()
-                .body(Long[].class);
+            Long[] response = restClient.get().uri(endpoint("/universe/systems/")).retrieve().body(Long[].class);
             return List.of(requireBody(response));
         } catch (RestClientException e) {
             throw classify(e);
@@ -610,9 +675,38 @@ public class SerenityEsiClient {
         if (requestPacer != null) {
             requestPacer.awaitPermit();
         }
+        return baseEndpoint(path);
+    }
+
+    /** 仅拼接公开市场 URL；是否需要上游请求交由共享缓存决定。 */
+    private String baseEndpoint(String path) {
         return properties.getEsi().getBaseUrl().replaceAll("/+$", "") + path + "?datasource=" + properties.getEsi()
             .getDatasource()
             .getValue();
+    }
+
+    /** 命中官方缓存时不申请请求许可；真正重验证时仍必须服从全局节流与冷却。 */
+    private ResponseEntity<String> marketResponse(String endpoint) {
+        java.util.function.Function<String, ResponseEntity<String>> fetch = etag -> {
+            if (requestPacer != null) {
+                requestPacer.awaitPermit();
+            }
+            var request = restClient.get().uri(endpoint);
+            if (etag != null) {
+                request.header(HttpHeaders.IF_NONE_MATCH, etag);
+            }
+            return request.retrieve().toEntity(String.class);
+        };
+        return marketCache == null ? fetch.apply(null) : marketCache.get(endpoint, fetch);
+    }
+
+    /** 缓存层存储原始 JSON，边界处仍按固定官方 DTO 校验响应结构。 */
+    private <T> T marketBody(ResponseEntity<String> response, Class<T> bodyType) {
+        try {
+            return requireBody(marketObjectMapper.readValue(requireBody(response.getBody()), bodyType));
+        } catch (JsonProcessingException e) {
+            throw new SerenityEsiClientException(OAuthFailureCode.INVALID_TOKEN_RESPONSE);
+        }
     }
 
     /** 为带 X-Pages 的接口追加页码，确保 datasource 与 page 处于同一查询串。 */

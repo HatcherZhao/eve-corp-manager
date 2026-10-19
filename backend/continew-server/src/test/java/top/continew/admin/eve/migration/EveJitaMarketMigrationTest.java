@@ -57,6 +57,10 @@ class EveJitaMarketMigrationTest {
         assertThat(master.indexOf(correctionMigration)).isGreaterThan(master.indexOf(mineralPriceMigration));
         assertThat(resource(correctionMigration))
             .contains("046-mineral-price-directory-menu-id-fix", "(20098, '矿物价格'", "'corp_member'");
+        String cacheSafetyMigration = "db/changelog/mysql/eve/052_market_esi_cache_safety.sql";
+        assertThat(master.indexOf(cacheSafetyMigration)).isGreaterThan(master
+            .indexOf("046_mineral_price_directory_menu_id_fix.sql"));
+        assertThat(resource(cacheSafetyMigration)).contains("`history_source`", "`history_next_request_at`");
     }
 
     /** 读取类路径迁移资源。 */

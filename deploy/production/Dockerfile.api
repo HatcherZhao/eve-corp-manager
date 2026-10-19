@@ -7,6 +7,8 @@ RUN useradd --system --uid 10001 --gid root appuser \
     && chown -R appuser:root /app /data /logs
 
 COPY backend/continew-server/target/continew-admin.jar /app/app.jar
+# 初始静态资料随镜像交付，资料库为空时由应用导入，运行时不下载第三方工作簿。
+COPY docs/evedata.xlsx /app/docs/evedata.xlsx
 
 USER appuser
 
