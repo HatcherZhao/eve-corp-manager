@@ -104,7 +104,7 @@ class EveMarketServiceTest {
         station.setReferenceName("吉他 IV - 月面 4 - 加达里海军物流支援站");
         when(esiClient.getMarketOrdersWithMetadata(10000002L, 1)).thenReturn(new SerenityEsiPagedResponse<>(List
             .of(buy, sell, otherSystem), LocalDateTime.now(), "\"orders-v1\"", 1));
-        when(referenceService.findLocations(eq("STATION"), any())).thenReturn(Map.of(60003760L, station));
+        when(referenceService.findLocations(eq("NPC_STATION"), any())).thenReturn(Map.of(60003760L, station));
         service(snapshotMapper, referenceService, esiClient, store).synchronizeMarketOrders();
 
         ArgumentCaptor<List<EveMarketSnapshotDO>> snapshots = ArgumentCaptor.forClass(List.class);
@@ -120,6 +120,45 @@ class EveMarketServiceTest {
         assertThat(snapshot.getSellOrdersJson()).contains("9.3");
         verify(esiClient).getMarketOrdersWithMetadata(10000002L, 1);
         verify(snapshotMapper, never()).selectById(35);
+    }
+
+    /** 旧快照缺名时按真实资料分类就地补齐；保留已有名称和未知位置 ID，不触发上游或重写快照。 */
+    @Test
+    void shouldResolveCachedStationAndStructureNamesWithoutRequestingEsi() {
+        SerenityEsiClient esiClient = mock(SerenityEsiClient.class);
+        EveMarketSnapshotMapper mapper = mock(EveMarketSnapshotMapper.class);
+        EveStaticReferenceService references = mock(EveStaticReferenceService.class);
+        when(references.findTypes(java.util.Set.of(34))).thenReturn(Map.of(34, type(34)));
+        EveStaticLocationReferenceDO station = new EveStaticLocationReferenceDO();
+        station.setReferenceName("吉他 IV - 卫星 4 - 加达里海军 组装车间");
+        EveStaticLocationReferenceDO structure = new EveStaticLocationReferenceDO();
+        structure.setReferenceName("吉他公开贸易建筑");
+        when(references.findLocations(eq("NPC_STATION"), any())).thenReturn(Map.of(60003760L, station));
+        when(references.findLocations(eq("PUBLIC_STRUCTURE"), any())).thenReturn(Map.of(1020000000001L, structure));
+        EveMarketSnapshotDO snapshot = new EveMarketSnapshotDO();
+        snapshot.setTypeId(34);
+        snapshot.setQuoteSynchronizedAt(LocalDateTime.now());
+        snapshot.setBuyOrdersJson("""
+            [{"side":"BUY","stationId":60003760,"stationName":null,"price":8.7,"volume":20},
+             {"side":"BUY","stationId":1020000000001,"stationName":" ","price":8.6,"volume":10},
+             {"side":"BUY","stationId":77,"stationName":"已缓存的空间站","price":8.5,"volume":5},
+             {"side":"BUY","stationId":88,"stationName":null,"price":8.4,"volume":2}]
+            """);
+        snapshot.setSellOrdersJson("""
+            [{"side":"SELL","stationId":60003760,"stationName":null,"price":9.3,"volume":10}]
+            """);
+        when(mapper.selectById(34)).thenReturn(snapshot);
+
+        EveMarketDetailResp detail = service(mapper, references, esiClient).detail(34);
+
+        assertThat(detail.buyOrders()).extracting(order -> order.stationName())
+            .containsExactly(station.getReferenceName(), structure.getReferenceName(), "已缓存的空间站", null);
+        assertThat(detail.buyOrders().get(3).stationId()).isEqualTo(88L);
+        assertThat(detail.sellOrders().get(0).stationName()).isEqualTo(station.getReferenceName());
+        assertThat(detail.buyOrders().get(0).price()).isEqualByComparingTo("8.7");
+        assertThat(snapshot.getBuyOrdersJson()).contains("\"stationName\":null");
+        verifyNoInteractions(esiClient);
+        verify(mapper, never()).updateById(any(EveMarketSnapshotDO.class));
     }
 
     /** 空市场也是成功的权威结果，必须交给事务发布器清理旧订单。 */

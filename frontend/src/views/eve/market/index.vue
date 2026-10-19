@@ -6,6 +6,7 @@ import MarketPriceFreshness from '../components/MarketPriceFreshness.vue'
 import {
   type EveMarketDetail,
   type EveMarketItem,
+  type EveMarketOrder,
   type EveStaticTypeCategoryNode,
   getEveMarket,
   getEveMarketDetail,
@@ -29,6 +30,11 @@ const query = reactive({ page: 1, size: 20, keyword: '' })
 const activeCategoryLabel = computed(() => selectedCategory.value?.name || '吉他行情')
 const detailHistory = computed(() => detail.value?.history.slice(-120) || [])
 const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+
+/** 静态资料未收录的位置保留游戏 ID，便于辨认与追溯。 */
+function stationLabel(order: EveMarketOrder) {
+  return order.stationName?.trim() || (order.stationId ? `位置 ${order.stationId}` : '位置未收录')
+}
 
 interface MarketCategoryTreeNode extends EveStaticTypeCategoryNode {
   key: string
@@ -292,12 +298,12 @@ onMounted(() => Promise.all([loadCategories(), loadMarket()]))
           <a-tabs default-active-key="orders" class="eve-market-page__tabs">
             <a-tab-pane key="orders" title="市场订单">
               <section class="eve-market-page__order-grid">
-                <article><h3>买单 <small>高价优先</small></h3><a-table :data="detail.buyOrders" :pagination="false" size="small" :scroll="{ x: 520, y: 360 }"><template #columns><a-table-column title="价格" :width="190" align="right"><template #cell="{ record }"><strong class="eve-market-page__price eve-market-page__buy">{{ formatPrice(record.price) }}</strong></template></a-table-column><a-table-column title="数量" :width="112" align="right"><template #cell="{ record }"><span class="eve-market-page__price">{{ formatVolume(record.volume) }}</span></template></a-table-column><a-table-column title="空间站" :min-width="190" ellipsis tooltip><template #cell="{ record }">{{ record.stationName || '未知空间站' }}</template></a-table-column></template></a-table><a-empty v-if="!detail.buyOrders.length" description="暂无可用买单" /></article>
-                <article><h3>卖单 <small>低价优先</small></h3><a-table :data="detail.sellOrders" :pagination="false" size="small" :scroll="{ x: 520, y: 360 }"><template #columns><a-table-column title="价格" :width="190" align="right"><template #cell="{ record }"><strong class="eve-market-page__price eve-market-page__sell">{{ formatPrice(record.price) }}</strong></template></a-table-column><a-table-column title="数量" :width="112" align="right"><template #cell="{ record }"><span class="eve-market-page__price">{{ formatVolume(record.volume) }}</span></template></a-table-column><a-table-column title="空间站" :min-width="190" ellipsis tooltip><template #cell="{ record }">{{ record.stationName || '未知空间站' }}</template></a-table-column></template></a-table><a-empty v-if="!detail.sellOrders.length" description="暂无可用卖单" /></article>
+                <article><h3>买单 <small>高价优先</small></h3><a-table :data="detail.buyOrders" :pagination="false" size="small" :scroll="{ x: 520, y: 360 }"><template #columns><a-table-column title="价格" :width="190" align="right"><template #cell="{ record }"><strong class="eve-market-page__price eve-market-page__buy">{{ formatPrice(record.price) }}</strong></template></a-table-column><a-table-column title="数量" :width="112" align="right"><template #cell="{ record }"><span class="eve-market-page__price">{{ formatVolume(record.volume) }}</span></template></a-table-column><a-table-column title="空间站" :min-width="190" ellipsis tooltip><template #cell="{ record }">{{ stationLabel(record) }}</template></a-table-column></template></a-table><a-empty v-if="!detail.buyOrders.length" description="暂无可用买单" /></article>
+                <article><h3>卖单 <small>低价优先</small></h3><a-table :data="detail.sellOrders" :pagination="false" size="small" :scroll="{ x: 520, y: 360 }"><template #columns><a-table-column title="价格" :width="190" align="right"><template #cell="{ record }"><strong class="eve-market-page__price eve-market-page__sell">{{ formatPrice(record.price) }}</strong></template></a-table-column><a-table-column title="数量" :width="112" align="right"><template #cell="{ record }"><span class="eve-market-page__price">{{ formatVolume(record.volume) }}</span></template></a-table-column><a-table-column title="空间站" :min-width="190" ellipsis tooltip><template #cell="{ record }">{{ stationLabel(record) }}</template></a-table-column></template></a-table><a-empty v-if="!detail.sellOrders.length" description="暂无可用卖单" /></article>
               </section>
             </a-tab-pane>
             <a-tab-pane key="history" title="价格历史">
-              <section class="eve-market-page__history"><div class="eve-market-page__history-heading"><div><h3>The Forge 区域成交趋势</h3><p>官方 ESI 仅提供区域级历史；显示最近 {{ detailHistory.length }} 天日均成交价与成交量，可拖拽或滚动缩放时间轴。</p></div><small>数据仅供参考</small></div><Chart v-if="detailHistory.length" :option="historyChartOption" height="390px" /><a-empty v-else :description="detail.historySynchronizedAt ? '该物品暂无区域历史成交数据' : '区域价格历史正在由后台低频补齐'" /></section>
+              <section class="eve-market-page__history"><div class="eve-market-page__history-heading"><div><h3>吉他所在星域成交趋势</h3><p>伏尔戈星域全部市场 · 最近 {{ detailHistory.length }} 天日均成交价与成交量</p></div><small>数据仅供参考</small></div><Chart v-if="detailHistory.length" :option="historyChartOption" height="390px" /><a-empty v-else :description="detail.historySynchronizedAt ? '该物品暂无星域成交历史' : '成交历史正在后台同步'" /></section>
             </a-tab-pane>
             <a-tab-pane key="reference" title="物品资料"><a-descriptions :column="1" bordered><a-descriptions-item label="市场分类">{{ categoryPath(detail.type) }}</a-descriptions-item><a-descriptions-item label="物品说明"><p class="eve-market-page__description">{{ detail.type.typeDescription || '暂无说明' }}</p></a-descriptions-item></a-descriptions></a-tab-pane>
           </a-tabs>

@@ -316,7 +316,12 @@ public class EveMarketService {
     /** 把一轮完整订单快照转换成报价和有限深度订单簿后落库。 */
     private void persistMarketOrders(Map<Integer, List<SerenityMarketOrderResponse>> ordersByType) {
         LocalDateTime now = LocalDateTime.now();
-        Map<Long, String> stationNames = resolveStationNames(ordersByType.values());
+        Map<Long, String> stationNames = resolveStationNames(ordersByType.values()
+            .stream()
+            .flatMap(Collection::stream)
+            .map(SerenityMarketOrderResponse::locationId)
+            .distinct()
+            .toList());
         List<EveMarketSnapshotDO> snapshots = new ArrayList<>();
         for (Map.Entry<Integer, List<SerenityMarketOrderResponse>> entry : ordersByType.entrySet()) {
             List<EveMarketOrderResp> buyOrders = toOrders(entry.getValue(), true, stationNames);
@@ -341,16 +346,16 @@ public class EveMarketService {
         snapshotStore.replaceOrders(snapshots, now);
     }
 
-    /** 从自有静态资料解析空间站名称；未知位置不影响订单或报价入库。 */
-    private Map<Long, String> resolveStationNames(Collection<List<SerenityMarketOrderResponse>> orderGroups) {
-        Set<Long> stationIds = new LinkedHashSet<>();
-        orderGroups.forEach(orders -> orders.forEach(order -> stationIds.add(order.locationId())));
+    /** 按静态资料的真实分类批量解析 NPC 空间站和公开建筑，不访问官方接口。 */
+    private Map<Long, String> resolveStationNames(Collection<Long> stationIds) {
         if (stationIds.isEmpty()) {
             return Map.of();
         }
         Map<Long, String> names = new HashMap<>();
-        staticReferenceService.findLocations("STATION", stationIds)
-            .forEach((stationId, reference) -> names.put(stationId, reference.getReferenceName()));
+        for (String referenceType : List.of("NPC_STATION", "PUBLIC_STRUCTURE")) {
+            staticReferenceService.findLocations(referenceType, stationIds)
+                .forEach((stationId, reference) -> names.put(stationId, reference.getReferenceName()));
+        }
         return names;
     }
 
@@ -430,13 +435,31 @@ public class EveMarketService {
             return List.of();
         }
         String json = "BUY".equals(side) ? snapshot.getBuyOrdersJson() : snapshot.getSellOrdersJson();
+        List<EveMarketOrderResp> orders;
         try {
-            return json == null || json.isBlank()
+            orders = json == null || json.isBlank()
                 ? List.of()
                 : objectMapper.readerForListOf(EveMarketOrderResp.class).readValue(json);
         } catch (Exception e) {
             return List.of();
         }
+        // 兼容修复前已落库的缺名订单，只补响应名称，不改行情时间、不写回陈旧快照。
+        List<Long> missingNames = orders.stream()
+            .filter(order -> order.stationName() == null || order.stationName().isBlank())
+            .map(EveMarketOrderResp::stationId)
+            .filter(java.util.Objects::nonNull)
+            .distinct()
+            .toList();
+        if (missingNames.isEmpty()) {
+            return orders;
+        }
+        Map<Long, String> stationNames = resolveStationNames(missingNames);
+        return orders.stream()
+            .map(order -> order.stationName() != null && !order.stationName().isBlank()
+                ? order
+                : new EveMarketOrderResp(order.side(), order.stationId(), stationNames.get(order.stationId()), order
+                    .price(), order.volume(), order.issuedOn(), order.reportedAt(), order.range()))
+            .toList();
     }
 
     /** 从本地快照恢复历史日线。 */
