@@ -92,10 +92,14 @@ spring.task:
 spring.servlet.multipart:
   enabled: true
   # 单文件上传大小限制
-  max-file-size: 10MB
+  max-file-size: 50MB
   # 单次总上传文件大小限制
-  max-request-size: 20MB
+  max-request-size: 60MB
 eve:
+  industry:
+    ceve:
+      base-url: "${EVE_CEVE_INDUSTRY_BASE_URL:http://8.210.18.81:8080}"
+      timeout: "${EVE_CEVE_INDUSTRY_TIMEOUT:PT30S}"
   market:
     # 市场页面只读本地快照；后台经官方 ESI 受控同步，禁止用户访问触发上游抓取。
     enabled: ${EVE_MARKET_ENABLED:true}

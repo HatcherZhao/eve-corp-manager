@@ -121,4 +121,14 @@ databaseChangeLog:
   - include:
       file: db/changelog/mysql/eve/046_mineral_price_directory_menu_id_fix.sql
   - include:
+      file: db/changelog/mysql/eve/047_industry.sql
+  - include:
+      file: db/changelog/mysql/eve/048_industry_validation.sql
+  - include:
+      file: db/changelog/mysql/eve/049_industry_menu_structure.sql
+  - include:
+      file: db/changelog/mysql/eve/050_industry_snapshots.sql
+  - include:
+      file: db/changelog/mysql/eve/051_industry_plans.sql
+  - include:
       file: db/changelog/mysql/eve/052_market_esi_cache_safety.sql

@@ -207,6 +207,26 @@ public class EveMarketService {
     }
 
     /**
+     * 为工业试算补齐有限数量的订单簿和历史数据。
+     *
+     * <p>全量工业扫描不能绕过后台调度访问外部市场。此方法只标记相关快照为近期使用，使其在后续
+     * 官方 ESI 同步结果中优先被消费；缺少行情的机会仍会降级为可试算。</p>
+     */
+    public void prepareIndustrySnapshots(Collection<Integer> typeIds, int limit) {
+        if (!properties.isEnabled() || typeIds == null || typeIds.isEmpty()) {
+            return;
+        }
+        int processed = 0;
+        for (Integer typeId : new LinkedHashSet<>(typeIds)) {
+            if (processed >= Math.max(1, limit)) {
+                break;
+            }
+            touch(typeId, snapshotMapper.selectById(typeId));
+            processed++;
+        }
+    }
+
+    /**
      * 低频补齐全站物品的价格历史。历史由公开接口直接提供，不依赖用户先点开每个物品。
      *
      * <p>每次只处理受限数量且只请求一个区域历史接口；订单簿仅由全量后台同步读取，避免形成

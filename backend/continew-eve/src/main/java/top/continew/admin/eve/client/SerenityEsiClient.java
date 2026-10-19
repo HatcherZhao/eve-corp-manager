@@ -56,6 +56,8 @@ import top.continew.admin.eve.model.serenity.SerenityGameMailUpdateRequest;
 import top.continew.admin.eve.model.serenity.SerenityGameNotificationResponse;
 import top.continew.admin.eve.model.serenity.SerenityUniverseSystemResponse;
 import top.continew.admin.eve.model.serenity.SerenityUniverseStargateResponse;
+import top.continew.admin.eve.model.serenity.SerenityIndustrySystemResponse;
+import top.continew.admin.eve.model.serenity.SerenityMarketPriceResponse;
 import top.continew.admin.eve.model.serenity.SerenityMarketOrderResponse;
 import top.continew.admin.eve.model.serenity.SerenityMarketHistoryResponse;
 
@@ -63,6 +65,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Arrays;
 
 /**
  * 仅访问固定国服 ESI 基址的身份事实客户端。
@@ -124,6 +127,34 @@ public class SerenityEsiClient {
                 .uri(endpoint("/corporations/{id}/"), corporationId)
                 .retrieve()
                 .body(SerenityCorporationResponse.class));
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
+    /** 查询国服全部星系的各工业活动成本指数。 */
+    public SerenityEsiResponse<List<SerenityIndustrySystemResponse>> getIndustrySystemsWithMetadata() {
+        try {
+            ResponseEntity<SerenityIndustrySystemResponse[]> response = restClient.get()
+                .uri(endpoint("/industry/systems/"))
+                .retrieve()
+                .toEntity(SerenityIndustrySystemResponse[].class);
+            return new SerenityEsiResponse<>(Arrays.asList(requireBody(response
+                .getBody())), expiresAt(response), response.getHeaders().getETag());
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
+    /** 查询国服市场调整价格，供 EIV 与安装费计算。 */
+    public SerenityEsiResponse<List<SerenityMarketPriceResponse>> getMarketPricesWithMetadata() {
+        try {
+            ResponseEntity<SerenityMarketPriceResponse[]> response = restClient.get()
+                .uri(endpoint("/markets/prices/"))
+                .retrieve()
+                .toEntity(SerenityMarketPriceResponse[].class);
+            return new SerenityEsiResponse<>(Arrays.asList(requireBody(response
+                .getBody())), expiresAt(response), response.getHeaders().getETag());
         } catch (RestClientException e) {
             throw classify(e);
         }

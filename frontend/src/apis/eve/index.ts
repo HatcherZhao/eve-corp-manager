@@ -653,6 +653,290 @@ export interface EveMarketDetail {
   upstreamMessage?: string
 }
 
+/** 工业利润机会快照。 */
+export interface EveIndustryOpportunity {
+  id: string
+  productTypeId: number
+  productName: string
+  activity?: string
+  blueprintName?: string
+  facilityName?: string
+  systemName?: string
+  status: 'EXECUTABLE' | 'TRIAL' | 'UNAVAILABLE'
+  recommendedRuns: number
+  recommendedQuantity: number
+  materialCost: number
+  installCost: number
+  immediateRevenue: number
+  sellOrderRevenue: number
+  immediateProfit: number
+  sellOrderProfit: number
+  margin: number
+  hourlyProfit: number
+  dailyProfit: number
+  liquidityScore: number
+  riskScore: number
+  riskTags: string[]
+  calculatedAt: string
+}
+
+export interface EveIndustryConfig {
+  id: string
+  name: string
+  productionSkillJson?: string
+  marketFeeJson?: string
+  freshnessPolicyJson?: string
+  targetDays: number
+  marketShareLimit: number
+  version?: number
+  enabled: boolean
+}
+
+export interface EveIndustryFacility {
+  id: string
+  name: string
+  realityType: 'ACTUAL' | 'HYPOTHETICAL'
+  systemId: string
+  systemName?: string
+  securityStatus?: number
+  facilityTypeId?: number
+  facilityName?: string
+  supportedActivitiesJson?: string
+  onlineServicesJson?: string
+  rigTypeIdsJson?: string
+  facilityTax: number
+  versionedSurcharge: number
+  materialMultiplier?: number
+  timeMultiplier?: number
+  costMultiplier?: number
+  manufacturingSci?: number
+  reactionSci?: number
+  source?: string
+  confirmedAt?: string
+  enabled: boolean
+}
+
+export interface EveIndustryStaticVersion {
+  id: string
+  source: 'SERENITY_EXPORT' | 'TRANQUILITY_SDE' | 'CEVE_INDUSTRY_PUBLIC'
+  serverVersion?: string
+  buildNumber?: number
+  sha256?: string
+  schemaVersion?: string
+  validationStatus: 'PENDING' | 'VALIDATED' | 'REJECTED'
+  validationNote?: string
+  downloadedAt: string
+}
+
+export interface EveIndustryBlueprint {
+  id: string
+  staticVersionId: string
+  blueprintTypeId: number
+  blueprintName: string
+  activity: string
+  productTypeId: number
+  productName: string
+  productQuantity: number
+  baseTimeSeconds: number
+  source: string
+  validationStatus: string
+  supported: boolean
+}
+
+export interface EveIndustryBlueprintOverride {
+  id: string
+  blueprintTypeId: number
+  blueprintKind: 'BPO' | 'BPC'
+  materialEfficiency: number
+  timeEfficiency: number
+  remainingRuns?: number
+  source: string
+  version: number
+}
+
+export interface EveIndustryGoldenMaterial {
+  typeId: number
+  name?: string
+  quantity: number
+}
+
+export interface EveIndustryGoldenCase {
+  id: string
+  name: string
+  blueprintId: string
+  blueprintName?: string
+  runs: number
+  materialEfficiency: number
+  timeEfficiency: number
+  expectedMaterials: EveIndustryGoldenMaterial[]
+  calculatedMaterials: EveIndustryGoldenMaterial[]
+  expectedTimeSeconds: number
+  calculatedTimeSeconds: number
+  expectedInstallCost: number
+  calculatedInstallCost: number
+  validationStatus: 'PENDING' | 'PASSED' | 'FAILED'
+  validationDetails: string[]
+  validatedAt?: string
+}
+
+export interface EveIndustryOpportunityMaterial {
+  id: string
+  materialTypeId: number
+  materialName?: string
+  requiredQuantity: number
+  purchaseCost: number
+  averagePrice?: number
+}
+
+/** 工业生产计划主记录。金额和数量由后端快照计算，页面不自行推导。 */
+export interface EveIndustryPlan {
+  id: string
+  name: string
+  opportunityId?: string
+  sourceOpportunityId?: string
+  productName?: string
+  productTypeId?: number
+  targetQuantity?: number
+  runs?: number
+  status: 'DRAFT' | 'CONFIRMED' | 'PURCHASING' | 'PRODUCING' | 'DELIVERABLE' | 'DELIVERED' | 'CANCELLED' | string
+  riskTags?: string[]
+  totalCost?: number
+  totalMaterialCost?: number
+  totalInstallCost?: number
+  expectedRevenue?: number
+  expectedProfit?: number
+  configVersion?: number
+  facilityVersion?: number
+  marketSnapshotAt?: string
+  calculatedAt?: string
+  createdAt?: string
+  updatedAt?: string
+  createTime?: string
+  updateTime?: string
+  note?: string
+}
+
+/** 生产计划详情中的材料、步骤和来源快照。 */
+export interface EveIndustryPlanDetail extends EveIndustryPlan {
+  materials: Array<{
+    typeId: number
+    name?: string
+    requiredQuantity: number
+    purchasedQuantity?: number
+    purchaseCost?: number
+    source?: string
+  }>
+  steps: Array<{
+    id?: string
+    stepType: 'PURCHASE' | 'PRODUCTION' | 'SALES' | string
+    name: string
+    status: string
+    quantity?: number
+    sequence?: number
+    plannedAt?: string
+  }>
+  snapshot?: Record<string, unknown>
+}
+
+/** 后端详情保留主记录和步骤的边界，避免列表 DTO 重复携带大字段。 */
+export interface EveIndustryPlanResponse {
+  plan: EveIndustryPlan
+  steps: Array<{
+    id?: string
+    stepKey?: string
+    stepType: 'PURCHASE' | 'PRODUCTION' | 'SALES' | string
+    title: string
+    status: string
+    typeId?: number
+    quantity?: number
+    sequenceNo?: number
+    unitCost?: number
+    totalCost?: number
+    durationSeconds?: number
+  }>
+}
+
+export interface EveIndustryPlanCreateReq {
+  opportunityId: string
+  name: string
+  runs?: number
+}
+
+/** 单张蓝图试算中的材料行。 */
+export interface EveIndustryCalculationMaterial {
+  typeId: number
+  name: string
+  quantity: number
+  purchaseCost: number
+  averagePrice?: number
+  marketComplete: boolean
+}
+
+/** 单张蓝图试算结果。 */
+export interface EveIndustryCalculation {
+  blueprintId: string
+  blueprintName: string
+  productTypeId: number
+  productName: string
+  activity: string
+  runs: number
+  productQuantity: number
+  durationSeconds: number
+  materials: EveIndustryCalculationMaterial[]
+  materialCost: number
+  installationCost: number
+  totalCost: number
+  immediateRevenue: number
+  sellOrderRevenue: number
+  immediateProfit: number
+  sellOrderProfit: number
+  warnings: string[]
+}
+
+export interface EveIndustryDataStatus {
+  blueprintCount: number
+  validatedBlueprintCount: number
+  latestStaticImportedAt?: string
+  marketSnapshotCount: number
+  message: string
+}
+
+export interface EveIndustryScanReq {
+  configId: string
+  facilityId: string
+  activity?: string
+  limit?: number
+}
+
+export interface EveIndustryConfigReq {
+  name: string
+  productionSkillJson: string
+  marketFeeJson: string
+  targetDays: number
+  marketShareLimit: number
+  freshnessPolicyJson?: string
+}
+
+export interface EveIndustryFacilityReq {
+  name: string
+  realityType: 'ACTUAL' | 'HYPOTHETICAL'
+  systemId: string
+  systemName?: string
+  securityStatus?: number
+  facilityName?: string
+  supportedActivitiesJson: string
+  onlineServicesJson?: string
+  rigTypeIdsJson?: string
+  facilityTax: number
+  versionedSurcharge: number
+  materialMultiplier: number
+  timeMultiplier: number
+  costMultiplier: number
+  manufacturingSci?: number
+  reactionSci?: number
+  source?: string
+}
+
 export interface EveStaticLocationReference {
   referenceType: 'REGION' | 'CONSTELLATION' | 'SOLAR_SYSTEM' | 'NPC_STATION' | 'PUBLIC_STRUCTURE'
   referenceId: string
@@ -948,6 +1232,161 @@ export function getEveStarMapRoutes() {
 /** 查询当前军团各数据模块的同步新鲜度与脱敏失败分类。 */
 export function getEveDataFreshness() {
   return http.get<EveDataFreshness[]>('/eve/me/data-freshness')
+}
+
+/** 查询工业机会排行榜。 */
+export function getEveIndustryOpportunities(limit = 50) {
+  return http.get<EveIndustryOpportunity[]>('/eve/industry/opportunities', { limit })
+}
+
+/** 查询机会实际采用的材料采购明细。 */
+export function getEveIndustryOpportunityMaterials(id: string) {
+  return http.get<EveIndustryOpportunityMaterial[]>(`/eve/industry/opportunities/${id}/materials`)
+}
+
+/** 查询当前租户的工业生产计划。 */
+export function getEveIndustryPlans() {
+  return http.get<EveIndustryPlan[]>('/eve/industry/plans')
+}
+
+/** 从机会快照创建生产计划草稿。 */
+export function createEveIndustryPlan(data: EveIndustryPlanCreateReq) {
+  return http.post<EveIndustryPlanResponse>('/eve/industry/plans', data)
+}
+
+/** 查询生产计划详情、材料和步骤。 */
+export function getEveIndustryPlan(id: string) {
+  return http.get<EveIndustryPlanResponse>(`/eve/industry/plans/${id}`)
+}
+
+/** 复制一条生产计划为新的草稿。 */
+export function copyEveIndustryPlan(id: string) {
+  return http.post<EveIndustryPlanResponse>(`/eve/industry/plans/${id}/copy`)
+}
+
+/** 使用当前快照重新计算生产计划草稿。 */
+export function recalculateEveIndustryPlan(id: string) {
+  return http.post<EveIndustryPlanResponse>(`/eve/industry/plans/${id}/recalculate`)
+}
+
+/** 更新生产计划执行状态。 */
+export function updateEveIndustryPlanStatus(id: string, status: EveIndustryPlan['status']) {
+  return http.put<EveIndustryPlan>(`/eve/industry/plans/${id}/status`, { status })
+}
+
+/** 试算单张蓝图。 */
+export function calculateEveIndustryBlueprint(data: { blueprintId: string, configId: string, facilityId: string, runs: number, materialEfficiency: number, timeEfficiency: number }) {
+  return http.post<EveIndustryCalculation>('/eve/industry/calculate', data)
+}
+
+/** 手工触发工业机会扫描。 */
+export function scanEveIndustryOpportunities(data: EveIndustryScanReq) {
+  return http.post<EveIndustryOpportunity[]>('/eve/industry/opportunities/scan', data)
+}
+
+/** 查询当前租户工业配置。 */
+export function getEveIndustryConfigs() {
+  return http.get<EveIndustryConfig[]>('/eve/industry/configs')
+}
+
+/** 查询当前租户工业设施。 */
+export function getEveIndustryFacilities() {
+  return http.get<EveIndustryFacility[]>('/eve/industry/facilities')
+}
+
+/** 查询工业静态数据和行情缓存状态。 */
+export function getEveIndustryDataStatus() {
+  return http.get<EveIndustryDataStatus>('/eve/industry/data-status')
+}
+
+/** 创建工业生产配置。 */
+export function createEveIndustryConfig(data: EveIndustryConfigReq) {
+  return http.post<EveIndustryConfig>('/eve/industry/configs', data)
+}
+
+/** 修改工业生产配置。 */
+export function updateEveIndustryConfig(id: string, data: EveIndustryConfigReq) {
+  return http.put<EveIndustryConfig>(`/eve/industry/configs/${id}`, data)
+}
+
+/** 创建工业设施配置。 */
+export function createEveIndustryFacility(data: EveIndustryFacilityReq) {
+  return http.post<EveIndustryFacility>('/eve/industry/facilities', data)
+}
+
+/** 修改工业设施配置。 */
+export function updateEveIndustryFacility(id: string, data: EveIndustryFacilityReq) {
+  return http.put<EveIndustryFacility>(`/eve/industry/facilities/${id}`, data)
+}
+
+/** 从国服 ESI 同步设施所在星系的 SCI。 */
+export function syncEveIndustryFacilitySci(id: string) {
+  return http.post<EveIndustryFacility>(`/eve/industry/facilities/${id}/sync-sci`)
+}
+
+/** 查询工业静态数据版本。 */
+export function getEveIndustryStaticVersions() {
+  return http.get<EveIndustryStaticVersion[]>('/eve/industry/static-versions')
+}
+
+/** 查询导入的蓝图活动静态数据。 */
+export function getEveIndustryBlueprints(staticVersionId?: string) {
+  return http.get<EveIndustryBlueprint[]>('/eve/industry/static-blueprints', { staticVersionId })
+}
+
+/** 查询当前租户蓝图 ME/TE 与 BPO/BPC 覆盖。 */
+export function getEveIndustryBlueprintOverrides() {
+  return http.get<EveIndustryBlueprintOverride[]>('/eve/industry/blueprints/overrides')
+}
+
+/** 新增蓝图研究等级覆盖。 */
+export function createEveIndustryBlueprintOverride(data: Omit<EveIndustryBlueprintOverride, 'id' | 'version'>) {
+  return http.post<EveIndustryBlueprintOverride>('/eve/industry/blueprints/overrides', data)
+}
+
+/** 修改蓝图研究等级覆盖。 */
+export function updateEveIndustryBlueprintOverride(id: string, data: Omit<EveIndustryBlueprintOverride, 'id' | 'version'>) {
+  return http.put<EveIndustryBlueprintOverride>(`/eve/industry/blueprints/overrides/${id}`, data)
+}
+
+/** 上传规范化 JSON/JSONL 工业静态数据。 */
+export function importEveIndustryStaticData(file: File, params: { source: string, serverVersion?: string, buildNumber?: number, schemaVersion?: string }) {
+  const form = new FormData()
+  form.append('file', file)
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) form.append(key, String(value))
+  })
+  return http.post<{ staticVersionId?: string, sourceFileName: string, sha256: string, activityCount: number, imported: boolean, errors: Array<{ line?: number, code: string, message: string }> }>('/eve/industry/static-versions/import', form)
+}
+
+/** 从 ceve-industry.cn 的公开接口同步蓝图和反应配方。 */
+export function syncEveIndustryPublicBlueprints() {
+  return http.post<{ staticVersionId?: string, sourceFileName: string, sha256: string, activityCount: number, imported: boolean, errors: Array<{ line?: number, code: string, message: string }> }>('/eve/industry/static-versions/sync-ceve')
+}
+
+/** 查询工业 Golden Case。 */
+export function getEveIndustryGoldenCases() {
+  return http.get<EveIndustryGoldenCase[]>('/eve/industry/golden-cases')
+}
+
+/** 创建并校验一项工业 Golden Case。 */
+export function createEveIndustryGoldenCase(data: {
+  name: string
+  blueprintId: string
+  configId: string
+  facilityId: string
+  runs: number
+  materialEfficiency: number
+  timeEfficiency: number
+  expectedMaterials: EveIndustryGoldenMaterial[]
+  expectedTimeSeconds: number
+  expectedInstallCost: number
+  adjustedPrices?: Record<number, number>
+  materialTolerance?: number
+  timeToleranceSeconds?: number
+  installCostTolerance?: number
+}) {
+  return http.post<EveIndustryGoldenCase>('/eve/industry/golden-cases', data)
 }
 
 export function startEveRegistration() {
