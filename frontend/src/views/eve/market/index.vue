@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import dayjs from 'dayjs'
 import type { EChartsOption } from 'echarts'
+import { BarChart, LineChart } from 'echarts/charts'
+import { DataZoomComponent, GridComponent, TooltipComponent } from 'echarts/components'
+import { use } from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
 import { computed, onMounted, reactive, ref } from 'vue'
 import MarketPriceFreshness from '../components/MarketPriceFreshness.vue'
 import {
@@ -15,6 +19,9 @@ import {
 import { useChart } from '@/hooks'
 
 defineOptions({ name: 'EveMarket' })
+
+// 市场页独立注册所需图表模块，避免依赖其他页面先加载。
+use([LineChart, BarChart, GridComponent, TooltipComponent, DataZoomComponent, CanvasRenderer])
 
 const loading = ref(false)
 const categoryLoading = ref(false)
