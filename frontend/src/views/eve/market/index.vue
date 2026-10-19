@@ -192,10 +192,9 @@ const { chartOption: historyChartOption } = useChart((isDark): EChartsOption => 
   animation: !prefersReducedMotion,
   animationDuration: 640,
   animationEasing: 'cubicOut',
-  grid: [{ top: 24, right: 48, bottom: 86, left: 58 }, { top: '73%', right: 48, bottom: 28, left: 58 }],
+  grid: [{ top: 24, right: 20, bottom: '32%', left: 52 }, { top: '77%', right: 20, bottom: 28, left: 52 }],
   tooltip: {
     trigger: 'axis',
-    valueFormatter: (value) => typeof value === 'number' ? formatPrice(value) : String(value),
   },
   xAxis: [{
     type: 'category',
@@ -216,12 +215,16 @@ const { chartOption: historyChartOption } = useChart((isDark): EChartsOption => 
   yAxis: [{
     type: 'value',
     splitLine: { lineStyle: { color: chartGridColor(isDark), type: 'dashed' } },
-    axisLabel: { color: chartTextColor(isDark), fontSize: 11 },
+    axisLabel: {
+      color: chartTextColor(isDark),
+      fontSize: 11,
+      formatter: (value: number) => value >= 100_000_000 ? `${Number((value / 100_000_000).toFixed(2))}亿` : value >= 10_000 ? `${Number((value / 10_000).toFixed(2))}万` : value.toLocaleString(),
+    },
   }, {
     type: 'value',
     gridIndex: 1,
     splitLine: { show: false },
-    axisLabel: { color: chartTextColor(isDark), fontSize: 10, formatter: (value: number) => value >= 1_000_000 ? `${Math.round(value / 1_000_000)}M` : value.toLocaleString() },
+    axisLabel: { color: chartTextColor(isDark), fontSize: 10, formatter: (value: number) => value >= 100_000_000 ? `${Number((value / 100_000_000).toFixed(1))}亿` : value >= 10_000 ? `${Number((value / 10_000).toFixed(1))}万` : value.toLocaleString() },
   }],
   dataZoom: [{ type: 'inside', xAxisIndex: [0, 1], startValue: Math.max(0, detailHistory.value.length - 45), endValue: Math.max(0, detailHistory.value.length - 1) }],
   series: [{
@@ -232,6 +235,7 @@ const { chartOption: historyChartOption } = useChart((isDark): EChartsOption => 
     lineStyle: { width: 2.5, color: '#246EFF' },
     itemStyle: { color: '#246EFF' },
     areaStyle: { color: 'rgba(36, 110, 255, .12)' },
+    tooltip: { valueFormatter: (value) => formatPrice(Number(value)) },
     data: detailHistory.value.map((item) => item.closePrice),
   }, {
     name: '成交量',
@@ -239,6 +243,7 @@ const { chartOption: historyChartOption } = useChart((isDark): EChartsOption => 
     xAxisIndex: 1,
     yAxisIndex: 1,
     barMaxWidth: 10,
+    tooltip: { valueFormatter: (value) => `${Number(value).toLocaleString()} 件` },
     itemStyle: { color: 'rgba(112, 101, 240, .58)', borderRadius: [2, 2, 0, 0] },
     data: detailHistory.value.map((item) => item.volume),
   }],
