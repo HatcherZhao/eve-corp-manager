@@ -124,7 +124,7 @@ onMounted(loadExtractions)
     </header>
 
     <a-alert class="eve-extractions-page__guide" type="info" :show-icon="true">
-      数据来自国服官方接口；“可开采日”按浏览器本地时区显示矿块到达后的星期。月矿堡备注由本系统保存，后续同步不会覆盖。
+      数据来自国服官方接口；时间和“可开采日”统一按北京时间（UTC+8）显示。月矿堡备注由本系统保存，后续同步不会覆盖。
     </a-alert>
     <section class="eve-extractions-page__filter-bar">
       <a-input v-model="query.keyword" allow-clear placeholder="搜索精炼厂、月球或星系名称" @press-enter="search"><template #prefix><icon-search /></template></a-input>

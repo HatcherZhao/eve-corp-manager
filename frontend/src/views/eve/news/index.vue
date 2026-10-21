@@ -49,7 +49,7 @@ const categoryOptions = [
 
 const officialNewsImageBaseUrl = `${String(import.meta.env.VITE_API_PREFIX || '').replace(/\/$/, '')}/eve/news/image`
 
-/** 将服务端 UTC 时间转为用户易读的本地时间。 */
+/** 按北京时间展示新闻同步时间，发布日期保留日历语义。 */
 function formatTime(value?: string) {
   return formatEveTime(value)
 }
