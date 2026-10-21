@@ -26,6 +26,7 @@ import java.time.LocalDateTime;
  * @author zhaoyuqing
  */
 public record EveDataFreshnessResp(String module, String title, String route, EveDataFreshnessStatus status,
-                                   LocalDateTime lastSuccessfulAt, LocalDateTime sourceExpiresAt,
-                                   LocalDateTime lastFailureAt, String failureCode, boolean retryable) {
+                                   @EveDateTime LocalDateTime lastSuccessfulAt,
+                                   @EveDateTime LocalDateTime sourceExpiresAt, @EveDateTime LocalDateTime lastFailureAt,
+                                   String failureCode, boolean retryable) {
 }

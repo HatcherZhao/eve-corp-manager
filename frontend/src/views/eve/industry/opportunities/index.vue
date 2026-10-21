@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Message } from '@arco-design/web-vue'
 import { useWindowSize } from '@vueuse/core'
-import dayjs from 'dayjs'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import IndustryPageHeader from '../components/IndustryPageHeader.vue'
@@ -13,6 +12,7 @@ import {
   industryStatusColor,
   industryStatusLabel,
 } from '../shared/format'
+import { formatEveTime } from '@/utils/eveTime'
 import {
   type EveIndustryConfig,
   type EveIndustryDataStatus,
@@ -187,7 +187,7 @@ onMounted(loadPage)
     >
       <template #actions>
         <span class="industry-opportunities-page__updated-at">
-          更新于 {{ records[0]?.calculatedAt ? dayjs(records[0].calculatedAt).format('MM-DD HH:mm') : '—' }}
+          更新于 {{ records[0]?.calculatedAt ? formatEveTime(records[0].calculatedAt, 'MM-DD HH:mm') : '—' }}
         </span>
       </template>
 

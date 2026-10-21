@@ -26,5 +26,5 @@ import java.time.LocalDateTime;
 public record EveStaticTypeReferenceResp(Integer typeId, String typeName, String typeDescription,
                                          String marketCategoryL1, String marketCategoryL2, String marketCategoryL3,
                                          String marketCategoryL4, String marketCategoryL5, String marketCategoryL6,
-                                         LocalDateTime sourceUpdatedAt) {
+                                         @EveDateTime(zone = "Asia/Shanghai") LocalDateTime sourceUpdatedAt) {
 }

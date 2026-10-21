@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { Message, Modal } from '@arco-design/web-vue'
-import dayjs from 'dayjs'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AuthorizationActions from '../components/AuthorizationActions.vue'
+import { formatEveTime } from '@/utils/eveTime'
 import {
   type EveGameMailDetail,
   type EveGameMailLabel,
@@ -93,7 +93,7 @@ function newSendRecipient(): SendRecipient {
 }
 
 function formatTime(value?: string) {
-  return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '—'
+  return formatEveTime(value)
 }
 
 function labelText(labels: number[]) {

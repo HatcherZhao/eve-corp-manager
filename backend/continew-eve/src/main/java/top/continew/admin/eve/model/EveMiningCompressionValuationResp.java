@@ -32,6 +32,6 @@ public record EveMiningCompressionValuationResp(long rawQuantity, long compresse
     /** 单种月矿原矿按完整压缩批次折算出的估值。 */
     public record Item(int rawTypeId, String rawTypeName, int compressedTypeId, String compressedTypeName,
                        long rawQuantity, long compressedQuantity, long remainderQuantity, BigDecimal lowestSellPrice,
-                       BigDecimal estimatedValue, LocalDateTime priceUpdatedAt) {
+                       BigDecimal estimatedValue, @EveDateTime(zone = "Asia/Shanghai") LocalDateTime priceUpdatedAt) {
     }
 }

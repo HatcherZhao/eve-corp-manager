@@ -294,7 +294,7 @@ public class EveRegistrationService {
         snapshot.setCapturedAt(now);
         boolean sourceExpiryEstimated = identity.roleSourceExpiresAt() == null;
         snapshot.setSourceExpiresAt(sourceExpiryEstimated
-            ? now.plus(properties.getPermissionRefresh().getRoleCacheTtl())
+            ? LocalDateTime.now(ZoneOffset.UTC).plus(properties.getPermissionRefresh().getRoleCacheTtl())
             : identity.roleSourceExpiresAt());
         snapshot.setSourceExpiryEstimated(sourceExpiryEstimated);
         prepareInsert(snapshot);

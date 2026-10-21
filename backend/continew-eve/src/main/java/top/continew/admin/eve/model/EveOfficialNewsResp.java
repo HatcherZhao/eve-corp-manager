@@ -25,5 +25,6 @@ import java.time.LocalDateTime;
  */
 public record EveOfficialNewsResp(String category, String categoryLabel, String title, String summary,
                                   String originalUrl, String contentHtml, String contentText, String coverUrl,
-                                  LocalDateTime publishedAt, LocalDateTime lastSyncedAt) {
+                                  @EveDateTime(zone = "Asia/Shanghai") LocalDateTime publishedAt,
+                                  @EveDateTime LocalDateTime lastSyncedAt) {
 }

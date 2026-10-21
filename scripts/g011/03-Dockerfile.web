@@ -1,0 +1,6 @@
+# 保留现有 Nginx 运行配置，仅替换同批发布的前端产物。
+ARG BASE_IMAGE=eve-corp-manager-web:20261019-f6a74a0
+FROM ${BASE_IMAGE}
+ARG REVISION
+LABEL org.opencontainers.image.revision="${REVISION}"
+COPY dist/ /usr/share/nginx/html/

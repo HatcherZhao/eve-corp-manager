@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import dayjs from 'dayjs'
 import { computed, onMounted, ref } from 'vue'
+import { nowEveTime, parseEveTime } from '@/utils/eveTime'
 import {
   type EveContext,
   type EveCorporationStructure,
@@ -42,13 +42,13 @@ const characterPortraitUrl = computed(() => getEveCharacterPortraitUrl(context.v
 
 /** 即将耗尽燃料或已经到期的建筑，需要优先处理。 */
 const fuelRisks = computed(() => structures.value
-  .filter((item) => item.fuelExpiresAt && dayjs(item.fuelExpiresAt).diff(dayjs(), 'hour', true) <= fuelWarningHours)
-  .sort((left, right) => dayjs(left.fuelExpiresAt).valueOf() - dayjs(right.fuelExpiresAt).valueOf()))
+  .filter((item) => item.fuelExpiresAt && parseEveTime(item.fuelExpiresAt).diff(nowEveTime(), 'hour', true) <= fuelWarningHours)
+  .sort((left, right) => parseEveTime(left.fuelExpiresAt).valueOf() - parseEveTime(right.fuelExpiresAt).valueOf()))
 
 /** 月矿矿块到达即代表进入可开采窗口，按最早到达时间展示。 */
 const upcomingExtractions = computed(() => extractions.value
-  .filter((item) => dayjs(item.chunkArrivalAt).isAfter(dayjs()))
-  .sort((left, right) => dayjs(left.chunkArrivalAt).valueOf() - dayjs(right.chunkArrivalAt).valueOf()))
+  .filter((item) => parseEveTime(item.chunkArrivalAt).isAfter(nowEveTime()))
+  .sort((left, right) => parseEveTime(left.chunkArrivalAt).valueOf() - parseEveTime(right.chunkArrivalAt).valueOf()))
 
 const nextExtraction = computed(() => upcomingExtractions.value[0])
 const fuelOverview = computed(() => {
@@ -106,15 +106,15 @@ function formatNumber(value?: number) {
 
 function formatMiningDay(value?: string) {
   if (!value) return '—'
-  const time = dayjs(value)
+  const time = parseEveTime(value)
   const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][time.day()]
   return `${time.format('M 月 D 日')} ${weekday}`
 }
 
 function relativeDate(value?: string) {
   if (!value) return '—'
-  const date = dayjs(value).startOf('day')
-  const today = dayjs().startOf('day')
+  const date = parseEveTime(value).startOf('day')
+  const today = nowEveTime().startOf('day')
   const days = date.diff(today, 'day')
   if (days === 0) return '今天'
   if (days === 1) return '明天'
@@ -124,7 +124,7 @@ function relativeDate(value?: string) {
 
 function fuelText(item: EveCorporationStructure) {
   if (!item.fuelExpiresAt) return '状态待确认'
-  const hours = dayjs(item.fuelExpiresAt).diff(dayjs(), 'hour', true)
+  const hours = parseEveTime(item.fuelExpiresAt).diff(nowEveTime(), 'hour', true)
   if (hours <= 0) return '已到期'
   if (hours <= 24) return `${Math.ceil(hours)} 小时后到期`
   return `${Math.ceil(hours / 24)} 天后到期`

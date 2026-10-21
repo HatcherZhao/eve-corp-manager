@@ -24,6 +24,7 @@ import java.time.LocalDateTime;
  * @author zhaoyuqing
  */
 public record EveMemberSyncResp(int rosterCount, int trackingCount, boolean trackingSynchronized,
-                                String trackingUnavailableReason, LocalDateTime synchronizedAt,
-                                LocalDateTime rosterSourceExpiresAt, LocalDateTime trackingSourceExpiresAt) {
+                                String trackingUnavailableReason, @EveDateTime LocalDateTime synchronizedAt,
+                                @EveDateTime LocalDateTime rosterSourceExpiresAt,
+                                @EveDateTime LocalDateTime trackingSourceExpiresAt) {
 }

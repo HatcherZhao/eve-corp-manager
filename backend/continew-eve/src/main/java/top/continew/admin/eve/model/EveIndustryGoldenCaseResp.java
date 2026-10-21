@@ -28,5 +28,5 @@ public record EveIndustryGoldenCaseResp(Long id, String name, Long blueprintId, 
                                         BigDecimal expectedTimeSeconds, BigDecimal calculatedTimeSeconds,
                                         BigDecimal expectedInstallCost, BigDecimal calculatedInstallCost,
                                         String validationStatus, List<String> validationDetails,
-                                        LocalDateTime validatedAt) {
+                                        @EveDateTime(zone = "Asia/Shanghai") LocalDateTime validatedAt) {
 }

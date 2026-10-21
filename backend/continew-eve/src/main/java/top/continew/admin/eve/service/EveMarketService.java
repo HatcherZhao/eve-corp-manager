@@ -236,13 +236,14 @@ public class EveMarketService {
         if (!properties.isEnabled()) {
             return;
         }
+        LocalDateTime now = LocalDateTime.now();
         for (Integer typeId : typeReferenceMapper.selectHistoryWarmupTypeIds(properties
-            .getHistoryWarmupLimit(), historySource())) {
+            .getHistoryWarmupLimit(), historySource(), now)) {
             if (!refreshingTypes.add(typeId)) {
                 continue;
             }
             try {
-                refreshHistory(typeId);
+                refreshHistory(typeId, now);
             } catch (RuntimeException e) {
                 recordFailure(typeId, "国服 ESI 市场历史暂时不可用");
                 log.debug("国服 ESI 市场历史补温失败，typeId={}, errorType={}", typeId, e.getClass().getSimpleName());
@@ -399,7 +400,7 @@ public class EveMarketService {
     }
 
     /** 仅补齐国服 ESI 的区域历史，不在用户请求中按物品拉取。 */
-    protected void refreshHistory(int typeId) {
+    protected void refreshHistory(int typeId, LocalDateTime now) {
         var response = serenityEsiClient.getMarketHistoryWithMetadata(properties.getRegionId(), typeId);
         List<EveMarketHistoryResp> history = response.body()
             .stream()
@@ -409,7 +410,6 @@ public class EveMarketService {
         if (history.size() > HISTORY_LIMIT) {
             history = List.copyOf(history.subList(history.size() - HISTORY_LIMIT, history.size()));
         }
-        LocalDateTime now = LocalDateTime.now();
         LocalDateTime nextRequestAt = now.plusDays(1);
         if (response.expiresAt() != null) {
             LocalDateTime localExpiresAt = response.expiresAt()

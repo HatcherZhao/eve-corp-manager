@@ -23,6 +23,7 @@ import java.time.LocalDateTime;
  *
  * @author zhaoyuqing
  */
-public record EveOfficialNewsSyncStatusResp(LocalDateTime lastSuccessfulAt, LocalDateTime lastFailureAt,
-                                            String lastFailureMessage, int failureCount) {
+public record EveOfficialNewsSyncStatusResp(@EveDateTime LocalDateTime lastSuccessfulAt,
+                                            @EveDateTime LocalDateTime lastFailureAt, String lastFailureMessage,
+                                            int failureCount) {
 }

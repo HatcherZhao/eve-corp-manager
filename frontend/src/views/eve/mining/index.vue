@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { Message } from '@arco-design/web-vue'
-import dayjs from 'dayjs'
 import { type EChartsOption, graphic } from 'echarts'
 import { computed, onMounted, reactive, ref } from 'vue'
 import DataFreshnessBanner from '../components/DataFreshnessBanner.vue'
+import { formatEveDate, formatEveTime } from '@/utils/eveTime'
 import {
   type EveMiningAnalytics,
   type EveMiningLedger,
@@ -75,7 +75,7 @@ const { chartOption: trendChartOption } = useChart((isDark): EChartsOption => ({
   xAxis: {
     type: 'category',
     boundaryGap: false,
-    data: analytics.value.timeline.map((item) => dayjs(item.recordedAt).format('M/D')),
+    data: analytics.value.timeline.map((item) => formatEveDate(item.recordedAt, 'M/D')),
     axisLine: { lineStyle: { color: chartGridColor(isDark) } },
     axisLabel: { color: chartTextColor(isDark), fontSize: 11 },
     axisTick: { show: false },
@@ -179,11 +179,11 @@ const { chartOption: mineralChartOption } = useChart((isDark): EChartsOption => 
 }))
 
 function dateText(value?: string) {
-  return value ? dayjs(value).format('YYYY-MM-DD') : '—'
+  return formatEveDate(value)
 }
 
 function timeText(value?: string) {
-  return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '—'
+  return formatEveTime(value)
 }
 
 function formatNumber(value?: number) {

@@ -12,7 +12,7 @@
 
 <script setup lang="ts">
 import type { ShortcutType } from '@arco-design/web-vue'
-import dayjs from 'dayjs'
+import { nowEveTime } from '@/utils/eveTime'
 
 defineOptions({ name: 'DateRangePicker' })
 
@@ -39,26 +39,31 @@ const shortcuts = computed<ShortcutType[]>(() => {
   return [
     {
       label: '今天',
-      value: (): Date[] => [dayjs().startOf('day').toDate(), dayjs().toDate()],
+      format: 'YYYY-MM-DD HH:mm:ss',
+      value: (): string[] => [nowEveTime().startOf('day').format('YYYY-MM-DD HH:mm:ss'), nowEveTime().format('YYYY-MM-DD HH:mm:ss')],
     },
     {
       label: '昨天',
-      value: (): Date[] => [
-        dayjs().subtract(1, 'day').startOf('day').toDate(),
-        dayjs().subtract(1, 'day').endOf('day').toDate(),
+      format: 'YYYY-MM-DD HH:mm:ss',
+      value: (): string[] => [
+        nowEveTime().subtract(1, 'day').startOf('day').format('YYYY-MM-DD HH:mm:ss'),
+        nowEveTime().subtract(1, 'day').endOf('day').format('YYYY-MM-DD HH:mm:ss'),
       ],
     },
     {
       label: '本周',
-      value: (): Date[] => [dayjs().startOf('week').add(1, 'day').toDate(), dayjs().toDate()],
+      format: 'YYYY-MM-DD HH:mm:ss',
+      value: (): string[] => [nowEveTime().startOf('day').subtract((nowEveTime().day() + 6) % 7, 'day').format('YYYY-MM-DD HH:mm:ss'), nowEveTime().format('YYYY-MM-DD HH:mm:ss')],
     },
     {
       label: '本月',
-      value: (): Date[] => [dayjs().startOf('month').toDate(), dayjs().toDate()],
+      format: 'YYYY-MM-DD HH:mm:ss',
+      value: (): string[] => [nowEveTime().startOf('month').format('YYYY-MM-DD HH:mm:ss'), nowEveTime().format('YYYY-MM-DD HH:mm:ss')],
     },
     {
       label: '本年',
-      value: (): Date[] => [dayjs().startOf('year').toDate(), dayjs().toDate()],
+      format: 'YYYY-MM-DD HH:mm:ss',
+      value: (): string[] => [nowEveTime().startOf('year').format('YYYY-MM-DD HH:mm:ss'), nowEveTime().format('YYYY-MM-DD HH:mm:ss')],
     },
   ]
 })

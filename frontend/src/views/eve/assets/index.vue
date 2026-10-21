@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Message } from '@arco-design/web-vue'
-import dayjs from 'dayjs'
 import { computed, onMounted, ref } from 'vue'
 import DataFreshnessBanner from '../components/DataFreshnessBanner.vue'
+import { formatEveTime } from '@/utils/eveTime'
 import {
   type EveCorporationAssetTreeNode,
   type EveCorporationAssetValuation,
@@ -46,7 +46,7 @@ const selectedFittingSections = computed(() => collectFittingSections(selectedFi
 const selectedValuation = computed(() => valuation.value.items.find((item) => item.typeId === selectedNode.value?.typeId))
 
 function formatTime(value?: string) {
-  return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '—'
+  return formatEveTime(value)
 }
 
 /** 市场金额统一以 ISK 展示，未建立有效买卖单时不伪造零价格。 */

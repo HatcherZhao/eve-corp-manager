@@ -26,5 +26,6 @@ import java.time.LocalDateTime;
  */
 public record EveStaticLocationReferenceResp(String referenceType, Long referenceId, String referenceName,
                                              Long solarSystemId, Long constellationId, Long regionId,
-                                             BigDecimal securityStatus, LocalDateTime sourceUpdatedAt) {
+                                             BigDecimal securityStatus,
+                                             @EveDateTime(zone = "Asia/Shanghai") LocalDateTime sourceUpdatedAt) {
 }

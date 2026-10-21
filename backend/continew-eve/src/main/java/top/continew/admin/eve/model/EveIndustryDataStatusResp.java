@@ -20,6 +20,6 @@ import java.time.LocalDateTime;
 
 /** 工业数据状态摘要。 */
 public record EveIndustryDataStatusResp(long blueprintCount, long validatedBlueprintCount,
-                                        LocalDateTime latestStaticImportedAt, long marketSnapshotCount,
-                                        String message) {
+                                        @EveDateTime(zone = "Asia/Shanghai") LocalDateTime latestStaticImportedAt,
+                                        long marketSnapshotCount, String message) {
 }

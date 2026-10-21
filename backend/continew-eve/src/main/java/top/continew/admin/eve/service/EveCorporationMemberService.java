@@ -168,7 +168,7 @@ public class EveCorporationMemberService {
             member.setMemberNote(normalizedNote);
             member.setUpdateUser(context.getId());
             rosterMemberMapper.updateOrganization(context.getTenantId(), member
-                .getId(), normalizedGroup, normalizedNote, context.getId());
+                .getId(), normalizedGroup, normalizedNote, context.getId(), LocalDateTime.now());
             operationAuditService.recordOrganizationUpdate(context, member.getId());
         }
         EveCorporationMemberTrackingDO tracking = hasTrackingPermission(context)

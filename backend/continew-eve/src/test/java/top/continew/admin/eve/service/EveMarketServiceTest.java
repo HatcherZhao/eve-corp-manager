@@ -213,7 +213,8 @@ class EveMarketServiceTest {
         when(esiClient.getMarketHistoryWithMetadata(10000002L, 34)).thenReturn(new SerenityEsiResponse<>(List
             .of(), expires, "history-etag"));
 
-        service(snapshotMapper, mock(EveStaticReferenceService.class), esiClient).refreshHistory(34);
+        service(snapshotMapper, mock(EveStaticReferenceService.class), esiClient).refreshHistory(34, LocalDateTime
+            .now());
 
         verify(snapshotMapper).upsertHistory(eq(34), eq("[]"), eq("SERENITY_ESI_REGION_V1:10000002"), any(), eq(expires
             .atOffset(ZoneOffset.UTC)

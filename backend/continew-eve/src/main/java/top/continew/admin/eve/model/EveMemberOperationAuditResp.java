@@ -25,5 +25,5 @@ import java.time.LocalDateTime;
  */
 public record EveMemberOperationAuditResp(Long id, Long rosterMemberId, Long targetUserId, String eventType,
                                           String summary, Long actorUserId, String actorUsername,
-                                          LocalDateTime occurredAt) {
+                                          @EveDateTime LocalDateTime occurredAt) {
 }

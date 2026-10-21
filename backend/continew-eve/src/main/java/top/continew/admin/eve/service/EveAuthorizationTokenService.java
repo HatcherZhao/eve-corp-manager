@@ -29,6 +29,7 @@ import top.continew.admin.eve.model.enums.EveAuthorizationVerificationStatus;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.List;
 
@@ -137,7 +138,7 @@ public class EveAuthorizationTokenService {
         if (revokedRefreshToken) {
             wrapper.set("access_token", null)
                 .set("refresh_token", null)
-                .set("last_verified_at", LocalDateTime.now(clock));
+                .set("last_verified_at", LocalDateTime.now(ZoneId.of("Asia/Shanghai")));
         }
         updateOwned(tenantId, userId, authorizationId, wrapper.eq("status", EveAuthorizationStatus.ACTIVE));
     }
@@ -165,7 +166,7 @@ public class EveAuthorizationTokenService {
             .set("refresh_token", null)
             .set("status", EveAuthorizationStatus.REAUTH_REQUIRED)
             .set("last_verification_status", EveAuthorizationVerificationStatus.INVALID)
-            .set("last_verified_at", LocalDateTime.now(clock))
+            .set("last_verified_at", LocalDateTime.now(ZoneId.of("Asia/Shanghai")))
             .set("failure_code", failureCode.name())
             .eq("status", EveAuthorizationStatus.ACTIVE));
     }

@@ -32,6 +32,7 @@ public record EveCorporationAssetValuationResp(long itemCount, long totalQuantit
     /** 单个物品类型在当前资产快照中的数量、价格和两种估值口径。 */
     public record Item(int typeId, String typeName, long quantity, long itemCount, BigDecimal highestBuyPrice,
                        BigDecimal lowestSellPrice, BigDecimal highestBuyEstimatedValue,
-                       BigDecimal lowestSellEstimatedValue, LocalDateTime priceUpdatedAt) {
+                       BigDecimal lowestSellEstimatedValue,
+                       @EveDateTime(zone = "Asia/Shanghai") LocalDateTime priceUpdatedAt) {
     }
 }

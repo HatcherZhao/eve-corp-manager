@@ -25,6 +25,6 @@ import java.time.LocalDateTime;
  */
 public record EveCorporationAssetResp(Long itemId, Integer typeId, String typeName, String itemName, Long locationId,
                                       String locationName, String locationType, String locationFlag, Integer quantity,
-                                      Boolean singleton, Boolean blueprintCopy, LocalDateTime lastSeenAt,
-                                      LocalDateTime sourceExpiresAt) {
+                                      Boolean singleton, Boolean blueprintCopy, @EveDateTime LocalDateTime lastSeenAt,
+                                      @EveDateTime LocalDateTime sourceExpiresAt) {
 }

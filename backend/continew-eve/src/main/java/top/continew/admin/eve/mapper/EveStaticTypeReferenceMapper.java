@@ -23,6 +23,7 @@ import org.apache.ibatis.annotations.Select;
 import top.continew.admin.eve.model.entity.EveStaticTypeReferenceDO;
 import top.continew.starter.data.mapper.BaseMapper;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -50,20 +51,22 @@ public interface EveStaticTypeReferenceMapper extends BaseMapper<EveStaticTypeRe
         FROM `eve_static_type_reference` AS `reference`
         LEFT JOIN `eve_market_snapshot` AS `snapshot` ON `snapshot`.`type_id` = `reference`.`type_id`
         WHERE `reference`.`market_category_l1` <> ''
-          AND (`snapshot`.`history_next_request_at` IS NULL OR `snapshot`.`history_next_request_at` <= NOW()
+          AND (`snapshot`.`history_next_request_at` IS NULL OR `snapshot`.`history_next_request_at` <= #{now}
             OR (`snapshot`.`history_source` IS NOT NULL AND `snapshot`.`history_source` <> #{source}))
           AND (`snapshot`.`history_source` IS NULL OR `snapshot`.`history_source` <> #{source}
             OR `snapshot`.`history_synchronized_at` IS NULL
-            OR `snapshot`.`history_synchronized_at` < DATE_SUB(NOW(), INTERVAL 1 DAY))
+            OR `snapshot`.`history_synchronized_at` < DATE_SUB(#{now}, INTERVAL 1 DAY))
         -- 已被页面或估值实际使用的物品优先补温，但每轮仍只处理极少数请求。
-        ORDER BY CASE WHEN `snapshot`.`last_accessed_at` >= DATE_SUB(NOW(), INTERVAL 1 DAY) THEN 0 ELSE 1 END ASC,
+        ORDER BY CASE WHEN `snapshot`.`last_accessed_at` >= DATE_SUB(#{now}, INTERVAL 1 DAY) THEN 0 ELSE 1 END ASC,
                  -- 从未同步过的物品必须先完成首轮覆盖，不能被每日重刷的旧快照长期挤占。
                  CASE WHEN `snapshot`.`history_synchronized_at` IS NULL THEN 0 ELSE 1 END ASC,
                  `snapshot`.`history_synchronized_at` ASC,
                  `reference`.`type_id` ASC
         LIMIT #{limit}
         """)
-    List<Integer> selectHistoryWarmupTypeIds(@Param("limit") int limit, @Param("source") String source);
+    List<Integer> selectHistoryWarmupTypeIds(@Param("limit") int limit,
+                                             @Param("source") String source,
+                                             @Param("now") LocalDateTime now);
 
     /**
      * 选择需要更新报价的可交易物品，供后台轮转刷新整个市场目录。

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { Message } from '@arco-design/web-vue'
-import dayjs from 'dayjs'
 import type { EChartsOption } from 'echarts'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { formatEveTime, toEveIso } from '@/utils/eveTime'
 import {
   type EveStarMapGraph,
   type EveStarMapRoute,
@@ -195,7 +195,7 @@ function chooseSuggestion(item: EveStarMapSuggestion) {
 }
 
 function formatTime(value?: string) {
-  return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '等待首次同步'
+  return value ? formatEveTime(value) : '等待首次同步'
 }
 
 function beginAnnotation() {
@@ -212,7 +212,7 @@ async function saveAnnotation() {
     title: annotation.title,
     note: annotation.note || undefined,
     colorKey: annotation.colorKey,
-    expiresAt: annotation.expiresAt || undefined,
+    expiresAt: toEveIso(annotation.expiresAt),
   })
   annotationVisible.value = false
   Message.success('运营标注已保存')

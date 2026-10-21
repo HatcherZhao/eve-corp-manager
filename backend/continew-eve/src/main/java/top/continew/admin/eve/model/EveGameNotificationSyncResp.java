@@ -23,6 +23,6 @@ import java.time.LocalDateTime;
  *
  * @author zhaoyuqing
  */
-public record EveGameNotificationSyncResp(int notificationCount, LocalDateTime synchronizedAt,
-                                          LocalDateTime sourceExpiresAt) {
+public record EveGameNotificationSyncResp(int notificationCount, @EveDateTime LocalDateTime synchronizedAt,
+                                          @EveDateTime LocalDateTime sourceExpiresAt) {
 }

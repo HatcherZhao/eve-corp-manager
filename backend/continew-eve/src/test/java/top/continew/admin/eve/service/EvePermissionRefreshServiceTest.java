@@ -132,6 +132,24 @@ class EvePermissionRefreshServiceTest {
         stubBoundIdentity();
     }
 
+    /** 缺少上游过期头时，TTL 与冷却必须采用 UTC 而非快照审计的北京时间。 */
+    @Test
+    void shouldEstimateSourceExpiryUsingUtc() {
+        stubUpstream(9001L, List.of("Director"), List.of(), List.of(), List.of());
+        when(snapshotMapper.selectLatest(10L, 100L)).thenReturn(snapshot(false, List.of()));
+        when(esiClient.getCorporationRolesWithMetadata(8001L, "access-token"))
+            .thenReturn(new SerenityEsiResponse<>(new SerenityCorporationRolesResponse(List.of("Director"), List
+                .of(), List.of(), List.of()), null, "etag"));
+        LocalDateTime before = LocalDateTime.now(ZoneOffset.UTC);
+        EvePermissionRefreshResp response = service.refresh(10L, 20L, false);
+        assertThat(response.status()).isEqualTo(EvePermissionRefreshStatus.REFRESHED);
+        assertThat(response.sourceExpiryEstimated()).isTrue();
+        var ttl = new SerenityProperties().getPermissionRefresh().getRoleCacheTtl();
+        assertThat(response.sourceExpiresAt()).isBetween(before.plus(ttl), LocalDateTime.now(ZoneOffset.UTC).plus(ttl));
+        assertThat(response.requestedAt()).isBetween(before, LocalDateTime.now(ZoneOffset.UTC));
+        assertThat(response.nextSuggestedRefreshAt()).isBefore(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(10));
+    }
+
     /** 普通成员升级为 Director 后应同步总监角色。 */
     @Test
     void shouldPromoteMemberToDirector() {

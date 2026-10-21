@@ -41,6 +41,8 @@ import top.continew.admin.eve.model.entity.EveCorporationDO;
 import top.continew.admin.eve.model.enums.EveCorporationStatus;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -151,7 +153,9 @@ class EveRegistrationServiceTest {
         ArgumentCaptor<top.continew.admin.eve.model.entity.EveCharacterRoleSnapshotDO> snapshot = ArgumentCaptor
             .forClass(top.continew.admin.eve.model.entity.EveCharacterRoleSnapshotDO.class);
         verify(snapshotMapper).insert(snapshot.capture());
-        assertThat(snapshot.getValue().getSourceExpiresAt()).isAfter(snapshot.getValue().getCapturedAt());
+        assertThat(snapshot.getValue().getSourceExpiresAt()).isBetween(LocalDateTime.now(ZoneOffset.UTC), LocalDateTime
+            .now(ZoneOffset.UTC)
+            .plusHours(2));
         ArgumentCaptor<EveAuthorizationDO> authorization = ArgumentCaptor.forClass(EveAuthorizationDO.class);
         verify(authorizationMapper).insert(authorization.capture());
         assertThat(authorization.getValue().getAccessToken()).isEqualTo("access-token");

@@ -21,6 +21,7 @@ import java.time.LocalDateTime;
 
 /** 吉他贸易中心某物品的可用于估值的最新买卖报价。 */
 public record EveMarketQuoteResp(BigDecimal highestBuyPrice, BigDecimal lowestSellPrice, Long buyVolume,
-                                 Long sellVolume, LocalDateTime sourceUpdatedAt, LocalDateTime synchronizedAt,
-                                 LocalDateTime freshnessExpiresAt, boolean stale) {
+                                 Long sellVolume, @EveDateTime(zone = "Asia/Shanghai") LocalDateTime sourceUpdatedAt,
+                                 @EveDateTime(zone = "Asia/Shanghai") LocalDateTime synchronizedAt,
+                                 @EveDateTime(zone = "Asia/Shanghai") LocalDateTime freshnessExpiresAt, boolean stale) {
 }

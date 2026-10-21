@@ -23,6 +23,6 @@ import java.time.LocalDateTime;
  *
  * @author zhaoyuqing
  */
-public record EveMiningSyncResp(int observerCount, int ledgerCount, int pageCount, LocalDateTime synchronizedAt,
-                                LocalDateTime sourceExpiresAt) {
+public record EveMiningSyncResp(int observerCount, int ledgerCount, int pageCount,
+                                @EveDateTime LocalDateTime synchronizedAt, @EveDateTime LocalDateTime sourceExpiresAt) {
 }

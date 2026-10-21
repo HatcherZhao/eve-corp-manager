@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { Message } from '@arco-design/web-vue'
-import dayjs from 'dayjs'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import IndustryPageHeader from '../components/IndustryPageHeader.vue'
 import IndustryPanel from '../components/IndustryPanel.vue'
 import { formatIndustryIsk } from '../shared/format'
+import { formatEveTime } from '@/utils/eveTime'
 import { type EveIndustryOpportunity, type EveIndustryPlan, type EveIndustryPlanDetail, type EveIndustryPlanResponse, copyEveIndustryPlan, createEveIndustryPlan, getEveIndustryOpportunities, getEveIndustryPlan, getEveIndustryPlans, recalculateEveIndustryPlan, updateEveIndustryPlanStatus } from '@/apis/eve'
 
 defineOptions({ name: 'EveIndustryPlans' })
@@ -156,7 +156,7 @@ onMounted(loadPage)
           <a-table-column title="状态" :width="100"><template #cell="{ record }"><a-tag :color="statusColor(record.status)">{{ statusLabel(record.status) }}</a-tag></template></a-table-column>
           <a-table-column title="目标产量" :width="110" align="right"><template #cell="{ record }">{{ record.targetQuantity?.toLocaleString() || '—' }}</template></a-table-column>
           <a-table-column title="预计利润" :width="150" align="right"><template #cell="{ record }">{{ formatIndustryIsk(record.expectedProfit) }}</template></a-table-column>
-          <a-table-column title="更新时间" :width="150"><template #cell="{ record }">{{ record.updatedAt || record.updateTime ? dayjs(record.updatedAt || record.updateTime).format('MM-DD HH:mm') : '—' }}</template></a-table-column>
+          <a-table-column title="更新时间" :width="150"><template #cell="{ record }">{{ record.updatedAt || record.updateTime ? formatEveTime(record.updatedAt || record.updateTime, 'MM-DD HH:mm') : '—' }}</template></a-table-column>
           <a-table-column title="操作" :width="120"><template #cell="{ record }"><a-button type="text" size="small" @click.stop="copyPlan(record)">复制</a-button></template></a-table-column>
         </template>
       </a-table>

@@ -26,10 +26,12 @@ import java.util.List;
  */
 public record EveCorporationStructureResp(Long structureId, Integer typeId, String typeName, String structureName,
                                           Long solarSystemId, String solarSystemName, String state,
-                                          LocalDateTime fuelExpiresAt, LocalDateTime stateTimerStartAt,
-                                          LocalDateTime stateTimerEndAt, LocalDateTime unanchorsAt,
-                                          List<Service> services, String status, LocalDateTime lastSeenAt,
-                                          LocalDateTime sourceExpiresAt) {
+                                          @EveDateTime LocalDateTime fuelExpiresAt,
+                                          @EveDateTime LocalDateTime stateTimerStartAt,
+                                          @EveDateTime LocalDateTime stateTimerEndAt,
+                                          @EveDateTime LocalDateTime unanchorsAt, List<Service> services, String status,
+                                          @EveDateTime LocalDateTime lastSeenAt,
+                                          @EveDateTime LocalDateTime sourceExpiresAt) {
     /** 建筑服务展示项。 */
     public record Service(String name, String state) {
     }

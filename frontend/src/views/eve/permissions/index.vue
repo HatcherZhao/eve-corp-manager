@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { TreeNodeData } from '@arco-design/web-vue'
-import dayjs from 'dayjs'
 import { computed, onMounted, ref, watch } from 'vue'
 import AuthorizationActions from '../components/AuthorizationActions.vue'
+import { formatEveTime } from '@/utils/eveTime'
 import { type EvePermissionNode, type EvePermissionTree, getEvePermissionTree } from '@/apis/eve'
 
 defineOptions({ name: 'EvePermissions' })
@@ -160,7 +160,7 @@ const permissionTree = computed<PermissionTreeNode[]>(() => [
 ].filter((node): node is PermissionTreeNode => Boolean(node)))
 
 function formatTime(value?: string) {
-  return value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '—'
+  return formatEveTime(value, 'YYYY-MM-DD HH:mm:ss')
 }
 
 function collectBranchKeys(nodes: PermissionTreeNode[]): string[] {

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import dayjs from 'dayjs'
 import type { EChartsOption } from 'echarts'
 import { BarChart, LineChart } from 'echarts/charts'
 import { DataZoomComponent, GridComponent, TooltipComponent } from 'echarts/components'
@@ -7,6 +6,7 @@ import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { computed, onMounted, reactive, ref } from 'vue'
 import MarketPriceFreshness from '../components/MarketPriceFreshness.vue'
+import { formatEveDate, formatEveTime } from '@/utils/eveTime'
 import {
   type EveMarketDetail,
   type EveMarketItem,
@@ -175,7 +175,7 @@ function formatVolume(value?: number) {
 }
 
 function formatTime(value?: string) {
-  return value ? dayjs(value).format('MM-DD HH:mm') : '等待首次同步'
+  return value ? formatEveTime(value, 'MM-DD HH:mm') : '等待首次同步'
 }
 
 function spread(item: EveMarketItem) {
@@ -199,7 +199,7 @@ const { chartOption: historyChartOption } = useChart((isDark): EChartsOption => 
   xAxis: [{
     type: 'category',
     boundaryGap: false,
-    data: detailHistory.value.map((item) => dayjs(item.date).format('M/D')),
+    data: detailHistory.value.map((item) => formatEveDate(item.date, 'M/D')),
     axisLine: { lineStyle: { color: chartGridColor(isDark) } },
     axisLabel: { color: chartTextColor(isDark), fontSize: 11 },
     axisTick: { show: false },
@@ -207,7 +207,7 @@ const { chartOption: historyChartOption } = useChart((isDark): EChartsOption => 
     type: 'category',
     gridIndex: 1,
     boundaryGap: false,
-    data: detailHistory.value.map((item) => dayjs(item.date).format('M/D')),
+    data: detailHistory.value.map((item) => formatEveDate(item.date, 'M/D')),
     axisLine: { lineStyle: { color: chartGridColor(isDark) } },
     axisLabel: { show: false },
     axisTick: { show: false },

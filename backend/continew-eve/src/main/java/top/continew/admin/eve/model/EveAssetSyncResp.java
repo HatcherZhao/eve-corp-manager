@@ -23,6 +23,6 @@ import java.time.LocalDateTime;
  *
  * @author zhaoyuqing
  */
-public record EveAssetSyncResp(int assetCount, int pageCount, LocalDateTime synchronizedAt,
-                               LocalDateTime sourceExpiresAt) {
+public record EveAssetSyncResp(int assetCount, int pageCount, @EveDateTime LocalDateTime synchronizedAt,
+                               @EveDateTime LocalDateTime sourceExpiresAt) {
 }

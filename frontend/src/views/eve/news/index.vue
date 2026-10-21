@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Message } from '@arco-design/web-vue'
-import dayjs from 'dayjs'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { formatEveTime } from '@/utils/eveTime'
 import {
   type EveOfficialNews,
   type EveOfficialNewsSyncStatus,
@@ -51,7 +51,7 @@ const officialNewsImageBaseUrl = `${String(import.meta.env.VITE_API_PREFIX || ''
 
 /** 将服务端 UTC 时间转为用户易读的本地时间。 */
 function formatTime(value?: string) {
-  return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '—'
+  return formatEveTime(value)
 }
 
 /** 仅将已同步的安全正文送入阅读抽屉，列表始终保持轻量。 */

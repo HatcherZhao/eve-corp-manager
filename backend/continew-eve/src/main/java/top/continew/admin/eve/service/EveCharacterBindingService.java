@@ -287,7 +287,9 @@ public class EveCharacterBindingService {
         snapshot.setRolesAtBase(safeList(roles.rolesAtBase()));
         snapshot.setRolesAtOther(safeList(roles.rolesAtOther()));
         snapshot.setCapturedAt(now);
-        snapshot.setSourceExpiresAt(now.plus(properties.getPermissionRefresh().getRoleCacheTtl()));
+        // 快照采集时间保留北京时间，过期时刻统一按 UTC 计算。
+        snapshot.setSourceExpiresAt(LocalDateTime.now(ZoneOffset.UTC)
+            .plus(properties.getPermissionRefresh().getRoleCacheTtl()));
         prepareInsert(snapshot);
         roleSnapshotMapper.insert(snapshot);
         return character;

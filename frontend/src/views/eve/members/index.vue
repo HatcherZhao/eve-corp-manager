@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Message } from '@arco-design/web-vue'
-import dayjs from 'dayjs'
 import { computed, onMounted, reactive, ref } from 'vue'
 import DataFreshnessBanner from '../components/DataFreshnessBanner.vue'
+import { formatEveTime } from '@/utils/eveTime'
 import {
   type EveMember,
   type EveMemberOperationAudit,
@@ -44,7 +44,7 @@ const canViewHistory = computed(() => userStore.permissions.includes('eve:member
 const canExport = computed(() => userStore.permissions.includes('eve:members:export') || userStore.permissions.includes('*:*:*'))
 
 function formatTime(value?: string) {
-  return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '—'
+  return formatEveTime(value)
 }
 
 function resolvedName(name?: string, field = '信息') {

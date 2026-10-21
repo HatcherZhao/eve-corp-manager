@@ -44,14 +44,15 @@ public record EvePermissionTreeResp(EvePermissionTreeStatus status, String messa
 
     /** 游戏权限树及其数据时间。 */
     public record GamePermissionSection(GamePermissionNode ceo, List<GamePermissionGroup> groups,
-                                        LocalDateTime checkedAt, LocalDateTime sourceExpiresAt,
-                                        boolean sourceExpiryEstimated, String dataSource) {
+                                        @EveDateTime(zone = "Asia/Shanghai") LocalDateTime checkedAt,
+                                        @EveDateTime LocalDateTime sourceExpiresAt, boolean sourceExpiryEstimated,
+                                        String dataSource) {
     }
 
     /** CEO 或单个游戏角色权限节点。 */
     public record GamePermissionNode(String key, String displayName, String code, String description, boolean owned,
                                      boolean known, String sourceScope, List<String> capabilities,
-                                     LocalDateTime checkedAt, String dataSource) {
+                                     @EveDateTime(zone = "Asia/Shanghai") LocalDateTime checkedAt, String dataSource) {
     }
 
     /** 严格对应国服角色接口字段的范围分组。 */
@@ -60,8 +61,8 @@ public record EvePermissionTreeResp(EvePermissionTreeStatus status, String messa
     }
 
     /** 当前用户的本站角色及聚合有效权限。 */
-    public record SiteRoleSection(List<SiteRoleItem> roles, List<String> effectivePermissions, LocalDateTime checkedAt,
-                                  String dataSource) {
+    public record SiteRoleSection(List<SiteRoleItem> roles, List<String> effectivePermissions,
+                                  @EveDateTime LocalDateTime checkedAt, String dataSource) {
     }
 
     /** 单个本站角色摘要。 */
@@ -71,7 +72,7 @@ public record EvePermissionTreeResp(EvePermissionTreeStatus status, String messa
 
     /** 当前角色授权 Scope 状态。 */
     public record ScopeSection(EveAuthorizationStatus authorizationStatus, List<ScopeItem> items,
-                               LocalDateTime updatedAt, String dataSource) {
+                               @EveDateTime(zone = "Asia/Shanghai") LocalDateTime updatedAt, String dataSource) {
     }
 
     /** 单个已授权、身份必需或模块相关 Scope。 */

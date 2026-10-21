@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import dayjs from 'dayjs'
 import { Message } from '@arco-design/web-vue'
 import { ref } from 'vue'
+import { formatEveTime } from '@/utils/eveTime'
 import {
   type EvePermissionRefreshResult,
   completeEveReauthorization,
@@ -56,7 +56,7 @@ const capabilityLabels: Record<string, string> = {
 }
 
 function formatTime(value?: string) {
-  return value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '—'
+  return formatEveTime(value, 'YYYY-MM-DD HH:mm:ss')
 }
 
 function formatIdentity(value?: string) {

@@ -28,5 +28,6 @@ public record EveIndustryOpportunityResp(Long id, Integer productTypeId, String 
                                          BigDecimal sellOrderRevenue, BigDecimal immediateProfit,
                                          BigDecimal sellOrderProfit, BigDecimal margin, BigDecimal hourlyProfit,
                                          BigDecimal dailyProfit, BigDecimal liquidityScore, BigDecimal riskScore,
-                                         List<String> riskTags, LocalDateTime calculatedAt) {
+                                         List<String> riskTags,
+                                         @EveDateTime(zone = "Asia/Shanghai") LocalDateTime calculatedAt) {
 }

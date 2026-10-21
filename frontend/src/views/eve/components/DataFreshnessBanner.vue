@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import dayjs from 'dayjs'
 import { computed, onMounted, ref, watch } from 'vue'
+import { formatEveTime } from '@/utils/eveTime'
 import { type EveDataFreshness, getEveDataFreshness } from '@/apis/eve'
 
 const props = withDefaults(defineProps<{
@@ -18,7 +18,7 @@ const visibleRecords = computed(() => props.modules.map((module) => records.valu
   .filter((item): item is EveDataFreshness => Boolean(item)))
 
 function formatTime(value?: string) {
-  return value ? dayjs(value).format('MM-DD HH:mm') : '—'
+  return formatEveTime(value, 'MM-DD HH:mm')
 }
 
 /** 将多模块健康状态收敛为页头右上角的一条状态文字。 */

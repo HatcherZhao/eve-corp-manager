@@ -23,6 +23,7 @@ import org.apache.ibatis.annotations.Update;
 import top.continew.admin.eve.model.entity.EveCorporationRosterMemberDO;
 import top.continew.starter.data.mapper.BaseMapper;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -49,10 +50,11 @@ public interface EveCorporationRosterMemberMapper extends BaseMapper<EveCorporat
      *
      * @return 实际更新行数
      */
-    @Update("UPDATE eve_corporation_roster_member SET organization_group = #{organizationGroup}, member_note = " + "#{memberNote}, update_user = #{updateUser}, update_time = NOW() WHERE id = #{id} AND tenant_id = " + "#{tenantId} AND deleted = 0")
+    @Update("UPDATE eve_corporation_roster_member SET organization_group = #{organizationGroup}, member_note = " + "#{memberNote}, update_user = #{updateUser}, update_time = #{updateTime} WHERE id = #{id} AND tenant_id = " + "#{tenantId} AND deleted = 0")
     int updateOrganization(@Param("tenantId") Long tenantId,
                            @Param("id") Long id,
                            @Param("organizationGroup") String organizationGroup,
                            @Param("memberNote") String memberNote,
-                           @Param("updateUser") Long updateUser);
+                           @Param("updateUser") Long updateUser,
+                           @Param("updateTime") LocalDateTime updateTime);
 }

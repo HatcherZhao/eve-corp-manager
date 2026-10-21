@@ -24,6 +24,8 @@ import java.time.LocalDateTime;
  * @author zhaoyuqing
  */
 public record EveMemberTrackingResp(Long baseId, String baseName, Long locationId, String locationName, Long shipTypeId,
-                                    String shipTypeName, LocalDateTime lastLogonAt, LocalDateTime lastLogoffAt,
-                                    LocalDateTime sourceObservedAt, LocalDateTime sourceExpiresAt) {
+                                    String shipTypeName, @EveDateTime LocalDateTime lastLogonAt,
+                                    @EveDateTime LocalDateTime lastLogoffAt,
+                                    @EveDateTime LocalDateTime sourceObservedAt,
+                                    @EveDateTime LocalDateTime sourceExpiresAt) {
 }

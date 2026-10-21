@@ -22,5 +22,5 @@ import java.time.LocalDateTime;
 
 /** 吉他贸易中心订单簿中一条买单或卖单。 */
 public record EveMarketOrderResp(String side, Long stationId, String stationName, BigDecimal price, Long volume,
-                                 LocalDate issuedOn, LocalDateTime reportedAt, Integer range) {
+                                 LocalDate issuedOn, @EveDateTime LocalDateTime reportedAt, Integer range) {
 }

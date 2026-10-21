@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2022-present Charles7c Authors. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package top.continew.admin.eve.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -48,9 +64,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -94,7 +108,8 @@ public class EveStarMapService {
     @Transactional(rollbackFor = Exception.class)
     public void synchronizeNextBatch() {
         ensureSystemIndex();
-        Set<Long> pendingSystemIds = new LinkedHashSet<>(universeSystemMapper.selectPendingStructureSystemIds(SYSTEM_BATCH_SIZE));
+        Set<Long> pendingSystemIds = new LinkedHashSet<>(universeSystemMapper
+            .selectPendingStructureSystemIds(SYSTEM_BATCH_SIZE));
         for (Long systemId : universeSystemMapper.selectPendingSystemIds(SYSTEM_BATCH_SIZE * 2)) {
             if (pendingSystemIds.size() >= SYSTEM_BATCH_SIZE) {
                 break;
@@ -111,9 +126,11 @@ public class EveStarMapService {
     public EveStarMapCoverageResp coverage() {
         EveUniverseSyncStateDO state = universeSyncStateMapper.selectById(SYNC_STATE_KEY);
         return new EveStarMapCoverageResp(universeSystemMapper.countIndexedSystems(), universeSystemMapper
-            .countSynchronizedSystems(), universeStargateMapper.selectCount(null), state == null ? null : state
-                .getLastSuccessAt(), state == null ? null : state.getLastFailureAt(), state == null ? null : state
-                    .getFailureCode());
+            .countSynchronizedSystems(), universeStargateMapper.selectCount(null), state == null
+                ? null
+                : state.getLastSuccessAt(), state == null ? null : state.getLastFailureAt(), state == null
+                    ? null
+                    : state.getFailureCode());
     }
 
     /** 返回一个受节点上限保护的二维底图；指定星域时按星域筛选。 */
@@ -128,28 +145,35 @@ public class EveStarMapService {
             query.eq(EveUniverseSystemDO::getRegionId, regionId);
         }
         List<EveUniverseSystemDO> systems = universeSystemMapper.selectList(query);
-        Map<Long, EveStaticLocationReferenceDO> names = locationsBySystemIds(systems.stream().map(EveUniverseSystemDO::getSystemId)
+        Map<Long, EveStaticLocationReferenceDO> names = locationsBySystemIds(systems.stream()
+            .map(EveUniverseSystemDO::getSystemId)
             .toList());
         Set<Long> systemIds = new LinkedHashSet<>(names.keySet());
         Map<Long, Boolean> structureSystems = structureSystems(context, systemIds);
         Map<Long, Boolean> assetSystems = assetSystems(context, systemIds);
         Map<Long, Boolean> moonExtractionSystems = moonExtractionSystems(context, systemIds);
         Map<Long, Integer> trackedMembers = trackedMembersBySystem(context, systemIds);
-        List<EveStarMapGraphResp.Node> nodes = systems.stream().map(item -> new EveStarMapGraphResp.Node(item
-            .getSystemId(), nameOf(names, item.getSystemId()), item.getRegionId(), item.getConstellationId(), item
-                .getSecurityStatus(), item.getPositionX(), item.getPositionZ(), Boolean.TRUE.equals(structureSystems
-                    .get(item.getSystemId())), Boolean.TRUE.equals(moonExtractionSystems.get(item.getSystemId())), Boolean.TRUE
-                        .equals(assetSystems.get(item.getSystemId())), trackedMembers.getOrDefault(item.getSystemId(), 0))).toList();
+        List<EveStarMapGraphResp.Node> nodes = systems.stream()
+            .map(item -> new EveStarMapGraphResp.Node(item.getSystemId(), nameOf(names, item.getSystemId()), item
+                .getRegionId(), item.getConstellationId(), item.getSecurityStatus(), item.getPositionX(), item
+                    .getPositionZ(), Boolean.TRUE.equals(structureSystems.get(item.getSystemId())), Boolean.TRUE
+                        .equals(moonExtractionSystems.get(item.getSystemId())), Boolean.TRUE.equals(assetSystems
+                            .get(item.getSystemId())), trackedMembers.getOrDefault(item.getSystemId(), 0)))
+            .toList();
         Set<String> edgeKeys = new HashSet<>();
-        List<EveStarMapGraphResp.Edge> edges = systemIds.isEmpty() ? List.of() : universeStargateMapper.selectList(new LambdaQueryWrapper<EveUniverseStargateDO>()
-            .in(EveUniverseStargateDO::getSystemId, systemIds)
-            .in(EveUniverseStargateDO::getDestinationSystemId, systemIds)).stream().map(item -> {
-                long from = Math.min(item.getSystemId(), item.getDestinationSystemId());
-                long to = Math.max(item.getSystemId(), item.getDestinationSystemId());
-                return new EveStarMapGraphResp.Edge(from, to);
-            }).filter(edge -> edgeKeys.add(edge.fromSystemId() + ":" + edge.toSystemId())).toList();
-        return new EveStarMapGraphResp(coverage(), nodes, edges, activeAnnotations(tenantId).stream().filter(item -> systemIds
-            .contains(item.getSolarSystemId())).map(EveStarMapService::toGraphAnnotation).toList());
+        List<EveStarMapGraphResp.Edge> edges = systemIds.isEmpty()
+            ? List.of()
+            : universeStargateMapper.selectList(new LambdaQueryWrapper<EveUniverseStargateDO>()
+                .in(EveUniverseStargateDO::getSystemId, systemIds)
+                .in(EveUniverseStargateDO::getDestinationSystemId, systemIds)).stream().map(item -> {
+                    long from = Math.min(item.getSystemId(), item.getDestinationSystemId());
+                    long to = Math.max(item.getSystemId(), item.getDestinationSystemId());
+                    return new EveStarMapGraphResp.Edge(from, to);
+                }).filter(edge -> edgeKeys.add(edge.fromSystemId() + ":" + edge.toSystemId())).toList();
+        return new EveStarMapGraphResp(coverage(), nodes, edges, activeAnnotations(tenantId).stream()
+            .filter(item -> systemIds.contains(item.getSolarSystemId()))
+            .map(EveStarMapService::toGraphAnnotation)
+            .toList());
     }
 
     /** 以中文或英文名称搜索静态资料中的星系，最多返回二十项。 */
@@ -158,21 +182,29 @@ public class EveStarMapService {
             return List.of();
         }
         String value = keyword.trim();
-        List<EveStaticLocationReferenceDO> systems = locationReferenceMapper.selectList(new LambdaQueryWrapper<EveStaticLocationReferenceDO>()
-            .eq(EveStaticLocationReferenceDO::getReferenceType, "SOLAR_SYSTEM")
-            .and(item -> item.like(EveStaticLocationReferenceDO::getReferenceName, value)
-                .or().like(EveStaticLocationReferenceDO::getReferenceId, value))
-            .orderByAsc(EveStaticLocationReferenceDO::getReferenceName)
-            .last("LIMIT 20"));
+        List<EveStaticLocationReferenceDO> systems = locationReferenceMapper
+            .selectList(new LambdaQueryWrapper<EveStaticLocationReferenceDO>()
+                .eq(EveStaticLocationReferenceDO::getReferenceType, "SOLAR_SYSTEM")
+                .and(item -> item.like(EveStaticLocationReferenceDO::getReferenceName, value)
+                    .or()
+                    .like(EveStaticLocationReferenceDO::getReferenceId, value))
+                .orderByAsc(EveStaticLocationReferenceDO::getReferenceName)
+                .last("LIMIT 20"));
         Map<Long, EveStaticLocationReferenceDO> regionNames = locationsByTypeAndIds("REGION", systems.stream()
-            .map(EveStaticLocationReferenceDO::getRegionId).filter(Objects::nonNull).toList());
+            .map(EveStaticLocationReferenceDO::getRegionId)
+            .filter(Objects::nonNull)
+            .toList());
         Map<Long, EveStaticLocationReferenceDO> constellationNames = locationsByTypeAndIds("CONSTELLATION", systems
-            .stream().map(EveStaticLocationReferenceDO::getConstellationId).filter(Objects::nonNull).toList());
+            .stream()
+            .map(EveStaticLocationReferenceDO::getConstellationId)
+            .filter(Objects::nonNull)
+            .toList());
         return systems.stream().map(item -> {
             String regionName = nameOf(regionNames, item.getRegionId());
             String constellationName = nameOf(constellationNames, item.getConstellationId());
-            return new EveStarMapSuggestionResp(item.getReferenceId(), item.getReferenceName(), regionName,
-                constellationName, joinBreadcrumb(regionName, constellationName, item.getReferenceName()));
+            return new EveStarMapSuggestionResp(item.getReferenceId(), item
+                .getReferenceName(), regionName, constellationName, joinBreadcrumb(regionName, constellationName, item
+                    .getReferenceName()));
         }).toList();
     }
 
@@ -187,24 +219,33 @@ public class EveStarMapService {
             throw new BusinessException("未找到该星系的静态资料");
         }
         EveUniverseSystemDO universe = universeSystemMapper.selectById(systemId);
-        Map<Long, EveStaticLocationReferenceDO> regionNames = locationsByTypeAndIds("REGION", java.util.Arrays.asList(location
-            .getRegionId()));
-        Map<Long, EveStaticLocationReferenceDO> constellationNames = locationsByTypeAndIds("CONSTELLATION", java.util.Arrays.asList(location
-            .getConstellationId()));
-        List<EveUniverseStargateDO> gates = universeStargateMapper.selectList(new LambdaQueryWrapper<EveUniverseStargateDO>()
-            .eq(EveUniverseStargateDO::getSystemId, systemId));
-        Map<Long, EveStaticLocationReferenceDO> neighborNames = locationsBySystemIds(gates.stream().map(EveUniverseStargateDO::getDestinationSystemId)
+        Map<Long, EveStaticLocationReferenceDO> regionNames = locationsByTypeAndIds("REGION", java.util.Arrays
+            .asList(location.getRegionId()));
+        Map<Long, EveStaticLocationReferenceDO> constellationNames = locationsByTypeAndIds("CONSTELLATION", java.util.Arrays
+            .asList(location.getConstellationId()));
+        List<EveUniverseStargateDO> gates = universeStargateMapper
+            .selectList(new LambdaQueryWrapper<EveUniverseStargateDO>()
+                .eq(EveUniverseStargateDO::getSystemId, systemId));
+        Map<Long, EveStaticLocationReferenceDO> neighborNames = locationsBySystemIds(gates.stream()
+            .map(EveUniverseStargateDO::getDestinationSystemId)
             .toList());
-        List<EveStarMapSystemResp.Neighbor> neighbors = gates.stream().map(gate -> new EveStarMapSystemResp.Neighbor(gate
-            .getDestinationSystemId(), nameOf(neighborNames, gate.getDestinationSystemId()))).sorted(Comparator
-                .comparing(EveStarMapSystemResp.Neighbor::name, Comparator.nullsLast(String::compareTo))).toList();
+        List<EveStarMapSystemResp.Neighbor> neighbors = gates.stream()
+            .map(gate -> new EveStarMapSystemResp.Neighbor(gate.getDestinationSystemId(), nameOf(neighborNames, gate
+                .getDestinationSystemId())))
+            .sorted(Comparator.comparing(EveStarMapSystemResp.Neighbor::name, Comparator.nullsLast(String::compareTo)))
+            .toList();
         List<EveStarMapSystemResp.Structure> structures = visibleStructures(context, systemId);
-        List<EveStarMapSystemResp.Annotation> annotations = activeAnnotations(context.getTenantId()).stream().filter(item -> Objects
-            .equals(systemId, item.getSolarSystemId())).map(EveStarMapService::toSystemAnnotation).toList();
-        return new EveStarMapSystemResp(systemId, location.getReferenceName(), location.getRegionId(), nameOf(regionNames,
-            location.getRegionId()), location.getConstellationId(), nameOf(constellationNames, location
-                .getConstellationId()), universe == null ? location.getSecurityStatus() : universe.getSecurityStatus(),
-            neighbors, structures, annotations, universe == null ? null : universe.getSynchronizedAt());
+        List<EveStarMapSystemResp.Annotation> annotations = activeAnnotations(context.getTenantId()).stream()
+            .filter(item -> Objects.equals(systemId, item.getSolarSystemId()))
+            .map(EveStarMapService::toSystemAnnotation)
+            .toList();
+        return new EveStarMapSystemResp(systemId, location.getReferenceName(), location
+            .getRegionId(), nameOf(regionNames, location.getRegionId()), location
+                .getConstellationId(), nameOf(constellationNames, location.getConstellationId()), universe == null
+                    ? location.getSecurityStatus()
+                    : universe.getSecurityStatus(), neighbors, structures, annotations, universe == null
+                        ? null
+                        : universe.getSynchronizedAt());
     }
 
     /** 创建当前军团的人工运营标注。 */
@@ -279,8 +320,7 @@ public class EveStarMapService {
             points.add(originSystemId);
         }
         Map<Long, EveStaticLocationReferenceDO> names = locationsBySystemIds(points);
-        return toRouteResp(null, "未保存路线", null, originSystemId, destinationSystemId, points, false, null, names,
-            requested);
+        return toRouteResp(null, "未保存路线", null, originSystemId, destinationSystemId, points, false, null, names, requested);
     }
 
     /** 保存一条刚刚按国服路线验证的军团共享路线。 */
@@ -310,24 +350,27 @@ public class EveStarMapService {
 
     /** 读取当前军团已保存的有效航线。 */
     public List<EveStarMapRouteResp> routes() {
-        return routeMapper.selectList(new LambdaQueryWrapper<EveStarMapRouteDO>().eq(EveStarMapRouteDO::getArchived, false)
-            .eq(EveStarMapRouteDO::getDeleted, 0L).orderByDesc(EveStarMapRouteDO::getValidatedAt)).stream().map(route -> getRoute(route
-                .getId())).toList();
+        return routeMapper.selectList(new LambdaQueryWrapper<EveStarMapRouteDO>()
+            .eq(EveStarMapRouteDO::getArchived, false)
+            .eq(EveStarMapRouteDO::getDeleted, 0L)
+            .orderByDesc(EveStarMapRouteDO::getValidatedAt)).stream().map(route -> getRoute(route.getId())).toList();
     }
 
     /** 读取当前军团拥有的一条路线及其完整节点。 */
     public EveStarMapRouteResp getRoute(Long routeId) {
         EveStarMapRouteDO route = requireRoute(routeId);
-        List<EveStarMapRoutePointDO> storedPoints = routePointMapper.selectList(new LambdaQueryWrapper<EveStarMapRoutePointDO>()
-            .eq(EveStarMapRoutePointDO::getRouteId, route.getId()).eq(EveStarMapRoutePointDO::getDeleted, 0L)
-            .orderByAsc(EveStarMapRoutePointDO::getPointOrder));
+        List<EveStarMapRoutePointDO> storedPoints = routePointMapper
+            .selectList(new LambdaQueryWrapper<EveStarMapRoutePointDO>().eq(EveStarMapRoutePointDO::getRouteId, route
+                .getId()).eq(EveStarMapRoutePointDO::getDeleted, 0L).orderByAsc(EveStarMapRoutePointDO::getPointOrder));
         List<Long> pointIds = storedPoints.stream().map(EveStarMapRoutePointDO::getSolarSystemId).toList();
         Map<Long, EveStaticLocationReferenceDO> names = locationsBySystemIds(pointIds);
-        List<EveStarMapRouteResp.Point> points = storedPoints.stream().map(item -> new EveStarMapRouteResp.Point(item
-            .getPointOrder(), item.getSolarSystemId(), nameOf(names, item.getSolarSystemId()), item.getPointKind())).toList();
-        return new EveStarMapRouteResp(route.getId(), route.getTitle(), route.getDescription(), route.getOriginSystemId(),
-            route.getDestinationSystemId(), route.getJumpCount(), route.getValidatedAt(), Boolean.TRUE.equals(route
-                .getArchived()), points);
+        List<EveStarMapRouteResp.Point> points = storedPoints.stream()
+            .map(item -> new EveStarMapRouteResp.Point(item.getPointOrder(), item.getSolarSystemId(), nameOf(names, item
+                .getSolarSystemId()), item.getPointKind()))
+            .toList();
+        return new EveStarMapRouteResp(route.getId(), route.getTitle(), route.getDescription(), route
+            .getOriginSystemId(), route.getDestinationSystemId(), route.getJumpCount(), route
+                .getValidatedAt(), Boolean.TRUE.equals(route.getArchived()), points);
     }
 
     /** 首次同步时建立公开星系目录，单次请求之后以 INSERT IGNORE 安全续跑。 */
@@ -335,7 +378,11 @@ public class EveStarMapService {
         if (universeSystemMapper.countIndexedSystems() > 0) {
             return;
         }
-        List<Long> ids = esiClient.getUniverseSystemIds().stream().filter(item -> item != null && item > 0).distinct().toList();
+        List<Long> ids = esiClient.getUniverseSystemIds()
+            .stream()
+            .filter(item -> item != null && item > 0)
+            .distinct()
+            .toList();
         for (int offset = 0; offset < ids.size(); offset += 500) {
             universeSystemMapper.insertIgnoreSystemIds(ids.subList(offset, Math.min(ids.size(), offset + 500)));
         }
@@ -350,7 +397,8 @@ public class EveStarMapService {
 
     /** 同步一座星系以及该响应明确声明的所有星门。 */
     private void synchronizeSystem(Long systemId) {
-        SerenityEsiResponse<SerenityUniverseSystemResponse> response = esiClient.getUniverseSystemWithMetadata(systemId);
+        SerenityEsiResponse<SerenityUniverseSystemResponse> response = esiClient
+            .getUniverseSystemWithMetadata(systemId);
         SerenityUniverseSystemResponse source = response.body();
         if (source.systemId() == null || !Objects.equals(source.systemId(), systemId) || source.position() == null) {
             throw new BusinessException("国服返回的星系资料不完整");
@@ -383,7 +431,8 @@ public class EveStarMapService {
 
     /** 同步一个星门的对端星系关系。 */
     private void synchronizeStargate(Long stargateId) {
-        SerenityEsiResponse<SerenityUniverseStargateResponse> response = esiClient.getUniverseStargateWithMetadata(stargateId);
+        SerenityEsiResponse<SerenityUniverseStargateResponse> response = esiClient
+            .getUniverseStargateWithMetadata(stargateId);
         SerenityUniverseStargateResponse source = response.body();
         if (source.systemId() == null || source.destination() == null || source.destination().systemId() == null) {
             throw new BusinessException("国服返回的星门资料不完整");
@@ -417,7 +466,7 @@ public class EveStarMapService {
         if (state == null) {
             return;
         }
-        state.setCompletedCount((int) universeSystemMapper.countSynchronizedSystems());
+        state.setCompletedCount((int)universeSystemMapper.countSynchronizedSystems());
         state.setLastSuccessAt(LocalDateTime.now(ZoneOffset.UTC));
         state.setLastFailureAt(null);
         state.setFailureCode(null);
@@ -434,10 +483,15 @@ public class EveStarMapService {
         if (corporation == null) {
             return List.of();
         }
-        return structureMapper.selectList(new LambdaQueryWrapper<EveCorporationStructureDO>().eq(EveCorporationStructureDO::getCorporationRefId,
-            corporation.getId()).eq(EveCorporationStructureDO::getSolarSystemId, systemId).eq(EveCorporationStructureDO::getStatus,
-                "ACTIVE").eq(EveCorporationStructureDO::getDeleted, 0L)).stream().map(item -> new EveStarMapSystemResp.Structure(item
-                    .getStructureId(), item.getStructureName(), item.getTypeName(), item.getState(), item.getFuelExpiresAt())).toList();
+        return structureMapper.selectList(new LambdaQueryWrapper<EveCorporationStructureDO>()
+            .eq(EveCorporationStructureDO::getCorporationRefId, corporation.getId())
+            .eq(EveCorporationStructureDO::getSolarSystemId, systemId)
+            .eq(EveCorporationStructureDO::getStatus, "ACTIVE")
+            .eq(EveCorporationStructureDO::getDeleted, 0L))
+            .stream()
+            .map(item -> new EveStarMapSystemResp.Structure(item.getStructureId(), item.getStructureName(), item
+                .getTypeName(), item.getState(), item.getFuelExpiresAt()))
+            .toList();
     }
 
     /** 聚合图上有军团自有建筑的星系。 */
@@ -449,10 +503,14 @@ public class EveStarMapService {
         if (corporation == null) {
             return Map.of();
         }
-        return structureMapper.selectList(new LambdaQueryWrapper<EveCorporationStructureDO>().eq(EveCorporationStructureDO::getCorporationRefId,
-            corporation.getId()).in(EveCorporationStructureDO::getSolarSystemId, systemIds).eq(EveCorporationStructureDO::getStatus,
-                "ACTIVE").eq(EveCorporationStructureDO::getDeleted, 0L)).stream().collect(Collectors.toMap(EveCorporationStructureDO::getSolarSystemId,
-                    item -> true, (left, right) -> true));
+        return structureMapper.selectList(new LambdaQueryWrapper<EveCorporationStructureDO>()
+            .eq(EveCorporationStructureDO::getCorporationRefId, corporation.getId())
+            .in(EveCorporationStructureDO::getSolarSystemId, systemIds)
+            .eq(EveCorporationStructureDO::getStatus, "ACTIVE")
+            .eq(EveCorporationStructureDO::getDeleted, 0L))
+            .stream()
+            .collect(Collectors.toMap(EveCorporationStructureDO::getSolarSystemId, item -> true, (left,
+                                                                                                  right) -> true));
     }
 
     /** 聚合图上有当前军团资产的星系。 */
@@ -464,10 +522,13 @@ public class EveStarMapService {
         if (corporation == null) {
             return Map.of();
         }
-        return assetMapper.selectList(new LambdaQueryWrapper<EveCorporationAssetDO>().eq(EveCorporationAssetDO::getCorporationRefId,
-            corporation.getId()).in(EveCorporationAssetDO::getSolarSystemId, systemIds).eq(EveCorporationAssetDO::getStatus,
-                "ACTIVE").eq(EveCorporationAssetDO::getDeleted, 0L)).stream().collect(Collectors.toMap(EveCorporationAssetDO::getSolarSystemId,
-                    item -> true, (left, right) -> true));
+        return assetMapper.selectList(new LambdaQueryWrapper<EveCorporationAssetDO>()
+            .eq(EveCorporationAssetDO::getCorporationRefId, corporation.getId())
+            .in(EveCorporationAssetDO::getSolarSystemId, systemIds)
+            .eq(EveCorporationAssetDO::getStatus, "ACTIVE")
+            .eq(EveCorporationAssetDO::getDeleted, 0L))
+            .stream()
+            .collect(Collectors.toMap(EveCorporationAssetDO::getSolarSystemId, item -> true, (left, right) -> true));
     }
 
     /** 聚合图上有有效月矿提取计划的星系。 */
@@ -479,10 +540,13 @@ public class EveStarMapService {
         if (corporation == null) {
             return Map.of();
         }
-        return moonExtractionMapper.selectList(new LambdaQueryWrapper<EveMoonExtractionDO>().eq(EveMoonExtractionDO::getCorporationRefId,
-            corporation.getId()).in(EveMoonExtractionDO::getSolarSystemId, systemIds).eq(EveMoonExtractionDO::getStatus,
-                "ACTIVE").eq(EveMoonExtractionDO::getDeleted, 0L)).stream().collect(Collectors.toMap(EveMoonExtractionDO::getSolarSystemId,
-                    item -> true, (left, right) -> true));
+        return moonExtractionMapper.selectList(new LambdaQueryWrapper<EveMoonExtractionDO>()
+            .eq(EveMoonExtractionDO::getCorporationRefId, corporation.getId())
+            .in(EveMoonExtractionDO::getSolarSystemId, systemIds)
+            .eq(EveMoonExtractionDO::getStatus, "ACTIVE")
+            .eq(EveMoonExtractionDO::getDeleted, 0L))
+            .stream()
+            .collect(Collectors.toMap(EveMoonExtractionDO::getSolarSystemId, item -> true, (left, right) -> true));
     }
 
     /** 聚合当前军团成员可公开给当前本站角色的追踪位置，不读取或下发个人原始追踪字段。 */
@@ -494,8 +558,10 @@ public class EveStarMapService {
         if (corporation == null) {
             return Map.of();
         }
-        return memberTrackingMapper.selectActiveByCorporation(context.getTenantId(), corporation.getId()).stream()
-            .map(EveCorporationMemberTrackingDO::getLocationId).filter(systemIds::contains)
+        return memberTrackingMapper.selectActiveByCorporation(context.getTenantId(), corporation.getId())
+            .stream()
+            .map(EveCorporationMemberTrackingDO::getLocationId)
+            .filter(systemIds::contains)
             .collect(Collectors.toMap(item -> item, item -> 1, Integer::sum));
     }
 
@@ -513,8 +579,11 @@ public class EveStarMapService {
             target.setRouteId(route.getId());
             target.setPointOrder(point.order());
             target.setSolarSystemId(point.systemId());
-            target.setPointKind(Objects.equals(point.systemId(), originSystemId) ? "ORIGIN" : Objects.equals(point.systemId(),
-                destinationSystemId) ? "DESTINATION" : vias.contains(point.systemId()) ? "VIA" : "COMPUTED");
+            target.setPointKind(Objects.equals(point.systemId(), originSystemId)
+                ? "ORIGIN"
+                : Objects.equals(point.systemId(), destinationSystemId)
+                    ? "DESTINATION"
+                    : vias.contains(point.systemId()) ? "VIA" : "COMPUTED");
             target.setCreateUser(context.getId());
             target.setDeleted(0L);
             routePointMapper.insert(target);
@@ -538,9 +607,12 @@ public class EveStarMapService {
         if (systemIds == null || systemIds.isEmpty()) {
             return Map.of();
         }
-        return locationReferenceMapper.selectList(new LambdaQueryWrapper<EveStaticLocationReferenceDO>().eq(EveStaticLocationReferenceDO::getReferenceType,
-            "SOLAR_SYSTEM").in(EveStaticLocationReferenceDO::getReferenceId, systemIds)).stream().collect(Collectors.toMap(EveStaticLocationReferenceDO::getReferenceId,
-                item -> item, (left, right) -> left));
+        return locationReferenceMapper.selectList(new LambdaQueryWrapper<EveStaticLocationReferenceDO>()
+            .eq(EveStaticLocationReferenceDO::getReferenceType, "SOLAR_SYSTEM")
+            .in(EveStaticLocationReferenceDO::getReferenceId, systemIds))
+            .stream()
+            .collect(Collectors.toMap(EveStaticLocationReferenceDO::getReferenceId, item -> item, (left,
+                                                                                                   right) -> left));
     }
 
     /** 按位置类型和 ID 批量读取中文名称。 */
@@ -549,9 +621,12 @@ public class EveStarMapService {
         if (validIds.isEmpty()) {
             return Map.of();
         }
-        return locationReferenceMapper.selectList(new LambdaQueryWrapper<EveStaticLocationReferenceDO>().eq(EveStaticLocationReferenceDO::getReferenceType,
-            type).in(EveStaticLocationReferenceDO::getReferenceId, validIds)).stream().collect(Collectors.toMap(EveStaticLocationReferenceDO::getReferenceId,
-                item -> item, (left, right) -> left));
+        return locationReferenceMapper.selectList(new LambdaQueryWrapper<EveStaticLocationReferenceDO>()
+            .eq(EveStaticLocationReferenceDO::getReferenceType, type)
+            .in(EveStaticLocationReferenceDO::getReferenceId, validIds))
+            .stream()
+            .collect(Collectors.toMap(EveStaticLocationReferenceDO::getReferenceId, item -> item, (left,
+                                                                                                   right) -> left));
     }
 
     /** 根据静态资料查找星系，不存在时拒绝创建标注或路线。 */
@@ -564,29 +639,34 @@ public class EveStarMapService {
 
     /** 查询单个星系静态资料。 */
     private EveStaticLocationReferenceDO systemLocation(Long systemId) {
-        return locationReferenceMapper.selectOne(new LambdaQueryWrapper<EveStaticLocationReferenceDO>().eq(EveStaticLocationReferenceDO::getReferenceType,
-            "SOLAR_SYSTEM").eq(EveStaticLocationReferenceDO::getReferenceId, systemId));
+        return locationReferenceMapper.selectOne(new LambdaQueryWrapper<EveStaticLocationReferenceDO>()
+            .eq(EveStaticLocationReferenceDO::getReferenceType, "SOLAR_SYSTEM")
+            .eq(EveStaticLocationReferenceDO::getReferenceId, systemId));
     }
 
     /** 由静态资料关联星座所属星域，公开 ESI 星系详情本身不提供此字段。 */
     private Long regionIdForConstellation(Long constellationId) {
-        EveStaticLocationReferenceDO constellation = locationsByTypeAndIds("CONSTELLATION", java.util.Arrays.asList(constellationId))
-            .get(constellationId);
+        EveStaticLocationReferenceDO constellation = locationsByTypeAndIds("CONSTELLATION", java.util.Arrays
+            .asList(constellationId)).get(constellationId);
         return constellation == null ? null : constellation.getRegionId();
     }
 
     /** 只返回未归档且未到期的当前租户标注。 */
     private List<EveStarMapAnnotationDO> activeAnnotations(Long tenantId) {
-        return annotationMapper.selectList(new LambdaQueryWrapper<EveStarMapAnnotationDO>().eq(EveStarMapAnnotationDO::getTenantId,
-            tenantId).eq(EveStarMapAnnotationDO::getArchived, false).eq(EveStarMapAnnotationDO::getDeleted, 0L)
-            .and(item -> item.isNull(EveStarMapAnnotationDO::getExpiresAt).or().gt(EveStarMapAnnotationDO::getExpiresAt,
-                LocalDateTime.now(ZoneOffset.UTC))));
+        return annotationMapper.selectList(new LambdaQueryWrapper<EveStarMapAnnotationDO>()
+            .eq(EveStarMapAnnotationDO::getTenantId, tenantId)
+            .eq(EveStarMapAnnotationDO::getArchived, false)
+            .eq(EveStarMapAnnotationDO::getDeleted, 0L)
+            .and(item -> item.isNull(EveStarMapAnnotationDO::getExpiresAt)
+                .or()
+                .gt(EveStarMapAnnotationDO::getExpiresAt, LocalDateTime.now(java.time.ZoneId.of("Asia/Shanghai")))));
     }
 
     /** 当前租户边界内读取一个标注。 */
     private EveStarMapAnnotationDO requireAnnotation(Long annotationId) {
         EveStarMapAnnotationDO annotation = annotationMapper.selectById(annotationId);
-        if (annotation == null || !Objects.equals(annotation.getTenantId(), UserContextHolder.getContext().getTenantId())) {
+        if (annotation == null || !Objects.equals(annotation.getTenantId(), UserContextHolder.getContext()
+            .getTenantId())) {
             throw new BusinessException("未找到当前军团的运营标注");
         }
         return annotation;
@@ -603,15 +683,19 @@ public class EveStarMapService {
 
     /** 根据当前角色军团定位本站租户绑定。 */
     private EveCorporationDO currentCorporation(UserContext context) {
-        EveCharacterDO character = characterMapper.selectActiveByUser(context.getTenantId(), context.getId()).stream().findFirst()
+        EveCharacterDO character = characterMapper.selectActiveByUser(context.getTenantId(), context.getId())
+            .stream()
+            .findFirst()
             .orElse(null);
-        return character == null ? null : corporationMapper.selectByTenantAndCorporationId(context.getTenantId(), character
-            .getCorporationId());
+        return character == null
+            ? null
+            : corporationMapper.selectByTenantAndCorporationId(context.getTenantId(), character.getCorporationId());
     }
 
     /** 判断当前会话是否具备站内模块数据查看权限。 */
     private static boolean hasPermission(UserContext context, String permission) {
-        return context.getPermissions() != null && (context.getPermissions().contains(permission) || context.getPermissions()
+        return context.getPermissions() != null && (context.getPermissions().contains(permission) || context
+            .getPermissions()
             .contains("*:*:*"));
     }
 
@@ -629,8 +713,11 @@ public class EveStarMapService {
         List<EveStarMapRouteResp.Point> points = new ArrayList<>();
         for (int index = 0; index < systemIds.size(); index++) {
             Long systemId = systemIds.get(index);
-            String kind = Objects.equals(systemId, originSystemId) ? "ORIGIN" : Objects.equals(systemId, destinationSystemId)
-                ? "DESTINATION" : requested.contains(systemId) ? "VIA" : "COMPUTED";
+            String kind = Objects.equals(systemId, originSystemId)
+                ? "ORIGIN"
+                : Objects.equals(systemId, destinationSystemId)
+                    ? "DESTINATION"
+                    : requested.contains(systemId) ? "VIA" : "COMPUTED";
             points.add(new EveStarMapRouteResp.Point(index + 1, systemId, nameOf(names, systemId), kind));
         }
         return new EveStarMapRouteResp(id, title, description, originSystemId, destinationSystemId, Math.max(0, points
@@ -639,14 +726,14 @@ public class EveStarMapService {
 
     /** 转换地图标注。 */
     private static EveStarMapGraphResp.Annotation toGraphAnnotation(EveStarMapAnnotationDO item) {
-        return new EveStarMapGraphResp.Annotation(item.getId(), item.getSolarSystemId(), item.getCategory(), item.getTitle(),
-            item.getNote(), item.getColorKey(), item.getExpiresAt());
+        return new EveStarMapGraphResp.Annotation(item.getId(), item.getSolarSystemId(), item.getCategory(), item
+            .getTitle(), item.getNote(), item.getColorKey(), item.getExpiresAt());
     }
 
     /** 转换详情标注。 */
     private static EveStarMapSystemResp.Annotation toSystemAnnotation(EveStarMapAnnotationDO item) {
-        return new EveStarMapSystemResp.Annotation(item.getId(), item.getCategory(), item.getTitle(), item.getNote(), item
-            .getColorKey(), item.getExpiresAt());
+        return new EveStarMapSystemResp.Annotation(item.getId(), item.getCategory(), item.getTitle(), item
+            .getNote(), item.getColorKey(), item.getExpiresAt());
     }
 
     /** 从位置映射读取名称；资料未同步时返回占位文本。 */
@@ -657,7 +744,9 @@ public class EveStarMapService {
 
     /** 连接非空层级名称。 */
     private static String joinBreadcrumb(String... values) {
-        return java.util.Arrays.stream(values).filter(item -> item != null && !item.isBlank()).collect(Collectors.joining(" / "));
+        return java.util.Arrays.stream(values)
+            .filter(item -> item != null && !item.isBlank())
+            .collect(Collectors.joining(" / "));
     }
 
     /** 统一清理可选文本字段。 */

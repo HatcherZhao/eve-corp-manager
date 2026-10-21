@@ -28,6 +28,7 @@ import java.time.LocalDateTime;
  * @param imported        是否实际执行了导入
  * @author zhaoyuqing
  */
-public record EveStaticReferenceImportResp(String sourceFileName, LocalDateTime sourceUpdatedAt, int typeCount,
-                                           int locationCount, boolean imported) {
+public record EveStaticReferenceImportResp(String sourceFileName,
+                                           @EveDateTime(zone = "Asia/Shanghai") LocalDateTime sourceUpdatedAt,
+                                           int typeCount, int locationCount, boolean imported) {
 }

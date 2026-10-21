@@ -27,6 +27,7 @@ import java.time.LocalDateTime;
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record EveMemberResp(Long id, Long characterId, String characterName, String organizationGroup,
-                            String memberNote, String status, LocalDateTime joinedAt, LocalDateTime leftAt,
-                            LocalDateTime lastSeenAt, EveMemberTrackingResp tracking) {
+                            String memberNote, String status, @EveDateTime LocalDateTime joinedAt,
+                            @EveDateTime LocalDateTime leftAt, @EveDateTime LocalDateTime lastSeenAt,
+                            EveMemberTrackingResp tracking) {
 }

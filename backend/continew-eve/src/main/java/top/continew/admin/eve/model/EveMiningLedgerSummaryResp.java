@@ -26,6 +26,6 @@ import java.time.LocalDateTime;
  */
 public record EveMiningLedgerSummaryResp(long quantity, long entryCount, int observerCount, int characterCount,
                                          int mineralTypeCount, LocalDate latestRecordedAt,
-                                         LocalDateTime latestSynchronizedAt, long externalQuantity,
+                                         @EveDateTime LocalDateTime latestSynchronizedAt, long externalQuantity,
                                          long externalEntryCount, int externalCharacterCount) {
 }

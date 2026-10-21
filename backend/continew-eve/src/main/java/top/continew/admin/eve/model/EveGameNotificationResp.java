@@ -26,6 +26,7 @@ import java.util.List;
  */
 public record EveGameNotificationResp(Long notificationId, Boolean read, String category, String type,
                                       String senderName, String senderType, String content, String summary,
-                                      List<EveGameNotificationDetailItem> details, LocalDateTime sentAt,
-                                      LocalDateTime lastSeenAt, LocalDateTime sourceExpiresAt) {
+                                      List<EveGameNotificationDetailItem> details, @EveDateTime LocalDateTime sentAt,
+                                      @EveDateTime LocalDateTime lastSeenAt,
+                                      @EveDateTime LocalDateTime sourceExpiresAt) {
 }

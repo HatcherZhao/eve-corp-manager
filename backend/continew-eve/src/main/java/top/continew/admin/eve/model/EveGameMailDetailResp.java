@@ -25,7 +25,8 @@ import java.util.List;
  * @author zhaoyuqing
  */
 public record EveGameMailDetailResp(Long mailId, EveGameMailPartyResp from, String subject, String body,
-                                    LocalDateTime sentAt, Boolean read, List<Integer> labels,
-                                    List<EveGameMailPartyResp> recipients, LocalDateTime bodySynchronizedAt,
-                                    LocalDateTime bodySourceExpiresAt) {
+                                    @EveDateTime LocalDateTime sentAt, Boolean read, List<Integer> labels,
+                                    List<EveGameMailPartyResp> recipients,
+                                    @EveDateTime LocalDateTime bodySynchronizedAt,
+                                    @EveDateTime LocalDateTime bodySourceExpiresAt) {
 }

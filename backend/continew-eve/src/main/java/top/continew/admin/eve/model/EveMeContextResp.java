@@ -39,7 +39,8 @@ public record EveMeContextResp(Long tenantId, CharacterInfo character, Corporati
     }
 
     /** 最近游戏权限检查与本地缓存时间。 */
-    public record PermissionFreshness(LocalDateTime lastCheckedAt, LocalDateTime snapshotCapturedAt,
-                                      LocalDateTime cacheExpiresAt, boolean cacheExpiryEstimated) {
+    public record PermissionFreshness(@EveDateTime(zone = "Asia/Shanghai") LocalDateTime lastCheckedAt,
+                                      @EveDateTime(zone = "Asia/Shanghai") LocalDateTime snapshotCapturedAt,
+                                      @EveDateTime LocalDateTime cacheExpiresAt, boolean cacheExpiryEstimated) {
     }
 }

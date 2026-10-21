@@ -23,5 +23,5 @@ import java.time.LocalDateTime;
  *
  * @author zhaoyuqing
  */
-public record EveGameMailSendResp(Long mailId, String status, LocalDateTime sentAt) {
+public record EveGameMailSendResp(Long mailId, String status, @EveDateTime LocalDateTime sentAt) {
 }

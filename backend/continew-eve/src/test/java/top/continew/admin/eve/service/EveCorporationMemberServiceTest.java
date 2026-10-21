@@ -40,6 +40,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
@@ -120,7 +121,7 @@ class EveCorporationMemberServiceTest {
             assertThat(response.memberNote()).isNull();
         }
 
-        verify(rosterMemberMapper).updateOrganization(eq(10L), eq(500L), isNull(), isNull(), eq(20L));
+        verify(rosterMemberMapper).updateOrganization(eq(10L), eq(500L), isNull(), isNull(), eq(20L), any());
         verify(auditService).recordOrganizationUpdate(context, 500L);
         verifyNoInteractions(trackingMapper);
     }

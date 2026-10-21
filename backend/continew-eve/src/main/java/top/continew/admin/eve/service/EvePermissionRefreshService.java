@@ -160,7 +160,8 @@ public class EvePermissionRefreshService {
                                              boolean bypassCooldown,
                                              Long characterRefId,
                                              Long authorizationId) {
-        LocalDateTime requestedAt = LocalDateTime.now();
+        // 冷却与授权过期值统一按 UTC 计算；权限快照 checkedAt 仍保持原有北京时间语义。
+        LocalDateTime requestedAt = LocalDateTime.now(ZoneOffset.UTC);
         String subject = tenantId + ":" + userId;
         RLock lock = redissonClient.getLock(USER_LOCK_PREFIX + subject);
         boolean locked = false;
@@ -353,7 +354,7 @@ public class EvePermissionRefreshService {
                 .getRolesAtBase(), rolesAtBase) || !Objects.equals(previous.getRolesAtOther(), rolesAtOther);
         boolean sourceExpiryEstimated = upstreamExpiresAt == null;
         LocalDateTime sourceExpiresAt = sourceExpiryEstimated
-            ? checkedAt.plus(properties.getPermissionRefresh().getRoleCacheTtl())
+            ? LocalDateTime.now(ZoneOffset.UTC).plus(properties.getPermissionRefresh().getRoleCacheTtl())
             : upstreamExpiresAt;
 
         character.setName(characterResponse.name());

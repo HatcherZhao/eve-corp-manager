@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { Message } from '@arco-design/web-vue'
-import dayjs from 'dayjs'
 import { computed, onMounted, reactive, ref } from 'vue'
 import DataFreshnessBanner from '../components/DataFreshnessBanner.vue'
 import { type EveMoonExtraction, getEveMoonExtractions, saveEveMoonExtractionNote, syncEveMoonExtractions } from '@/apis/eve'
 import { useUserStore } from '@/stores'
+import { formatEveTime, nowEveTime, parseEveTime } from '@/utils/eveTime'
 
 defineOptions({ name: 'EveExtractions' })
 
@@ -23,13 +23,13 @@ const freshnessVersion = ref(0)
 const canManage = computed(() => userStore.permissions.includes('eve:extractions:manage') || userStore.permissions.includes('*:*:*'))
 
 function formatTime(value?: string) {
-  return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '—'
+  return formatEveTime(value)
 }
 
 /** 将矿块到达时间转换为玩家可直接判断的可开采日期和星期。 */
 function formatMiningDay(value?: string) {
   if (!value) return '—'
-  const time = dayjs(value)
+  const time = parseEveTime(value)
   const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][time.day()]
   return `${time.format('YYYY-MM-DD')} ${weekday}`
 }
@@ -39,11 +39,11 @@ function resolvedName(name: string | undefined, label: string) {
 }
 
 function timeState(record: EveMoonExtraction) {
-  return dayjs(record.chunkArrivalAt).isAfter(dayjs()) ? '待到达' : '已到达'
+  return parseEveTime(record.chunkArrivalAt).isAfter(nowEveTime()) ? '待到达' : '已到达'
 }
 
 function timeStateColor(record: EveMoonExtraction) {
-  return dayjs(record.chunkArrivalAt).isAfter(dayjs()) ? 'arcoblue' : 'orange'
+  return parseEveTime(record.chunkArrivalAt).isAfter(nowEveTime()) ? 'arcoblue' : 'orange'
 }
 
 async function loadExtractions() {

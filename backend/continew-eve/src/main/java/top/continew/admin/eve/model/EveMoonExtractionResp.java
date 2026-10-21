@@ -25,7 +25,9 @@ import java.time.LocalDateTime;
  */
 public record EveMoonExtractionResp(Long id, Long structureId, String structureName, String structureTypeName,
                                     Long moonId, String moonName, Long solarSystemId, String solarSystemName,
-                                    LocalDateTime extractionStartAt, LocalDateTime chunkArrivalAt,
-                                    LocalDateTime naturalDecayAt, String status, LocalDateTime lastSeenAt,
-                                    LocalDateTime sourceExpiresAt, String note, String structureNote) {
+                                    @EveDateTime LocalDateTime extractionStartAt,
+                                    @EveDateTime LocalDateTime chunkArrivalAt,
+                                    @EveDateTime LocalDateTime naturalDecayAt, String status,
+                                    @EveDateTime LocalDateTime lastSeenAt, @EveDateTime LocalDateTime sourceExpiresAt,
+                                    String note, String structureNote) {
 }

@@ -23,6 +23,6 @@ import java.time.LocalDateTime;
  *
  * @author zhaoyuqing
  */
-public record EveMoonExtractionSyncResp(int extractionCount, int pageCount, LocalDateTime synchronizedAt,
-                                        LocalDateTime sourceExpiresAt) {
+public record EveMoonExtractionSyncResp(int extractionCount, int pageCount, @EveDateTime LocalDateTime synchronizedAt,
+                                        @EveDateTime LocalDateTime sourceExpiresAt) {
 }

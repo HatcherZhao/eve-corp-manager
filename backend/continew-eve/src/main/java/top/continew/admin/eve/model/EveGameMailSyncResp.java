@@ -23,5 +23,6 @@ import java.time.LocalDateTime;
  *
  * @author zhaoyuqing
  */
-public record EveGameMailSyncResp(int mailCount, LocalDateTime synchronizedAt, LocalDateTime sourceExpiresAt) {
+public record EveGameMailSyncResp(int mailCount, @EveDateTime LocalDateTime synchronizedAt,
+                                  @EveDateTime LocalDateTime sourceExpiresAt) {
 }

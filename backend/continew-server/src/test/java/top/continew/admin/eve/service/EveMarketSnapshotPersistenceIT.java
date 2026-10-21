@@ -150,11 +150,14 @@ class EveMarketSnapshotPersistenceIT {
         jdbc.update("INSERT INTO eve_static_type_reference VALUES (34, '矿物')");
         mapper.upsertHistory(34, "[]", "SERENITY_ESI_REGION_V1:10000002", now, now.plusDays(2));
 
-        assertThat(typeMapper.selectHistoryWarmupTypeIds(1, "SERENITY_ESI_REGION_V1:10000003")).containsExactly(34);
-        assertThat(typeMapper.selectHistoryWarmupTypeIds(1, "SERENITY_ESI_REGION_V1:10000002")).isEmpty();
+        assertThat(typeMapper.selectHistoryWarmupTypeIds(1, "SERENITY_ESI_REGION_V1:10000003", LocalDateTime.now()))
+            .containsExactly(34);
+        assertThat(typeMapper.selectHistoryWarmupTypeIds(1, "SERENITY_ESI_REGION_V1:10000002", LocalDateTime.now()))
+            .isEmpty();
 
         mapper.recordHistoryFailure(34, "暂时不可用", "SERENITY_ESI_REGION_V1:10000003", now, now.plusHours(1));
-        assertThat(typeMapper.selectHistoryWarmupTypeIds(1, "SERENITY_ESI_REGION_V1:10000003")).isEmpty();
+        assertThat(typeMapper.selectHistoryWarmupTypeIds(1, "SERENITY_ESI_REGION_V1:10000003", LocalDateTime.now()))
+            .isEmpty();
         assertThat(mapper.selectById(34).getHistoryJson()).isEqualTo("[]");
         assertThat(mapper.selectById(34).getHistorySource()).isNull();
     }

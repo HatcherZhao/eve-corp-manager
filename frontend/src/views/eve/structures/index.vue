@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Message } from '@arco-design/web-vue'
-import dayjs from 'dayjs'
 import { computed, onMounted, reactive, ref } from 'vue'
 import DataFreshnessBanner from '../components/DataFreshnessBanner.vue'
+import { formatEveTime, nowEveTime, parseEveTime } from '@/utils/eveTime'
 import {
   type EveCorporationStructure,
   getEveCorporationStructures,
@@ -46,7 +46,7 @@ const serviceLabels: Record<string, string> = {
 }
 
 function formatTime(value?: string) {
-  return value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '上游未提供'
+  return value ? formatEveTime(value) : '上游未提供'
 }
 
 function stateLabel(state: string) {
@@ -63,7 +63,7 @@ function serviceLabel(name: string) {
 
 function fuelRisk(record: EveCorporationStructure) {
   if (!record.fuelExpiresAt) return '上游未提供'
-  const hours = dayjs(record.fuelExpiresAt).diff(dayjs(), 'hour', true)
+  const hours = parseEveTime(record.fuelExpiresAt).diff(nowEveTime(), 'hour', true)
   if (hours <= 0) return '已到期'
   if (hours <= 72) return `${Math.ceil(hours)} 小时后到期`
   return formatTime(record.fuelExpiresAt)
@@ -71,7 +71,7 @@ function fuelRisk(record: EveCorporationStructure) {
 
 function fuelColor(record: EveCorporationStructure) {
   if (!record.fuelExpiresAt) return 'gray'
-  const hours = dayjs(record.fuelExpiresAt).diff(dayjs(), 'hour', true)
+  const hours = parseEveTime(record.fuelExpiresAt).diff(nowEveTime(), 'hour', true)
   return hours <= 72 ? 'orangered' : 'green'
 }
 

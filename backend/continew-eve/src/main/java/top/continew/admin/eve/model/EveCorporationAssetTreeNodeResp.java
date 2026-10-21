@@ -26,7 +26,8 @@ import java.util.List;
  */
 public record EveCorporationAssetTreeNodeResp(String key, String title, String kind, Long itemId, Integer typeId,
                                               String typeName, String itemName, Integer quantity, String locationFlag,
-                                              Boolean singleton, Boolean blueprintCopy, LocalDateTime lastSeenAt,
-                                              LocalDateTime sourceExpiresAt,
+                                              Boolean singleton, Boolean blueprintCopy,
+                                              @EveDateTime LocalDateTime lastSeenAt,
+                                              @EveDateTime LocalDateTime sourceExpiresAt,
                                               List<EveCorporationAssetTreeNodeResp> children) {
 }

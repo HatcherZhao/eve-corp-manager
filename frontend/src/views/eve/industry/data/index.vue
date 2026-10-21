@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { Message, type RequestOption } from '@arco-design/web-vue'
-import dayjs from 'dayjs'
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import IndustryPageHeader from '../components/IndustryPageHeader.vue'
 import IndustryPanel from '../components/IndustryPanel.vue'
+import { formatEveTime } from '@/utils/eveTime'
 import {
   type EveIndustryBlueprint,
   type EveIndustryConfig,
@@ -159,7 +159,7 @@ onMounted(loadPage)
             <a-table-column title="版本" :width="160"><template #cell="{ record }">{{ record.serverVersion || record.schemaVersion || '未填写' }}</template></a-table-column>
             <a-table-column title="状态" :width="110"><template #cell="{ record }"><a-tag :color="record.validationStatus === 'VALIDATED' ? 'green' : record.validationStatus === 'REJECTED' ? 'red' : 'orange'">{{ record.validationStatus }}</a-tag></template></a-table-column>
             <a-table-column title="SHA-256" data-index="sha256" :width="220" ellipsis tooltip />
-            <a-table-column title="导入时间" :width="160"><template #cell="{ record }">{{ dayjs(record.downloadedAt).format('YYYY-MM-DD HH:mm') }}</template></a-table-column>
+            <a-table-column title="导入时间" :width="160"><template #cell="{ record }">{{ formatEveTime(record.downloadedAt) }}</template></a-table-column>
           </template>
         </a-table>
         <a-empty v-if="!loading && !versions.length" description="尚未同步或导入工业配方" />

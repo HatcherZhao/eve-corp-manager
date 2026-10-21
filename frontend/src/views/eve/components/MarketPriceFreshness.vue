@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import dayjs from 'dayjs'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { parseEveTime } from '@/utils/eveTime'
 
 const props = defineProps<{
   /** 最近一次成功取得吉他报价的时间。 */
@@ -24,11 +24,11 @@ onUnmounted(() => {
 })
 
 const freshness = computed(() => {
-  const synchronizedAt = props.synchronizedAt ? dayjs(props.synchronizedAt) : undefined
+  const synchronizedAt = props.synchronizedAt ? parseEveTime(props.synchronizedAt) : undefined
   if (!synchronizedAt?.isValid()) {
     return { level: 0, state: 'empty', label: '等待首次报价', detail: '尚未取得吉他市场报价' }
   }
-  const expiresAt = props.freshnessExpiresAt ? dayjs(props.freshnessExpiresAt) : synchronizedAt.add(15, 'minute')
+  const expiresAt = props.freshnessExpiresAt ? parseEveTime(props.freshnessExpiresAt) : synchronizedAt.add(15, 'minute')
   const total = Math.max(1, expiresAt.valueOf() - synchronizedAt.valueOf())
   const remaining = expiresAt.valueOf() - currentTime.value
   const ratio = Math.max(0, Math.min(1, remaining / total))

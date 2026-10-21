@@ -40,10 +40,11 @@ import java.util.List;
  * @param capabilityChanges      本次模块能力变化
  * @author zhaoyuqing
  */
-public record EvePermissionRefreshResp(EvePermissionRefreshStatus status, LocalDateTime requestedAt,
-                                       LocalDateTime upstreamCheckedAt, LocalDateTime sourceExpiresAt,
-                                       boolean sourceExpiryEstimated, LocalDateTime lastRoleChangedAt,
-                                       LocalDateTime nextSuggestedRefreshAt, List<String> missingScopes,
+public record EvePermissionRefreshResp(EvePermissionRefreshStatus status, @EveDateTime LocalDateTime requestedAt,
+                                       @EveDateTime(zone = "Asia/Shanghai") LocalDateTime upstreamCheckedAt,
+                                       @EveDateTime LocalDateTime sourceExpiresAt, boolean sourceExpiryEstimated,
+                                       @EveDateTime(zone = "Asia/Shanghai") LocalDateTime lastRoleChangedAt,
+                                       @EveDateTime LocalDateTime nextSuggestedRefreshAt, List<String> missingScopes,
                                        String reauthorizationPath, List<GameRoleChange> addedGameRoles,
                                        List<GameRoleChange> removedGameRoles,
                                        DerivedIdentityChange derivedIdentityChange,

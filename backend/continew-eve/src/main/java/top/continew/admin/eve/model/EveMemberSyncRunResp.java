@@ -24,6 +24,6 @@ import java.time.LocalDateTime;
  * @author zhaoyuqing
  */
 public record EveMemberSyncRunResp(Long id, String resource, String status, int recordCount,
-                                   LocalDateTime sourceExpiresAt, String failureCode, LocalDateTime startedAt,
-                                   LocalDateTime finishedAt) {
+                                   @EveDateTime LocalDateTime sourceExpiresAt, String failureCode,
+                                   @EveDateTime LocalDateTime startedAt, @EveDateTime LocalDateTime finishedAt) {
 }

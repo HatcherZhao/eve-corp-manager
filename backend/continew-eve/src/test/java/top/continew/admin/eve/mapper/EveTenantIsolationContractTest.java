@@ -73,8 +73,8 @@ class EveTenantIsolationContractTest {
     @Test
     void shouldPrioritizeUninitializedMarketHistories() throws Exception {
         Method historyWarmup = EveStaticTypeReferenceMapper.class
-            .getMethod("selectHistoryWarmupTypeIds", int.class, String.class);
-        assertSqlContains(historyWarmup, "`history_synchronized_at` IS NULL THEN 0 ELSE 1", "`history_synchronized_at` < DATE_SUB(NOW(), INTERVAL 1 DAY)");
+            .getMethod("selectHistoryWarmupTypeIds", int.class, String.class, LocalDateTime.class);
+        assertSqlContains(historyWarmup, "`history_synchronized_at` IS NULL THEN 0 ELSE 1", "`history_synchronized_at` < DATE_SUB(#{now}, INTERVAL 1 DAY)");
     }
 
     /** 校验方法显式声明跳过租户行拦截。 */

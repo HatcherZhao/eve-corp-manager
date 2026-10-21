@@ -290,14 +290,16 @@ export function dateFormat(date = new Date(), pattern = YMD_HMS) {
     return ''
   }
 
+  // 调度预览属于系统运营时间，固定按北京时间生成，避免浏览器时区改变结果。
+  const beijingDate = new Date(date.getTime() + 8 * 60 * 60 * 1000)
   const o = {
-    'M+': date.getMonth() + 1,
-    'd+': date.getDate(),
-    'H+': date.getHours(),
-    'm+': date.getMinutes(),
-    's+': date.getSeconds(),
-    'q+': Math.floor((date.getMonth() + 3) / 3),
-    'S+': date.getMilliseconds(),
+    'M+': beijingDate.getUTCMonth() + 1,
+    'd+': beijingDate.getUTCDate(),
+    'H+': beijingDate.getUTCHours(),
+    'm+': beijingDate.getUTCMinutes(),
+    's+': beijingDate.getUTCSeconds(),
+    'q+': Math.floor((beijingDate.getUTCMonth() + 3) / 3),
+    'S+': beijingDate.getUTCMilliseconds(),
   }
 
   let formattedDate = pattern // Start with the pattern
@@ -305,7 +307,7 @@ export function dateFormat(date = new Date(), pattern = YMD_HMS) {
   // Year Handling
   const yearMatch = formattedDate.match(/(y+)/)
   if (yearMatch) {
-    formattedDate = formattedDate.replace(yearMatch[0], (`${date.getFullYear()}`).substring(4 - yearMatch[0].length))
+    formattedDate = formattedDate.replace(yearMatch[0], (`${beijingDate.getUTCFullYear()}`).substring(4 - yearMatch[0].length))
   }
 
   // Other Formatters

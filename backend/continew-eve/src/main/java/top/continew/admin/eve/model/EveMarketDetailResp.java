@@ -22,6 +22,7 @@ import java.util.List;
 /** 单物品市场详情，包含静态资料、报价、买卖盘及历史走势。 */
 public record EveMarketDetailResp(EveStaticTypeReferenceResp type, EveMarketQuoteResp quote,
                                   List<EveMarketOrderResp> buyOrders, List<EveMarketOrderResp> sellOrders,
-                                  List<EveMarketHistoryResp> history, LocalDateTime historySynchronizedAt,
+                                  List<EveMarketHistoryResp> history,
+                                  @EveDateTime(zone = "Asia/Shanghai") LocalDateTime historySynchronizedAt,
                                   boolean servedFromCache, String upstreamMessage) {
 }

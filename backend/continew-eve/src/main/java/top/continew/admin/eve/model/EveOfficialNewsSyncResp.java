@@ -24,5 +24,5 @@ import java.time.LocalDateTime;
  * @author zhaoyuqing
  */
 public record EveOfficialNewsSyncResp(boolean executed, String message, int discoveredCount,
-                                      LocalDateTime synchronizedAt) {
+                                      @EveDateTime LocalDateTime synchronizedAt) {
 }
