@@ -80,4 +80,12 @@ public class EveMoonExtractionController {
         return extractionService.saveNote(extractionId, req.note());
     }
 
+    /** 重新读取本人已授权通知，为本军团指定月矿堡手动刷新矿种档案。 */
+    @PostMapping("/{extractionId}/ore-profile/refresh")
+    @Operation(summary = "刷新月矿堡矿种档案")
+    @SaCheckPermission("eve:extractions:manage")
+    public EveMoonExtractionResp refreshOreProfile(@PathVariable @Min(1) Long extractionId) {
+        return extractionService.refreshOreProfile(extractionId);
+    }
+
 }

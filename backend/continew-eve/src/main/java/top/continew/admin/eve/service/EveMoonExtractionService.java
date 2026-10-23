@@ -34,6 +34,7 @@ import top.continew.admin.eve.mapper.EveMoonStructureNoteMapper;
 import top.continew.admin.eve.model.EveMeContextResp;
 import top.continew.admin.eve.model.EveMoonExtractionResp;
 import top.continew.admin.eve.model.EveMoonExtractionSyncResp;
+import top.continew.admin.eve.model.EveMoonOreProfileResp;
 import top.continew.admin.eve.model.entity.EveAuthorizationDO;
 import top.continew.admin.eve.model.entity.EveCharacterRoleSnapshotDO;
 import top.continew.admin.eve.model.entity.EveCorporationDO;
@@ -85,11 +86,15 @@ public class EveMoonExtractionService {
     private final SerenityEsiClient esiClient;
     private final RedissonClient redissonClient;
     private final EveDataFreshnessService dataFreshnessService;
+    private final EveMoonOreProfileService oreProfileService;
+    private final EveGameNotificationService gameNotificationService;
 
     /** 分页查询当前军团仍有效的月矿时间线。 */
     public PageResp<EveMoonExtractionResp> page(int page, int size, String keyword, String timeline) {
         EveCorporationDO corporation = requireCurrentCorporation(UserContextHolder.getContext().getTenantId());
+        Map<Long, EveMoonOreProfileResp> oreProfiles = initializeOreProfiles(corporation);
         LambdaQueryWrapper<EveMoonExtractionDO> query = new LambdaQueryWrapper<EveMoonExtractionDO>()
+            .eq(EveMoonExtractionDO::getTenantId, corporation.getTenantId())
             .eq(EveMoonExtractionDO::getCorporationRefId, corporation.getId())
             .eq(EveMoonExtractionDO::getStatus, "ACTIVE")
             .eq(EveMoonExtractionDO::getDeleted, 0L)
@@ -104,7 +109,9 @@ public class EveMoonExtractionService {
                 .or()
                 .like(EveMoonExtractionDO::getStructureId, value)
                 .or()
-                .like(EveMoonExtractionDO::getMoonId, value));
+                .like(EveMoonExtractionDO::getMoonId, value)
+                .or()
+                .apply("EXISTS (SELECT 1 FROM eve_moon_ore_profile ore_profile " + "WHERE ore_profile.tenant_id = eve_moon_extraction.tenant_id " + "AND ore_profile.corporation_ref_id = eve_moon_extraction.corporation_ref_id " + "AND ore_profile.structure_id = eve_moon_extraction.structure_id " + "AND ore_profile.moon_id = eve_moon_extraction.moon_id " + "AND ore_profile.deleted = 0 AND ore_profile.ore_names LIKE {0})", "%" + value + "%"));
         }
         if ("UPCOMING".equals(timeline)) {
             query.ge(EveMoonExtractionDO::getChunkArrivalAt, LocalDateTime.now(ZoneOffset.UTC));
@@ -115,7 +122,8 @@ public class EveMoonExtractionService {
         Map<Long, String> structureNotes = loadStructureNotes(corporation.getId(), result.getRecords());
         return new PageResp<>(result.getRecords()
             .stream()
-            .map(item -> toResponse(item, structureNotes.get(item.getStructureId())))
+            .map(item -> toResponse(item, structureNotes.get(item.getStructureId()), oreProfiles.get(item
+                .getStructureId())))
             .toList(), result.getTotal());
     }
 
@@ -215,7 +223,41 @@ public class EveMoonExtractionService {
             structureNote.setUpdateUser(operatorId);
             structureNoteMapper.updateById(structureNote);
         }
-        return toResponse(extraction, normalizedNote);
+        return toResponse(extraction, normalizedNote, initializeOreProfiles(requireCurrentCorporation(extraction
+            .getTenantId())).get(extraction.getStructureId()));
+    }
+
+    /** 刷新本人通知后重新提取指定月矿堡档案；先校验目标，防止越权触发外部请求。 */
+    public EveMoonExtractionResp refreshOreProfile(Long extractionId) {
+        EveMoonExtractionDO extraction = requireActiveExtraction(extractionId);
+        EveCorporationDO corporation = requireCurrentCorporation(extraction.getTenantId());
+        gameNotificationService.syncCurrentUserForMoonProfile(corporation.getCorporationId());
+        EveMeContextResp context = contextService.getCurrentContext();
+        if (context.character() == null) {
+            throw new BusinessException("当前账号未绑定有效 EVE 角色，请先完成授权");
+        }
+        EveMoonOreProfileResp profile = oreProfileService.refresh(corporation, extraction, UserContextHolder
+            .getContext()
+            .getId(), context.character().id());
+        return toResponse(extraction, loadStructureNotes(corporation.getId(), List.of(extraction)).get(extraction
+            .getStructureId()), profile);
+    }
+
+    /** 从本人已有缓存补全缺失档案，列表及搜索不会因此访问国服接口。 */
+    private Map<Long, EveMoonOreProfileResp> initializeOreProfiles(EveCorporationDO corporation) {
+        EveMeContextResp context = contextService.getCurrentContext();
+        return oreProfileService.initializeMissing(corporation, activeExtractions(corporation), UserContextHolder
+            .getContext()
+            .getId(), context.character() == null ? null : context.character().id());
+    }
+
+    /** 查询完整有效时间线，确保缺少建筑 ID 的通知不会因分页被错误地判为唯一匹配。 */
+    private List<EveMoonExtractionDO> activeExtractions(EveCorporationDO corporation) {
+        return extractionMapper.selectList(new LambdaQueryWrapper<EveMoonExtractionDO>()
+            .eq(EveMoonExtractionDO::getTenantId, corporation.getTenantId())
+            .eq(EveMoonExtractionDO::getCorporationRefId, corporation.getId())
+            .eq(EveMoonExtractionDO::getStatus, "ACTIVE")
+            .eq(EveMoonExtractionDO::getDeleted, 0L));
     }
 
     /** 读取全部页面后才发布成功的国服快照。 */
@@ -245,6 +287,8 @@ public class EveMoonExtractionService {
                                                                                                                            .values())));
         LocalDateTime observedAt = LocalDateTime.now(ZoneOffset.UTC);
         publish(tenantId, corporation, valid, observedAt, firstPage.expiresAt());
+        oreProfileService.initializeMissing(corporation, activeExtractions(corporation), source.getUserId(), source
+            .getCharacterRefId());
         return new EveMoonExtractionSyncResp(valid.size(), firstPage.pageCount(), observedAt, firstPage.expiresAt());
     }
 
@@ -413,13 +457,15 @@ public class EveMoonExtractionService {
     }
 
     /** 转换单条国服月矿快照，并携带同一月矿堡长期备注。 */
-    private static EveMoonExtractionResp toResponse(EveMoonExtractionDO extraction, String structureNote) {
+    private static EveMoonExtractionResp toResponse(EveMoonExtractionDO extraction,
+                                                    String structureNote,
+                                                    EveMoonOreProfileResp oreProfile) {
         return new EveMoonExtractionResp(extraction.getId(), extraction.getStructureId(), extraction
             .getStructureName(), extraction.getStructureTypeName(), extraction.getMoonId(), extraction
                 .getMoonName(), extraction.getSolarSystemId(), extraction.getSolarSystemName(), extraction
                     .getExtractionStartAt(), extraction.getChunkArrivalAt(), extraction.getNaturalDecayAt(), extraction
                         .getStatus(), extraction.getLastSeenAt(), extraction.getSourceExpiresAt(), extraction
-                            .getNote(), structureNote);
+                            .getNote(), structureNote, oreProfile);
     }
 
     /** 月矿时间线的上游唯一键。 */

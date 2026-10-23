@@ -59,7 +59,7 @@ class EveDateTimeContractTest {
     @Test
     void shouldTagActualMoonExtractionTime() throws Exception {
         var arrival = LocalDateTime.of(2026, 10, 21, 4, 0);
-        var response = new EveMoonExtractionResp(null, null, null, null, null, null, null, null, null, arrival, null, null, null, null, null, null);
+        var response = new EveMoonExtractionResp(null, null, null, null, null, null, null, null, null, arrival, null, null, null, null, null, null, null);
         assertEquals("2026-10-21T04:00:00Z", mapper.readTree(mapper.writeValueAsString(response))
             .path("chunkArrivalAt")
             .asText());

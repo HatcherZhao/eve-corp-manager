@@ -132,3 +132,5 @@ databaseChangeLog:
       file: db/changelog/mysql/eve/051_industry_plans.sql
   - include:
       file: db/changelog/mysql/eve/052_market_esi_cache_safety.sql
+  - include:
+      file: db/changelog/mysql/eve/053_moon_ore_profile.sql

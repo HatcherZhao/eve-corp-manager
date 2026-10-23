@@ -29,5 +29,5 @@ public record EveMoonExtractionResp(Long id, Long structureId, String structureN
                                     @EveDateTime LocalDateTime chunkArrivalAt,
                                     @EveDateTime LocalDateTime naturalDecayAt, String status,
                                     @EveDateTime LocalDateTime lastSeenAt, @EveDateTime LocalDateTime sourceExpiresAt,
-                                    String note, String structureNote) {
+                                    String note, String structureNote, EveMoonOreProfileResp oreProfile) {
 }

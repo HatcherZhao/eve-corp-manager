@@ -520,7 +520,26 @@ export interface EveMoonExtraction {
   status: 'ACTIVE' | 'MISSING'
   lastSeenAt: string
   sourceExpiresAt?: string
+  /** 同一月矿堡长期展示的军团内部备注。 */
+  structureNote?: string
+  /** 从游戏通知沉淀的月矿堡长期矿种档案。 */
+  oreProfile?: EveMoonOreProfile
   note?: string
+}
+
+/** 游戏通知中记录的单个月矿种类及长期产出比例。 */
+export interface EveMoonOreItem {
+  typeId: number
+  typeName: string
+  proportion: number
+}
+
+/** 月矿堡长期矿种档案。 */
+export interface EveMoonOreProfile {
+  status: 'READY' | 'PENDING'
+  ores: EveMoonOreItem[]
+  sourceSentAt?: string
+  updatedAt?: string
 }
 
 export interface EveMoonExtractionQuery extends PageQuery {
@@ -1514,6 +1533,11 @@ export function syncEveMoonExtractions() {
 /** 保存月矿情报的简短备注。 */
 export function saveEveMoonExtractionNote(extractionId: string, data: EveMoonExtractionNoteReq) {
   return http.put<EveMoonExtraction>(`/eve/extractions/${extractionId}/note`, data)
+}
+
+/** 手动从已有游戏通知刷新指定月矿堡的长期矿种档案。 */
+export function refreshEveMoonOreProfile(extractionId: string) {
+  return http.post<EveMoonExtraction>(`/eve/extractions/${extractionId}/ore-profile/refresh`)
 }
 
 /** 用新的 evedata.xlsx 原子更新数据库中的 EVE 静态资料。 */

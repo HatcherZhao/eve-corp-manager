@@ -19,6 +19,8 @@ package top.continew.admin.eve.service;
 import org.junit.jupiter.api.Test;
 import top.continew.admin.eve.model.EveGameNotificationPresentation;
 
+import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -68,5 +70,66 @@ class EveGameNotificationPresentationServiceTest {
         assertThat(result.details()).extracting(item -> item.label() + "=" + item.value())
             .contains("建筑类型=阿塔诺", "所在星系=奥塔列托");
         assertThat(result.details().toString()).doesNotContain("30001421", "1019984659987", "35835");
+    }
+
+    /** 月矿档案解析应只保留稳定矿种及同一通知内归一化后的比例。 */
+    @Test
+    void shouldParseMoonOreProportionsWithoutKeepingAbsoluteVolumes() {
+        EveGameNotificationPresentationService.MoonOreNotification result = service
+            .parseMoonOreNotification("MoonminingExtractionStarted", """
+                moonID: 40090362
+                structureID: &id001 1019984659987
+                oreVolumeByType:
+                  45493: 300
+                  45492: 100
+                  999999: 600
+                """);
+
+        assertThat(result.moonId()).isEqualTo(40090362L);
+        assertThat(result.structureId()).isEqualTo(1019984659987L);
+        assertThat(result.ores()).extracting(item -> item.typeId() + "=" + item.typeName())
+            .containsExactly("45492=沥青", "45493=柯石英", "999999=未知矿物（类型 999999）");
+        assertThat(result.ores()).extracting(item -> item.proportion())
+            .containsExactly(new BigDecimal("0.1000000000"), new BigDecimal("0.3000000000"), new BigDecimal("0.6000000000"));
+        assertThat(result.ores().stream().map(item -> item.proportion()).reduce(BigDecimal.ZERO, BigDecimal::add))
+            .isEqualByComparingTo(BigDecimal.ONE);
+    }
+
+    /** 任一混合矿种体积畸形时必须拒绝整条通知，避免生成错误比例。 */
+    @Test
+    void shouldRejectEntireMoonOreNotificationWhenOneVolumeIsMalformed() {
+        assertThat(service.parseMoonOreNotification("MoonminingLaserFired", """
+            moonID: 40090362
+            oreVolumeByType:
+              45492: 100
+              45493: -1
+            """)).isNull();
+    }
+
+    /** 显式的错误建筑 ID 不能被当成无建筑信息而错误匹配其他矿堡。 */
+    @Test
+    void shouldRejectInvalidExplicitStructureIdentifier() {
+        for (String structureId : List.of("0", "-1", "unknown")) {
+            assertThat(service.parseMoonOreNotification("MoonminingLaserFired", """
+                moonID: 40090362
+                structureID: %s
+                oreVolumeByType:
+                  45492: 100
+                """.formatted(structureId))).isNull();
+        }
+        assertThat(service.parseMoonOreNotification(null, "")).isNull();
+    }
+
+    /** 四类包含矿种体积的月矿通知都应使用同一结构化解析规则。 */
+    @Test
+    void shouldParseAllSupportedMoonOreNotificationTypes() {
+        for (String type : List
+            .of("MoonminingExtractionStarted", "MoonminingExtractionFinished", "MoonminingAutomaticFracture", "MoonminingLaserFired")) {
+            assertThat(service.parseMoonOreNotification(type, """
+                moonID: 40090362
+                oreVolumeByType:
+                  45492: 100
+                """)).isNotNull();
+        }
     }
 }

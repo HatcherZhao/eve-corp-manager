@@ -29,10 +29,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class EveMoonExtractionControllerTest {
 
-    /** 月矿接口只保留时间线查询、同步和简短备注维护能力。 */
+    /** 月矿接口包含时间线查询、同步、备注与受控的矿种档案刷新。 */
     @Test
     void shouldExposeOnlyMoonIntelligenceOperations() {
         assertThat(Arrays.stream(EveMoonExtractionController.class.getDeclaredMethods())
-            .map(method -> method.getName())).containsExactlyInAnyOrder("page", "sync", "saveNote");
+            .map(method -> method.getName()))
+            .containsExactlyInAnyOrder("page", "sync", "saveNote", "refreshOreProfile");
+    }
+
+    /** 手动刷新矿种必须沿用军团月矿管理权限，不能仅凭查看权限更新。 */
+    @Test
+    void shouldRequireManagePermissionForOreProfileRefresh() throws Exception {
+        var method = EveMoonExtractionController.class.getMethod("refreshOreProfile", Long.class);
+        assertThat(method.getAnnotation(cn.dev33.satoken.annotation.SaCheckPermission.class).value())
+            .containsExactly("eve:extractions:manage");
     }
 }

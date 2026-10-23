@@ -20,8 +20,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import top.continew.admin.eve.model.EveGameNotificationDetailItem;
 import top.continew.admin.eve.model.EveGameNotificationPresentation;
+import top.continew.admin.eve.model.EveMoonOreItemResp;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.text.DecimalFormat;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -30,6 +32,7 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -49,6 +52,8 @@ public class EveGameNotificationPresentationService {
         .compile("(?m)^(?:charID|corpID|againstID|declaredByID|cancelledBy|startedBy|firedBy):\\s*(\\d+)");
     private static final DateTimeFormatter TICK_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy年M月d日 HH:mm");
     private static final DecimalFormat NUMBER_FORMAT = new DecimalFormat("#,##0.##");
+    private static final Set<String> MOON_ORE_NOTIFICATION_TYPES = Set
+        .of("MoonminingExtractionStarted", "MoonminingExtractionFinished", "MoonminingAutomaticFracture", "MoonminingLaserFired");
 
     private final EveStaticNameReference staticNameReference;
 
@@ -98,6 +103,64 @@ public class EveGameNotificationPresentationService {
             .stream()
             .map(item -> new EveGameNotificationDetailItem(item.getKey(), item.getValue()))
             .toList());
+    }
+
+    /**
+     * 从支持的月矿通知中提取可长期保存的月球、建筑、矿种及归一化产出比例。
+     *
+     * <p>通知内容属于不可信文本；缺少月球、矿种或正体积时返回空，调用方不得据此覆盖已有档案。</p>
+     */
+    public MoonOreNotification parseMoonOreNotification(String type, String content) {
+        if (type == null || !MOON_ORE_NOTIFICATION_TYPES.contains(type)) {
+            return null;
+        }
+        try {
+            NotificationData data = NotificationData.parse(decode(content));
+            Long moonId = firstNonNull(data.longValue("moonID"), data.longValue("moonId"));
+            if (moonId == null || moonId <= 0) {
+                return null;
+            }
+            Long structureId = firstNonNull(data.longValue("structureID"), data.longValue("structureId"));
+            // 显式但无效的建筑标识不能退化为仅按月球匹配。
+            if ((data.value("structureID") != null || data
+                .value("structureId") != null) && (structureId == null || structureId <= 0)) {
+                return null;
+            }
+            List<ParsedOreVolume> volumes = new ArrayList<>();
+            for (Map.Entry<String, String> item : data.children("oreVolumeByType").entrySet()) {
+                Integer typeId = positiveInteger(item.getKey());
+                BigDecimal volume = notificationVolume(item.getValue());
+                if (typeId == null || volume == null) {
+                    return null;
+                }
+                if (volume.signum() == 0) {
+                    continue;
+                }
+                String typeName = staticNameReference.findTypeName(typeId.longValue());
+                if (typeName == null || typeName.isBlank()) {
+                    typeName = "未知矿物（类型 " + typeId + "）";
+                }
+                volumes.add(new ParsedOreVolume(typeId, typeName, volume));
+            }
+            if (volumes.isEmpty()) {
+                return null;
+            }
+            volumes.sort(java.util.Comparator.comparing(ParsedOreVolume::typeId));
+            BigDecimal total = volumes.stream().map(ParsedOreVolume::volume).reduce(BigDecimal.ZERO, BigDecimal::add);
+            List<EveMoonOreItemResp> ores = new ArrayList<>();
+            BigDecimal allocated = BigDecimal.ZERO;
+            for (int index = 0; index < volumes.size(); index++) {
+                ParsedOreVolume volume = volumes.get(index);
+                BigDecimal proportion = index == volumes.size() - 1
+                    ? BigDecimal.ONE.subtract(allocated)
+                    : volume.volume().divide(total, 10, RoundingMode.DOWN);
+                ores.add(new EveMoonOreItemResp(volume.typeId(), volume.typeName(), proportion));
+                allocated = allocated.add(proportion);
+            }
+            return new MoonOreNotification(moonId, structureId, List.copyOf(ores));
+        } catch (RuntimeException ignored) {
+            return null;
+        }
     }
 
     /** 补充建筑名称、建筑类型和星系等所有建筑类通知共享的信息。 */
@@ -352,6 +415,29 @@ public class EveGameNotificationPresentationService {
         }
     }
 
+    /** 解析正整数物品类型 ID。 */
+    private static Integer positiveInteger(String value) {
+        try {
+            int result = Integer.parseInt(value);
+            return result > 0 ? result : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    /** 解析有限精度的非负通知体积；零量后续忽略，负数或异常值拒绝整条通知。 */
+    private static BigDecimal notificationVolume(String value) {
+        try {
+            if (value == null || value.length() > 80) {
+                return null;
+            }
+            BigDecimal result = new BigDecimal(value);
+            return result.signum() >= 0 && result.precision() <= 38 && Math.abs(result.scale()) <= 18 ? result : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
     private static String linkName(String value) {
         if (value == null) {
             return null;
@@ -533,5 +619,13 @@ public class EveGameNotificationPresentationService {
 
     /** 燃料预警中的物品类型和缺少数量。 */
     private record TypeQuantity(Long typeId, String quantity) {
+    }
+
+    /** 月矿通知中的结构化矿种事实，不包含原始邮件正文或操作人。 */
+    public record MoonOreNotification(Long moonId, Long structureId, List<EveMoonOreItemResp> ores) {
+    }
+
+    /** 归一化前的单个合法矿种体积，仅在解析期间短暂存在。 */
+    private record ParsedOreVolume(Integer typeId, String typeName, BigDecimal volume) {
     }
 }

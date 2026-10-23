@@ -20,8 +20,13 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RBucket;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import top.continew.admin.common.context.UserContext;
 import top.continew.admin.common.context.UserContextHolder;
 import top.continew.admin.eve.client.SerenityEsiClient;
@@ -43,11 +48,14 @@ import top.continew.starter.extension.crud.model.resp.PageResp;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 管理当前授权角色的游戏内通知缓存、分类与同步。
@@ -70,6 +78,8 @@ public class EveGameNotificationService {
     private final EveAuthorizationLifecycleService authorizationLifecycleService;
     private final EveGameNotificationPresentationService notificationPresentationService;
     private final SerenityEsiClient esiClient;
+    private final RedissonClient redissonClient;
+    private final EveMoonOreProfileService oreProfileService;
 
     /** 分页查询当前授权角色已同步的游戏通知。 */
     public PageResp<EveGameNotificationResp> page(int page, int size, String category, String keyword) {
@@ -107,8 +117,94 @@ public class EveGameNotificationService {
         return synchronize(requireSource(tenantId, userId, characterRefId));
     }
 
-    /** 拉取一批完整通知并在上游成功后提交本地展示快照。 */
+    /** 矿种刷新仅允许使用本人且仍属于目标军团的通知授权。 */
+    @Transactional(rollbackFor = Exception.class)
+    public EveGameNotificationSyncResp syncCurrentUserForMoonProfile(Long corporationId) {
+        NotificationSource source = requireCurrentSource();
+        if (!Objects.equals(corporationId, source.character().getCorporationId())) {
+            throw new BusinessException("当前授权角色不属于该月矿堡所在军团");
+        }
+        return synchronize(source);
+    }
+
+    /** 自动与手动共用角色级锁、缓存有效期和错误退避，防止重复刷新冲击国服。 */
     private EveGameNotificationSyncResp synchronize(NotificationSource source) {
+        String key = "eve:serenity:notifications:" + source.tenantId() + ":" + source.userId() + ":" + source
+            .character()
+            .getId();
+        RLock lock = redissonClient.getLock(key + ":lock");
+        RBucket<Long> expiry = redissonClient.getBucket(key + ":expires");
+        RBucket<Long> retry = redissonClient.getBucket(key + ":retry");
+        boolean locked = false;
+        boolean deferred = false;
+        boolean attempted = false;
+        try {
+            locked = lock.tryLock(1, TimeUnit.SECONDS);
+            if (!locked) {
+                throw new BusinessException("游戏通知正在同步，请稍后重试");
+            }
+            deferred = EveAuthorizationLifecycleService.deferUnlockUntilTransactionCompletion(lock);
+            long nowMillis = System.currentTimeMillis();
+            Long retryAt = retry.get();
+            if (retryAt != null && retryAt > nowMillis) {
+                throw new BusinessException("游戏通知上游暂时不可用，请稍后重试，已有矿种档案已保留");
+            }
+            Long expiresAt = expiry.get();
+            EveGameNotificationDO cached = notificationMapper.selectOne(new LambdaQueryWrapper<EveGameNotificationDO>()
+                .eq(EveGameNotificationDO::getTenantId, source.tenantId())
+                .eq(EveGameNotificationDO::getUserId, source.userId())
+                .eq(EveGameNotificationDO::getCharacterRefId, source.character().getId())
+                .eq(EveGameNotificationDO::getDeleted, 0L)
+                .orderByDesc(EveGameNotificationDO::getSourceExpiresAt)
+                .last("LIMIT 1"));
+            if (cached != null && cached.getSourceExpiresAt() != null) {
+                long cachedExpiry = cached.getSourceExpiresAt().toInstant(ZoneOffset.UTC).toEpochMilli();
+                expiresAt = expiresAt == null ? cachedExpiry : Math.max(expiresAt, cachedExpiry);
+            }
+            if (expiresAt != null && expiresAt > nowMillis) {
+                return new EveGameNotificationSyncResp(0, LocalDateTime.now(ZoneOffset.UTC), LocalDateTime
+                    .ofInstant(Instant.ofEpochMilli(expiresAt), ZoneOffset.UTC));
+            }
+            attempted = true;
+            EveGameNotificationSyncResp response = fetchAndStore(source);
+            long nextReadAt = Math.max(System.currentTimeMillis() + 60_000L, response.sourceExpiresAt() == null
+                ? System.currentTimeMillis() + 600_000L
+                : response.sourceExpiresAt().toInstant(ZoneOffset.UTC).toEpochMilli());
+            publishExpiryAfterCommit(expiry, nextReadAt);
+            return response;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException("游戏通知正在同步，请稍后重试");
+        } catch (RuntimeException e) {
+            if (attempted) {
+                retry.set(System.currentTimeMillis() + 60_000L, Duration.ofMinutes(1));
+            }
+            throw e;
+        } finally {
+            if (locked && !deferred && lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+
+    /** 只有本地快照提交成功后才发布缓存门禁，回滚时允许重新同步丢失的数据。 */
+    private static void publishExpiryAfterCommit(RBucket<Long> expiry, long nextReadAt) {
+        Runnable publish = () -> expiry.set(nextReadAt, Duration.ofMillis(Math.max(1L, nextReadAt - System
+            .currentTimeMillis())));
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            publish.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                publish.run();
+            }
+        });
+    }
+
+    /** 拉取一批完整通知并发布本地快照，只补全尚无矿种的本军团档案。 */
+    private EveGameNotificationSyncResp fetchAndStore(NotificationSource source) {
         String accessToken = authorizationLifecycleService.ensureAccessToken(source.authorization());
         SerenityEsiResponse<List<SerenityGameNotificationResponse>> response = esiClient
             .getGameNotificationsWithMetadata(source.character().getCharacterId(), accessToken);
@@ -124,6 +220,7 @@ public class EveGameNotificationService {
             apply(target, notification, synchronizedAt, response.expiresAt());
             save(target);
         }
+        oreProfileService.initializeMissingForCharacter(source.tenantId(), source.userId(), source.character().getId());
         return new EveGameNotificationSyncResp(response.body().size(), synchronizedAt, response.expiresAt());
     }
 
