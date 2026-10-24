@@ -8,6 +8,7 @@ import IndustryPanel from '../components/IndustryPanel.vue'
 import {
   formatIndustryIsk,
   formatIndustryPercent,
+  industryActivityLabel,
   industryRiskLabel,
   industryStatusColor,
   industryStatusLabel,
@@ -82,7 +83,7 @@ async function runScan() {
       ...scan,
       activity: scan.activity || undefined,
     })).data
-    Message.success('工业机会扫描完成')
+    Message.success('生产利润分析完成')
   } finally {
     scanning.value = false
   }
@@ -119,48 +120,48 @@ onMounted(loadPage)
 <template>
   <main class="industry-opportunities-page gi_page">
     <IndustryPageHeader
-      eyebrow="SERENITY · INDUSTRY OPPORTUNITY"
+      eyebrow="国服工业"
       title="工业机会分析"
-      description="用国服吉他海四订单、市场成交量和生产设施条件，筛选利润高且市场能够承接的制造机会。"
+      description="按吉他海四行情和你的生产条件，比较生产成本、预计利润与市场需求。"
     >
       <template #actions>
         <a-button @click="router.push('/eve/industry/calculator')">蓝图计算</a-button>
         <a-button @click="router.push('/eve/industry/config')">工业配置</a-button>
         <a-button type="primary" :loading="scanning" @click="runScan">
           <template #icon><icon-search /></template>
-          扫描机会
+          分析利润
         </a-button>
       </template>
     </IndustryPageHeader>
 
     <a-alert class="industry-opportunities-page__notice" type="info" show-icon>
-      当前固定按无库存、材料全部从吉他海四购买、运输成本为 0 计算。蓝图、行情或 SCI 缺失时，结果会降级为可试算。
+      材料全部按吉他海四采购价计算，不计库存和运输费。缺少蓝图、行情或星系成本指数时，结果仅供估算，不能加入生产计划。
     </a-alert>
 
     <section class="industry-opportunities-page__summary" aria-label="工业机会摘要">
       <article>
-        <span>可执行机会</span>
+        <span>可加入计划</span>
         <strong>{{ executableCount }}</strong>
-        <small>当前扫描结果</small>
+        <small>本次分析结果</small>
       </article>
       <article>
         <span>最佳每日利润</span>
         <strong>{{ formatIndustryIsk(bestOpportunity?.dailyProfit) }}</strong>
-        <small>{{ bestOpportunity?.productName || '等待扫描' }}</small>
+        <small>{{ bestOpportunity?.productName || '等待分析' }}</small>
       </article>
       <article>
         <span>已校验配方</span>
         <strong>{{ status?.validatedBlueprintCount ?? 0 }}</strong>
-        <small>共 {{ status?.blueprintCount ?? 0 }} 条活动</small>
+        <small>共 {{ status?.blueprintCount ?? 0 }} 条生产配方</small>
       </article>
       <article>
-        <span>风险机会</span>
+        <span>有风险的结果</span>
         <strong>{{ riskCount }}</strong>
-        <small>订单、成交量或数据缺口</small>
+        <small>挂单不足或缺少计算数据</small>
       </article>
     </section>
 
-    <IndustryPanel class="industry-opportunities-page__filters" title="扫描条件" description="生产配置与设施会共同影响材料、时间、SCI 和费用。">
+    <IndustryPanel class="industry-opportunities-page__filters" title="生产条件" description="材料用量、生产耗时和安装费随生产配置及设施而变化。">
       <div class="industry-opportunities-page__filter-grid">
         <a-select v-model="scan.configId" placeholder="选择生产配置" allow-clear>
           <a-option v-for="item in configs" :key="item.id" :value="item.id">{{ item.name }}</a-option>
@@ -182,7 +183,7 @@ onMounted(loadPage)
     <IndustryPanel
       class="industry-opportunities-page__results"
       title="生产机会"
-      description="结果按每日可实现利润排序；点击记录查看材料、费用和风险依据。"
+      description="按预计每日利润排序；利润为估算值，不保证实际成交。"
       flush
     >
       <template #actions>
@@ -201,7 +202,7 @@ onMounted(loadPage)
               <template #cell="{ record }">
                 <div class="industry-opportunities-page__identity">
                   <strong>{{ record.productName }}</strong>
-                  <small>{{ record.blueprintName || '蓝图待导入' }} · {{ record.activity || '—' }}</small>
+                  <small>{{ record.blueprintName || '蓝图待导入' }} · {{ industryActivityLabel(record.activity) }}</small>
                 </div>
               </template>
             </a-table-column>
@@ -213,8 +214,8 @@ onMounted(loadPage)
             </a-table-column>
             <a-table-column title="推荐产量" :width="110" align="right"><template #cell="{ record }">{{ record.recommendedQuantity.toLocaleString() }}</template></a-table-column>
             <a-table-column title="总投入" :width="160" align="right"><template #cell="{ record }">{{ formatIndustryIsk(record.materialCost + record.installCost) }}</template></a-table-column>
-            <a-table-column title="立即利润" :width="150" align="right"><template #cell="{ record }"><strong class="industry-opportunities-page__profit">{{ formatIndustryIsk(record.immediateProfit) }}</strong></template></a-table-column>
-            <a-table-column title="挂单利润" :width="150" align="right"><template #cell="{ record }">{{ formatIndustryIsk(record.sellOrderProfit) }}</template></a-table-column>
+            <a-table-column title="直接卖出利润" :width="150" align="right"><template #cell="{ record }"><strong class="industry-opportunities-page__profit">{{ formatIndustryIsk(record.immediateProfit) }}</strong></template></a-table-column>
+            <a-table-column title="挂卖单利润" :width="150" align="right"><template #cell="{ record }">{{ formatIndustryIsk(record.sellOrderProfit) }}</template></a-table-column>
             <a-table-column title="利润率" :width="105" align="right"><template #cell="{ record }">{{ formatIndustryPercent(record.margin) }}</template></a-table-column>
             <a-table-column title="风险" :width="220" ellipsis tooltip><template #cell="{ record }"><span :class="record.riskScore > 40 ? 'risk-high' : 'risk-normal'">{{ industryRiskLabel(record.riskTags) }}</span></template></a-table-column>
           </template>
@@ -224,12 +225,12 @@ onMounted(loadPage)
       <div class="industry-opportunities-page__mobile-list">
         <button v-for="record in records" :key="record.id" type="button" class="industry-opportunity-card" @click="openOpportunity(record)">
           <div class="industry-opportunity-card__header">
-            <div><strong>{{ record.productName }}</strong><small>{{ record.blueprintName || record.activity || '蓝图待导入' }}</small></div>
+            <div><strong>{{ record.productName }}</strong><small>{{ record.blueprintName || industryActivityLabel(record.activity) }}</small></div>
             <a-tag :color="industryStatusColor(record.status)">{{ industryStatusLabel(record.status) }}</a-tag>
           </div>
           <dl>
             <div><dt>每日利润</dt><dd>{{ formatIndustryIsk(record.dailyProfit) }}</dd></div>
-            <div><dt>立即利润</dt><dd>{{ formatIndustryIsk(record.immediateProfit) }}</dd></div>
+            <div><dt>直接卖出利润</dt><dd>{{ formatIndustryIsk(record.immediateProfit) }}</dd></div>
             <div><dt>总投入</dt><dd>{{ formatIndustryIsk(record.materialCost + record.installCost) }}</dd></div>
             <div><dt>推荐产量</dt><dd>{{ record.recommendedQuantity.toLocaleString() }}</dd></div>
           </dl>
@@ -237,11 +238,12 @@ onMounted(loadPage)
         </button>
       </div>
 
-      <a-empty v-if="!loading && !records.length" description="暂无扫描结果">
+      <a-empty v-if="!loading && !records.length">
+        <p>暂无利润分析结果</p>
         <a-space wrap>
           <a-button @click="router.push('/eve/industry/config')">配置生产条件</a-button>
           <a-button @click="router.push('/eve/industry/data')">检查工业数据</a-button>
-          <a-button type="primary" :loading="scanning" @click="runScan">运行扫描</a-button>
+          <a-button type="primary" :loading="scanning" @click="runScan">分析利润</a-button>
         </a-space>
       </a-empty>
     </IndustryPanel>
@@ -249,25 +251,26 @@ onMounted(loadPage)
     <a-drawer v-model:visible="detailVisible" :width="detailDrawerWidth" title="机会详情" unmount-on-close>
       <template v-if="selected">
         <div class="industry-opportunity-detail__headline">
-          <div><span>{{ selected.activity || '工业活动' }}</span><h2>{{ selected.productName }}</h2></div>
+          <div><span>{{ industryActivityLabel(selected.activity) }}</span><h2>{{ selected.productName }}</h2></div>
           <a-tag :color="industryStatusColor(selected.status)">{{ industryStatusLabel(selected.status) }}</a-tag>
         </div>
         <section class="industry-profit-waterfall" aria-label="利润构成">
-          <article><span>挂单收入</span><strong>{{ formatIndustryIsk(selected.sellOrderRevenue) }}</strong></article>
+          <article><span>挂卖单收入</span><strong>{{ formatIndustryIsk(selected.sellOrderRevenue) }}</strong></article>
           <article><span>材料采购</span><strong>- {{ formatIndustryIsk(selected.materialCost) }}</strong></article>
           <article><span>安装费用</span><strong>- {{ formatIndustryIsk(selected.installCost) }}</strong></article>
           <article class="industry-profit-waterfall__result"><span>预计净利润</span><strong>{{ formatIndustryIsk(selected.sellOrderProfit) }}</strong></article>
         </section>
         <a-descriptions :column="1" bordered>
           <a-descriptions-item label="生产地点">{{ selected.systemName || '—' }} · {{ selected.facilityName || '—' }}</a-descriptions-item>
-          <a-descriptions-item label="推荐流程 / 数量">{{ selected.recommendedRuns.toLocaleString() }} / {{ selected.recommendedQuantity.toLocaleString() }}</a-descriptions-item>
-          <a-descriptions-item label="立即变现利润">{{ formatIndustryIsk(selected.immediateProfit) }}</a-descriptions-item>
+          <a-descriptions-item label="推荐生产次数">{{ selected.recommendedRuns.toLocaleString() }} 次</a-descriptions-item>
+          <a-descriptions-item label="预计产量">{{ selected.recommendedQuantity.toLocaleString() }} 件</a-descriptions-item>
+          <a-descriptions-item label="直接卖出利润">{{ formatIndustryIsk(selected.immediateProfit) }}</a-descriptions-item>
           <a-descriptions-item label="每小时利润">{{ formatIndustryIsk(selected.hourlyProfit) }}</a-descriptions-item>
           <a-descriptions-item label="每日利润">{{ formatIndustryIsk(selected.dailyProfit) }}</a-descriptions-item>
           <a-descriptions-item label="风险说明">{{ industryRiskLabel(selected.riskTags) }}</a-descriptions-item>
         </a-descriptions>
         <a-alert v-if="selected.status !== 'EXECUTABLE'" class="industry-opportunity-detail__plan-note" type="warning" show-icon>
-          当前机会不是可执行状态，完成蓝图、行情或设施校验后才能加入生产计划。
+          这条结果暂不能加入计划，请先检查风险说明，补齐蓝图、行情或设施数据。
         </a-alert>
         <a-button v-else class="industry-opportunity-detail__plan-action" type="primary" long :loading="creatingPlan" @click="addToPlan">加入生产计划</a-button>
         <div v-if="materials.length" class="industry-opportunity-detail__materials">

@@ -4,7 +4,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import IndustryPageHeader from '../components/IndustryPageHeader.vue'
 import IndustryPanel from '../components/IndustryPanel.vue'
-import { formatIndustryIsk } from '../shared/format'
+import { formatIndustryIsk, industryActivityLabel } from '../shared/format'
 import {
   type EveIndustryBlueprint,
   type EveIndustryBlueprintOverride,
@@ -97,28 +97,28 @@ onMounted(loadPage)
 <template>
   <main class="industry-calculator-page gi_page">
     <IndustryPageHeader
-      eyebrow="BLUEPRINT · COST WORKBENCH"
+      eyebrow="工业生产"
       title="蓝图计算"
-      description="选择蓝图、研究等级和生产设施，查看实际材料采购、活动工时、安装费以及买单与挂单利润。"
+      description="估算材料费用、生产耗时和安装费，比较直接卖给收购单与挂卖单的利润。"
     >
       <template #actions>
         <a-button @click="router.push('/eve/industry/opportunities')">返回机会分析</a-button>
-        <a-button @click="router.push('/eve/industry/config')">维护配置</a-button>
+        <a-button @click="router.push('/eve/industry/config')">生产设置</a-button>
       </template>
     </IndustryPageHeader>
 
     <a-alert class="industry-calculator-page__notice" type="info" show-icon>
-      蓝图本体成本和运输成本均按 0 处理；所有材料视为无库存并从吉他海四订单簿逐档购买。
+      不计蓝图购入费用和运输费；所有材料按从吉他海四现有卖单购买计算，不扣除仓库库存。
     </a-alert>
 
     <div class="industry-calculator-page__workspace">
-      <IndustryPanel class="industry-calculator-page__conditions" title="试算条件" description="流程数代表蓝图活动执行次数，产物数量由蓝图单流程产量自动换算。">
+      <IndustryPanel class="industry-calculator-page__conditions" title="生产条件" description="生产次数 × 每次产出 = 总产量。">
         <a-spin :loading="loading" class="industry-calculator-page__spin">
           <a-form :model="form" layout="vertical">
             <a-form-item label="蓝图">
               <a-select v-model="form.blueprintId" allow-search>
                 <a-option v-for="item in blueprints" :key="item.id" :value="item.id">
-                  {{ item.productName }} · {{ item.activity }} · {{ item.blueprintName }}
+                  {{ item.productName }} · {{ industryActivityLabel(item.activity) }} · {{ item.blueprintName }}
                 </a-option>
               </a-select>
             </a-form-item>
@@ -135,12 +135,12 @@ onMounted(loadPage)
               </a-select>
             </a-form-item>
             <div class="industry-calculator-page__number-grid">
-              <a-form-item label="流程数"><a-input-number v-model="form.runs" :min="1" :max="1000000" /></a-form-item>
-              <a-form-item label="ME"><a-input-number v-model="form.materialEfficiency" :min="0" :max="10" /></a-form-item>
-              <a-form-item label="TE"><a-input-number v-model="form.timeEfficiency" :min="0" :max="20" /></a-form-item>
+              <a-form-item label="生产次数"><a-input-number v-model="form.runs" :min="1" :max="1000000" /></a-form-item>
+              <a-form-item label="材料效率（%）"><a-input-number v-model="form.materialEfficiency" :min="0" :max="10" /></a-form-item>
+              <a-form-item label="时间效率（%）"><a-input-number v-model="form.timeEfficiency" :min="0" :max="20" /></a-form-item>
             </div>
             <div v-if="selectedBlueprint" class="industry-calculator-page__blueprint-note">
-              <span>每流程产物</span>
+              <span>每次产出</span>
               <strong>{{ selectedBlueprint.productQuantity.toLocaleString() }} 件</strong>
               <small>基础时间 {{ selectedBlueprint.baseTimeSeconds.toLocaleString() }} 秒</small>
             </div>
@@ -149,32 +149,32 @@ onMounted(loadPage)
         </a-spin>
       </IndustryPanel>
 
-      <IndustryPanel class="industry-calculator-page__result" title="试算结果" description="金额和订单深度均来自本次计算所采用的吉他行情快照。">
+      <IndustryPanel class="industry-calculator-page__result" title="成本与利润" description="按本次计算时的吉他行情估算，实际成交价格可能变化。">
         <a-empty v-if="!calculation" description="选择条件后开始计算，即可查看成本与利润" />
         <template v-else>
           <a-alert v-if="calculation.warnings.length" type="warning" show-icon>
             {{ calculation.warnings.join('；') }}
           </a-alert>
           <section class="industry-calculator-page__summary" aria-label="蓝图试算摘要">
-            <article><span>活动时间</span><strong>{{ (calculation.durationSeconds / 60).toFixed(1) }} 分钟</strong></article>
+            <article><span>生产耗时</span><strong>{{ (calculation.durationSeconds / 60).toFixed(1) }} 分钟</strong></article>
             <article><span>总投入</span><strong>{{ formatIndustryIsk(calculation.totalCost) }}</strong></article>
-            <article><span>立即利润</span><strong>{{ formatIndustryIsk(calculation.immediateProfit) }}</strong></article>
-            <article><span>挂单利润</span><strong>{{ formatIndustryIsk(calculation.sellOrderProfit) }}</strong></article>
+            <article><span>直接卖出利润</span><strong>{{ formatIndustryIsk(calculation.immediateProfit) }}</strong></article>
+            <article><span>挂卖单利润</span><strong>{{ formatIndustryIsk(calculation.sellOrderProfit) }}</strong></article>
           </section>
           <section class="industry-calculator-page__cost-breakdown" aria-label="费用拆分">
             <div><span>材料采购</span><strong>{{ formatIndustryIsk(calculation.materialCost) }}</strong></div>
             <div><span>安装费用</span><strong>{{ formatIndustryIsk(calculation.installationCost) }}</strong></div>
-            <div><span>立即收入</span><strong>{{ formatIndustryIsk(calculation.immediateRevenue) }}</strong></div>
-            <div><span>挂单收入</span><strong>{{ formatIndustryIsk(calculation.sellOrderRevenue) }}</strong></div>
+            <div><span>直接卖出收入</span><strong>{{ formatIndustryIsk(calculation.immediateRevenue) }}</strong></div>
+            <div><span>挂卖单收入</span><strong>{{ formatIndustryIsk(calculation.sellOrderRevenue) }}</strong></div>
           </section>
           <div class="industry-calculator-page__materials-table">
             <a-table :data="calculation.materials" :pagination="false" size="small" :scroll="{ x: 680 }">
               <template #columns>
                 <a-table-column title="材料" data-index="name" :width="190" />
                 <a-table-column title="需求数量" data-index="quantity" :width="120" align="right" />
-                <a-table-column title="成交均价" :width="150" align="right"><template #cell="{ record }">{{ formatIndustryIsk(record.averagePrice) }}</template></a-table-column>
-                <a-table-column title="逐档采购成本" :width="170" align="right"><template #cell="{ record }">{{ formatIndustryIsk(record.purchaseCost) }}</template></a-table-column>
-                <a-table-column title="订单深度" :width="100"><template #cell="{ record }"><a-tag :color="record.marketComplete ? 'green' : 'red'">{{ record.marketComplete ? '充足' : '不足' }}</a-tag></template></a-table-column>
+                <a-table-column title="预计采购均价" :width="150" align="right"><template #cell="{ record }">{{ formatIndustryIsk(record.averagePrice) }}</template></a-table-column>
+                <a-table-column title="采购总价" :width="170" align="right"><template #cell="{ record }">{{ formatIndustryIsk(record.purchaseCost) }}</template></a-table-column>
+                <a-table-column title="市场可购数量" :width="130"><template #cell="{ record }"><a-tag :color="record.marketComplete ? 'green' : 'red'">{{ record.marketComplete ? '充足' : '不足' }}</a-tag></template></a-table-column>
               </template>
             </a-table>
           </div>
@@ -210,8 +210,12 @@ onMounted(loadPage)
 
 .industry-calculator-page__number-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: .5rem;
+}
+
+.industry-calculator-page__number-grid > :first-child {
+  grid-column: 1 / -1;
 }
 
 .industry-calculator-page__number-grid :deep(.arco-input-number) {

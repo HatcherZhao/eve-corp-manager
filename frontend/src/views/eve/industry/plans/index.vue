@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { Message } from '@arco-design/web-vue'
+import { useWindowSize } from '@vueuse/core'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import IndustryPageHeader from '../components/IndustryPageHeader.vue'
 import IndustryPanel from '../components/IndustryPanel.vue'
-import { formatIndustryIsk } from '../shared/format'
+import { formatIndustryIsk, industryStepLabel } from '../shared/format'
 import { formatEveTime } from '@/utils/eveTime'
 import { type EveIndustryOpportunity, type EveIndustryPlan, type EveIndustryPlanDetail, type EveIndustryPlanResponse, copyEveIndustryPlan, createEveIndustryPlan, getEveIndustryOpportunities, getEveIndustryPlan, getEveIndustryPlans, recalculateEveIndustryPlan, updateEveIndustryPlanStatus } from '@/apis/eve'
 
 defineOptions({ name: 'EveIndustryPlans' })
 const router = useRouter()
+const { width } = useWindowSize()
+const detailDrawerWidth = computed(() => width.value < 768 ? '100%' : 520)
 const loading = ref(false)
 const saving = ref(false)
 const records = ref<EveIndustryPlan[]>([])
@@ -23,7 +26,7 @@ const statusOptions = ['DRAFT', 'CONFIRMED', 'PURCHASING', 'PRODUCING', 'DELIVER
 const executableOpportunities = computed(() => opportunities.value.filter((item) => item.status === 'EXECUTABLE'))
 const selectedOpportunity = computed(() => opportunities.value.find((item) => item.id === form.opportunityId))
 function statusLabel(status: string) {
-  return statusMeta[status]?.label || status
+  return status === 'PENDING' ? '待开始' : statusMeta[status]?.label || '未知状态'
 }
 function statusColor(status: string) {
   return statusMeta[status]?.color || 'gray'
@@ -86,11 +89,11 @@ function useOpportunity() {
 }
 async function savePlan() {
   if (!form.opportunityId || !form.name.trim()) {
-    Message.warning('请选择可执行机会并填写计划名称')
+    Message.warning('请选择可加入计划的生产机会，并填写计划名称')
     return
   }
   if (selectedOpportunity.value?.status !== 'EXECUTABLE') {
-    Message.warning('只有可执行机会才能创建生产计划')
+    Message.warning('这条结果暂不能加入计划，请先补齐生产数据')
     return
   }
   saving.value = true
@@ -125,7 +128,7 @@ async function recalculate() {
   saving.value = true
   try {
     selected.value = normalizeDetail((await recalculateEveIndustryPlan(selected.value.id)).data)
-    Message.success('计划摘要已恢复为来源机会快照')
+    Message.success('已恢复为创建计划时的成本与利润估算')
   } finally {
     saving.value = false
   }
@@ -145,11 +148,11 @@ onMounted(loadPage)
 
 <template>
   <main class="industry-plans-page gi_page">
-    <IndustryPageHeader eyebrow="INDUSTRY · PRODUCTION PLAN" title="生产计划" description="把已验证的工业机会固化为可复盘的材料采购、生产批次和销售跟踪计划。">
+    <IndustryPageHeader eyebrow="工业生产" title="生产计划" description="记录采购材料、安排生产和出售产品的进度。">
       <template #actions><a-button @click="router.push('/eve/industry/opportunities')">机会分析</a-button><a-button type="primary" @click="openCreate">新建计划</a-button></template>
     </IndustryPageHeader>
-    <a-alert class="industry-plans-page__notice" type="info" show-icon>计划使用创建时的机会、市场和设施快照；当前不自动提交游戏内制造或市场订单。</a-alert>
-    <IndustryPanel class="industry-plans-page__list" title="计划列表" description="计划状态由人工推进，详情中的材料和步骤来自后端快照。" flush>
+    <a-alert class="industry-plans-page__notice" type="info" show-icon>成本与利润保留创建计划时的估算，不随行情自动更新；不会在游戏内自动下单或启动生产。</a-alert>
+    <IndustryPanel class="industry-plans-page__list" title="计划列表" description="生产进度由你手动更新。" flush>
       <a-table :data="records" :loading="loading" :pagination="false" row-key="id" :scroll="{ x: 900 }" @row-click="openDetail">
         <template #columns>
           <a-table-column title="计划" :width="230" fixed="left" ellipsis tooltip><template #cell="{ record }"><div><strong>{{ record.name }}</strong><small class="muted">{{ record.productName || '等待产品信息' }}</small></div></template></a-table-column>
@@ -160,18 +163,18 @@ onMounted(loadPage)
           <a-table-column title="操作" :width="120"><template #cell="{ record }"><a-button type="text" size="small" @click.stop="copyPlan(record)">复制</a-button></template></a-table-column>
         </template>
       </a-table>
-      <a-empty v-if="!loading && !records.length" description="暂无生产计划"><template #extra><a-space wrap><a-button @click="router.push('/eve/industry/opportunities')">先查看机会</a-button><a-button type="primary" @click="openCreate">从机会创建计划</a-button></a-space></template></a-empty>
+      <a-empty v-if="!loading && !records.length"><p>暂无生产计划</p><a-space wrap><a-button @click="router.push('/eve/industry/opportunities')">先查看机会</a-button><a-button type="primary" @click="openCreate">从机会创建计划</a-button></a-space></a-empty>
     </IndustryPanel>
-    <a-drawer v-model:visible="detailVisible" :width="520" title="计划详情" unmount-on-close>
+    <a-drawer v-model:visible="detailVisible" :width="detailDrawerWidth" title="计划详情" unmount-on-close>
       <template v-if="selected">
         <div class="plan-detail__headline"><div><h2>{{ selected.name }}</h2><span>{{ selected.productName || '未关联产品' }}</span></div><a-tag :color="statusColor(selected.status)">{{ statusLabel(selected.status) }}</a-tag></div>
-        <a-space wrap class="plan-detail__actions"><a-select :model-value="selected.status" :loading="saving" @change="changeStatus"><a-option v-for="status in statusOptions" :key="status" :value="status">{{ statusLabel(status) }}</a-option></a-select><a-button :loading="saving" @click="recalculate">恢复来源快照</a-button></a-space>
+        <a-space wrap class="plan-detail__actions"><a-select :model-value="selected.status" :loading="saving" @change="changeStatus"><a-option v-for="status in statusOptions" :key="status" :value="status">{{ statusLabel(status) }}</a-option></a-select><a-button :loading="saving" :disabled="selected.status !== 'DRAFT'" @click="recalculate">恢复原始估算</a-button></a-space>
         <section class="plan-detail__summary"><article><span>目标产量</span><strong>{{ selected.targetQuantity?.toLocaleString() || '—' }}</strong></article><article><span>预计投入</span><strong>{{ formatIndustryIsk(selected.totalCost) }}</strong></article><article><span>预计利润</span><strong>{{ formatIndustryIsk(selected.expectedProfit) }}</strong></article></section>
         <IndustryPanel title="材料采购" description="每次按无库存、吉他海四市场购买。" flush><a-table :data="selected.materials || []" :pagination="false" :scroll="{ x: 480 }"><template #columns><a-table-column title="材料" data-index="name" /><a-table-column title="需求量" data-index="requiredQuantity" align="right" /><a-table-column title="采购成本" align="right"><template #cell="{ record }">{{ formatIndustryIsk(record.purchaseCost) }}</template></a-table-column></template></a-table></IndustryPanel>
-        <IndustryPanel class="plan-detail__steps" title="执行步骤" flush><a-timeline><a-timeline-item v-for="step in selected.steps || []" :key="step.id || `${step.sequence}-${step.name}`"><strong>{{ step.name }}</strong><span class="muted">{{ statusLabel(step.status) }} · {{ step.stepType }}</span></a-timeline-item></a-timeline><a-empty v-if="!selected.steps?.length" description="暂无步骤数据" /></IndustryPanel>
+        <IndustryPanel class="plan-detail__steps" title="执行步骤" flush><a-timeline><a-timeline-item v-for="step in selected.steps || []" :key="step.id || `${step.sequence}-${step.name}`"><strong>{{ step.name }}</strong><span class="muted">{{ statusLabel(step.status) }} · {{ industryStepLabel(step.stepType) }}</span></a-timeline-item></a-timeline><a-empty v-if="!selected.steps?.length" description="暂无步骤数据" /></IndustryPanel>
       </template>
     </a-drawer>
-    <a-modal v-model:visible="createVisible" title="从机会创建生产计划" :ok-loading="saving" @ok="savePlan"><a-form :model="form" layout="vertical"><a-form-item field="opportunityId" label="可执行工业机会" required><a-select v-model="form.opportunityId" placeholder="选择可执行机会" @change="useOpportunity"><a-option v-for="item in executableOpportunities" :key="item.id" :value="item.id">{{ item.productName }} · {{ item.recommendedQuantity.toLocaleString() }}</a-option></a-select></a-form-item><a-form-item v-if="selectedOpportunity" label="固化批量"><a-input :model-value="`${selectedOpportunity.recommendedRuns} 流程 / ${selectedOpportunity.recommendedQuantity.toLocaleString()} 件`" disabled /><template #extra>当前计划严格复用机会快照批量，避免材料、订单档位和利润口径失真。</template></a-form-item><a-form-item field="name" label="计划名称" required><a-input v-model="form.name" placeholder="例如：月度护卫舰生产" /></a-form-item></a-form></a-modal>
+    <a-modal v-model:visible="createVisible" title="从机会创建生产计划" :ok-loading="saving" @ok="savePlan"><a-form :model="form" layout="vertical"><a-form-item field="opportunityId" label="生产机会" required><a-select v-model="form.opportunityId" placeholder="选择可加入计划的结果" @change="useOpportunity"><a-option v-for="item in executableOpportunities" :key="item.id" :value="item.id">{{ item.productName }} · {{ item.recommendedQuantity.toLocaleString() }} 件</a-option></a-select></a-form-item><a-form-item v-if="selectedOpportunity" label="计划产量"><a-input :model-value="`生产 ${selectedOpportunity.recommendedRuns} 次，共 ${selectedOpportunity.recommendedQuantity.toLocaleString()} 件`" disabled /><template #extra>产量沿用本次分析结果；需要调整时，请重新分析后创建计划。</template></a-form-item><a-form-item field="name" label="计划名称" required><a-input v-model="form.name" placeholder="例如：月度护卫舰生产" /></a-form-item></a-form></a-modal>
   </main>
 </template>
 

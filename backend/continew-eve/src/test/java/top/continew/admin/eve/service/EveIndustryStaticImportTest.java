@@ -46,6 +46,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /** 规范化工业静态数据导入的全量校验与安全状态测试。 */
 @ExtendWith(MockitoExtension.class)
@@ -81,6 +82,22 @@ class EveIndustryStaticImportTest {
     private ObjectMapper objectMapper = new ObjectMapper();
     @InjectMocks
     private EveIndustryService service;
+
+    /** 缺少配方时给出玩家可直接定位的补齐入口。 */
+    @Test
+    void shouldExplainMissingBlueprintDataInChinese() {
+        when(blueprintMapper.selectCount(any())).thenReturn(0L);
+
+        assertThat(service.dataStatus().message()).contains("数据与校验", "同步公开蓝图").doesNotContain("可执行", "SCI");
+    }
+
+    /** 配方可用不代表所有设施与行情已就绪，提示仍需选择生产条件。 */
+    @Test
+    void shouldDescribeAvailableBlueprintsWithoutPromisingProductionReadiness() {
+        when(blueprintMapper.selectCount(any())).thenReturn(2L, 1L);
+
+        assertThat(service.dataStatus().message()).contains("生产配置", "设施", "分析利润");
+    }
 
     @Test
     void shouldImportValidatedJsonAsPendingBlueprint() {

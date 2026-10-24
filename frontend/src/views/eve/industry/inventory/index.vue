@@ -11,15 +11,15 @@ const activeTab = ref('purchase')
 
 const purchaseRules = [
   ['材料来源', '吉他贸易中心 · 吉他海四空间站'],
-  ['库存口径', '不计已有原材料，每次从零开始采购'],
-  ['采购价格', '按订单簿逐档填充，优先使用卖单深度'],
+  ['已有库存', '不扣除仓库里的材料，全部按市场采购估算'],
+  ['采购价格', '从最低价卖单开始，按所需数量依次买入'],
   ['运输成本', '固定按 0 处理'],
 ]
 </script>
 
 <template>
   <main class="industry-inventory-page gi_page">
-    <IndustryPageHeader eyebrow="INDUSTRY · MATERIALS" title="库存与材料" description="查看工业计算采用的采购口径，并为后续接入人工库存和 ESI 资产预留统一入口。">
+    <IndustryPageHeader eyebrow="工业生产" title="库存与材料" description="所有材料费用按吉他海四市场采购估算，已有库存暂不参与抵扣。">
       <template #actions>
         <a-button @click="router.push('/eve/industry/opportunities')">机会分析</a-button>
         <a-button type="primary" @click="router.push('/eve/market')">打开吉他市场</a-button>
@@ -32,23 +32,23 @@ const purchaseRules = [
 
     <IndustryPanel class="industry-inventory-page__panel" flush>
       <a-tabs v-model:active-key="activeTab" lazy-load>
-        <a-tab-pane key="purchase" title="材料采购口径">
+        <a-tab-pane key="purchase" title="材料采购规则">
           <div class="industry-inventory-page__rules">
             <article v-for="item in purchaseRules" :key="item[0]"><span>{{ item[0] }}</span><strong>{{ item[1] }}</strong></article>
           </div>
-          <a-alert class="industry-inventory-page__tip" type="info" show-icon>机会分析和蓝图计算会展示每种材料的需求数量、成交均价、逐档采购成本和订单深度状态。</a-alert>
+          <a-alert class="industry-inventory-page__tip" type="info" show-icon>材料费用取决于当前卖单价格和可购数量；低价卖单不足时，会继续按更高价的卖单估算。</a-alert>
         </a-tab-pane>
         <a-tab-pane key="manual" title="人工库存">
-          <a-empty description="尚未启用人工库存抵扣"><template #extra><a-button type="primary" @click="router.push('/eve/industry/config')">维护工业配置</a-button></template></a-empty>
+          <a-empty description="暂不支持手动录入库存抵扣材料费用" />
         </a-tab-pane>
-        <a-tab-pane key="esi" title="ESI 资产">
-          <a-empty description="ESI 资产同步与工业成本抵扣尚未接入"><template #extra><a-space wrap><a-button type="primary" @click="router.push('/eve/assets')">查看军团资产</a-button><a-button @click="router.push('/eve/industry/opportunities')">返回机会分析</a-button></a-space></template></a-empty>
+        <a-tab-pane key="esi" title="游戏内资产">
+          <a-empty><p>军团资产暂不抵扣工业材料费用</p><a-space wrap><a-button type="primary" @click="router.push('/eve/assets')">查看军团资产</a-button><a-button @click="router.push('/eve/industry/opportunities')">返回机会分析</a-button></a-space></a-empty>
         </a-tab-pane>
       </a-tabs>
     </IndustryPanel>
 
-    <IndustryPanel title="材料数据流" description="库存接入后仍会保留采购口径和来源追踪，便于解释每次利润计算。">
-      <div class="industry-inventory-page__flow" aria-label="材料数据流"><span>蓝图需求</span><i>→</i><span>吉他卖单深度</span><i>→</i><span>逐档采购成本</span><i>→</i><span>制造总投入</span></div>
+    <IndustryPanel title="材料费用构成" description="材料采购总价与安装费相加，得到预计总投入。">
+      <div class="industry-inventory-page__flow" aria-label="材料费用构成"><span>蓝图所需材料</span><i>→</i><span>吉他现有卖单</span><i>→</i><span>材料采购总价</span><i>→</i><span>预计总投入</span></div>
     </IndustryPanel>
   </main>
 </template>

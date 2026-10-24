@@ -290,7 +290,7 @@ public class EveIndustryService {
     @Transactional(rollbackFor = Exception.class)
     public EveIndustryBlueprintOverrideDO saveBlueprintOverride(Long id, EveIndustryBlueprintOverrideReq req) {
         if ("BPC".equals(req.blueprintKind()) && (req.remainingRuns() == null || req.remainingRuns() < 1)) {
-            throw new BusinessException("BPC 必须填写正数剩余流程数");
+            throw new BusinessException("蓝图拷贝的剩余生产次数必须大于 0");
         }
         EveIndustryBlueprintOverrideDO entity = id == null
             ? new EveIndustryBlueprintOverrideDO()
@@ -409,7 +409,7 @@ public class EveIndustryService {
             throw new BusinessException("工业静态数据来源只允许 SERENITY_EXPORT、TRANQUILITY_SDE 或 CEVE_INDUSTRY_PUBLIC");
         }
         if ("SERENITY_EXPORT".equals(normalizedSource) && (serverVersion == null || serverVersion.isBlank())) {
-            throw new BusinessException("国服静态导出必须填写 serverVersion");
+            throw new BusinessException("导入国服数据时必须填写国服游戏版本");
         }
         String sha256 = sha256(content);
         EveIndustryStaticVersionDO duplicate = staticVersionMapper
@@ -524,16 +524,16 @@ public class EveIndustryService {
         EveIndustryConfigDO config = configMapper.selectById(req.configId());
         EveIndustryFacilityProfileDO facility = facilityMapper.selectById(req.facilityId());
         if (blueprint == null || config == null || facility == null) {
-            throw new BusinessException("Golden Case 关联的蓝图、生产配置或设施不存在");
+            throw new BusinessException("游戏内对照记录关联的蓝图、生产配置或设施不存在");
         }
         if (!currentTenantId().equals(config.getTenantId()) || !currentTenantId().equals(facility.getTenantId())) {
-            throw new BusinessException("Golden Case 关联的配置或设施不属于当前租户");
+            throw new BusinessException("游戏内对照记录关联的生产配置或设施不属于当前军团");
         }
         BigDecimal sci = "REACTION".equals(blueprint.getActivity())
             ? facility.getReactionSci()
             : facility.getManufacturingSci();
         if (sci == null) {
-            throw new BusinessException("Golden Case 校验前必须同步或填写该活动的星系成本指数");
+            throw new BusinessException("核对游戏内数据前，请先同步或填写对应生产类型的星系成本指数");
         }
         Map<Integer, BigDecimal> adjustedPrices = req.adjustedPrices() == null
             ? currentAdjustedPrices()
@@ -544,7 +544,7 @@ public class EveIndustryService {
             .filter(typeId -> adjustedPrices.get(typeId) == null)
             .toList();
         if (!missingPrices.isEmpty()) {
-            throw new BusinessException("Golden Case 缺少材料 adjusted price：" + missingPrices);
+            throw new BusinessException("缺少计算安装费所需的官方参考价，材料编号：" + missingPrices);
         }
         BigDecimal skillTimeMultiplier = jsonDecimal(config
             .getProductionSkillJson(), "timeMultiplier", DEFAULT_SKILL_MULTIPLIER);
@@ -642,12 +642,12 @@ public class EveIndustryService {
                 .toList(), quantity);
             boolean complete = fill.filledQuantity() >= quantity;
             if (!complete) {
-                warnings.add("材料订单深度不足：" + material.name());
+                warnings.add("市场上可购买的材料数量不足：" + material.name());
             }
             materialCost = materialCost.add(fill.total());
             BigDecimal adjustedPrice = adjustedPrices.get(material.typeId());
             if (adjustedPrice == null) {
-                warnings.add("缺少材料 adjusted price：" + material.typeId());
+                warnings.add("缺少计算安装费所需的官方参考价，材料编号：" + material.typeId());
             } else {
                 eiv = eiv.add(material.quantity().multiply(BigDecimal.valueOf(req.runs())).multiply(adjustedPrice));
             }
@@ -658,7 +658,7 @@ public class EveIndustryService {
             ? facility.getReactionSci()
             : facility.getManufacturingSci();
         if (sci == null) {
-            warnings.add("未配置该生产星系的 SCI");
+            warnings.add("未填写生产星系的成本指数，安装费估算可能偏低");
             sci = BigDecimal.ZERO;
         }
         BigDecimal install = EveIndustryCalculator.installationCost(eiv, sci, facility.getCostMultiplier(), facility
@@ -676,7 +676,7 @@ public class EveIndustryService {
         BigDecimal immediateRevenue = immediate.total().multiply(BigDecimal.ONE.subtract(salesTax));
         BigDecimal sellRevenue = sellOrder.total().multiply(BigDecimal.ONE.subtract(salesTax).subtract(brokerFee));
         if (immediate.filledQuantity() < productQuantity || sellOrder.filledQuantity() < productQuantity) {
-            warnings.add("产品订单深度不足");
+            warnings.add("产品的市场挂单数量不足，收入与利润估算可能不完整");
         }
         BigDecimal totalCost = materialCost.add(install);
         return new EveIndustryCalculationResp(blueprint.getId(), blueprint.getBlueprintName(), blueprint
@@ -736,7 +736,7 @@ public class EveIndustryService {
             throw new BusinessException("工业机会不存在或不属于当前租户");
         }
         if (!"EXECUTABLE".equals(opportunity.getStatus())) {
-            throw new BusinessException("只有可执行机会才能创建生产计划");
+            throw new BusinessException("这条结果暂不能加入计划，请先补齐蓝图、行情或设施数据");
         }
         EveIndustryBlueprintDO blueprint = blueprintMapper.selectById(opportunity.getBlueprintId());
         EveIndustryConfigDO config = configMapper.selectById(opportunity.getConfigId());
@@ -750,10 +750,10 @@ public class EveIndustryService {
         }
         int runs = req.runs() == null || req.runs() < 1 ? opportunity.getRecommendedRuns() : req.runs();
         if (runs < 1) {
-            throw new BusinessException("计划流程数必须大于 0");
+            throw new BusinessException("计划生产次数必须大于 0");
         }
         if (!Integer.valueOf(runs).equals(opportunity.getRecommendedRuns())) {
-            throw new BusinessException("当前计划只能固化机会推荐流程数，请重新扫描后再调整批量");
+            throw new BusinessException("计划生产次数必须与分析结果一致；需要调整时，请重新分析后创建计划");
         }
         EveIndustryPlanDO plan = new EveIndustryPlanDO();
         plan.setTenantId(currentTenantId());
@@ -1010,7 +1010,7 @@ public class EveIndustryService {
                 .orderByDesc(EveIndustryStaticVersionDO::getDownloadedAt)
                 .last("LIMIT 1"));
         long market = marketSnapshotMapper.selectCount(null);
-        String message = validated == 0 ? "尚未同步公开蓝图或导入国服工业配方；当前只能配置数据，不能生成正式机会" : "工业数据已具备可执行配方";
+        String message = validated == 0 ? "还没有可用的蓝图配方，请先在“数据与校验”同步公开蓝图或导入国服配方" : "已有可用蓝图配方，可选择生产配置和设施分析利润";
         return new EveIndustryDataStatusResp(all, validated, latest == null
             ? null
             : latest.getDownloadedAt(), market, message);

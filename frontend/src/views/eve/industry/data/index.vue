@@ -4,6 +4,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import IndustryPageHeader from '../components/IndustryPageHeader.vue'
 import IndustryPanel from '../components/IndustryPanel.vue'
+import { industryActivityLabel, industrySourceLabel, industryValidationLabel } from '../shared/format'
 import { formatEveTime } from '@/utils/eveTime'
 import {
   type EveIndustryBlueprint,
@@ -72,7 +73,7 @@ async function syncBlueprints() {
   syncing.value = true
   try {
     const { data } = await syncEveIndustryPublicBlueprints()
-    Message.success(data.imported ? `已同步 ${data.activityCount.toLocaleString()} 条工业活动` : '公开蓝图未变化')
+    Message.success(data.imported ? `已同步 ${data.activityCount.toLocaleString()} 条生产配方` : '公开蓝图已是最新')
     await loadPage()
   } finally {
     syncing.value = false
@@ -90,7 +91,7 @@ function importStaticData(options: RequestOption) {
         const first = response.data.errors[0]
         Message.error(`导入校验失败：${first.line ? `第 ${first.line} 行 ` : ''}${first.message}`)
       } else {
-        Message.success(response.data.imported ? `已导入 ${response.data.activityCount} 项工业活动` : '相同文件已存在')
+        Message.success(response.data.imported ? `已导入 ${response.data.activityCount} 条生产配方` : '该文件已导入，无需重复上传')
         importModal.value = false
         await loadPage()
       }
@@ -110,12 +111,12 @@ async function saveGoldenCase() {
     const adjustedPrices = Object.keys(adjustedPriceObject).length ? adjustedPriceObject : undefined
     const { data } = await createEveIndustryGoldenCase({ ...goldenForm, expectedMaterials, adjustedPrices })
     Message[data.validationStatus === 'PASSED' ? 'success' : 'warning'](
-      data.validationStatus === 'PASSED' ? 'Golden Case 校验通过' : `存在差异：${data.validationDetails.join('；')}`,
+      data.validationStatus === 'PASSED' ? '计算结果与游戏内数据一致' : `与游戏内数据存在差异：${data.validationDetails.join('；')}`,
     )
     goldenModal.value = false
     await loadPage()
   } catch (error) {
-    if (error instanceof SyntaxError) Message.error('材料或 adjusted price JSON 格式不正确')
+    if (error instanceof SyntaxError) Message.error('材料清单或官方参考价的数据格式不正确，请检查 JSON')
     else throw error
   } finally {
     goldenSaving.value = false
@@ -128,23 +129,23 @@ onMounted(loadPage)
 <template>
   <main class="industry-data-page gi_page">
     <IndustryPageHeader
-      eyebrow="INDUSTRY · DATA GOVERNANCE"
+      eyebrow="工业生产"
       title="数据与校验"
-      description="查看蓝图版本、市场覆盖和国服实机回归结果，保证工业利润能够追溯到具体数据来源和计算输入。"
+      description="查看蓝图数据来源，并将计算结果与国服游戏内的材料、耗时和安装费进行对照。"
     >
       <template #actions>
         <a-button @click="router.push('/eve/industry/opportunities')">返回机会分析</a-button>
         <a-button @click="importModal = true">导入工业配方</a-button>
-        <a-button @click="goldenModal = true">录入 Golden Case</a-button>
+        <a-button @click="goldenModal = true">添加游戏内对照</a-button>
         <a-button type="primary" :loading="syncing" @click="syncBlueprints">同步公开蓝图</a-button>
       </template>
     </IndustryPageHeader>
 
     <section class="industry-data-page__summary" aria-label="工业数据状态">
-      <article><span>工业活动</span><strong>{{ status?.blueprintCount ?? 0 }}</strong><small>已导入蓝图活动</small></article>
-      <article><span>已校验配方</span><strong>{{ status?.validatedBlueprintCount ?? 0 }}</strong><small>可进入正式计算</small></article>
-      <article><span>市场快照</span><strong>{{ status?.marketSnapshotCount ?? 0 }}</strong><small>吉他行情覆盖</small></article>
-      <article><span>Golden Case</span><strong>{{ goldenCases.length }}</strong><small>{{ goldenCases.filter((item) => item.validationStatus === 'PASSED').length }} 条通过</small></article>
+      <article><span>生产配方</span><strong>{{ status?.blueprintCount ?? 0 }}</strong><small>已收录的蓝图生产数据</small></article>
+      <article><span>已校验配方</span><strong>{{ status?.validatedBlueprintCount ?? 0 }}</strong><small>可用于利润分析</small></article>
+      <article><span>已有行情的物品</span><strong>{{ status?.marketSnapshotCount ?? 0 }}</strong><small>已保存的吉他行情</small></article>
+      <article><span>游戏内对照记录</span><strong>{{ goldenCases.length }}</strong><small>{{ goldenCases.filter((item) => item.validationStatus === 'PASSED').length }} 条结果一致</small></article>
     </section>
 
     <a-alert class="industry-data-page__notice" :type="status?.validatedBlueprintCount ? 'info' : 'warning'" show-icon>
@@ -152,56 +153,58 @@ onMounted(loadPage)
     </a-alert>
 
     <div class="industry-data-page__grid">
-      <IndustryPanel title="蓝图数据版本" description="每次同步或导入都保存来源、时间与 SHA-256，不覆盖历史批次。" flush>
+      <IndustryPanel title="蓝图数据版本" description="保留每批蓝图的来源与导入时间。" flush>
         <a-table :data="versions" :loading="loading" :pagination="false" row-key="id" :scroll="{ x: 760 }">
           <template #columns>
-            <a-table-column title="来源" data-index="source" :width="190" />
+            <a-table-column title="来源" :width="190"><template #cell="{ record }">{{ industrySourceLabel(record.source) }}</template></a-table-column>
             <a-table-column title="版本" :width="160"><template #cell="{ record }">{{ record.serverVersion || record.schemaVersion || '未填写' }}</template></a-table-column>
-            <a-table-column title="状态" :width="110"><template #cell="{ record }"><a-tag :color="record.validationStatus === 'VALIDATED' ? 'green' : record.validationStatus === 'REJECTED' ? 'red' : 'orange'">{{ record.validationStatus }}</a-tag></template></a-table-column>
-            <a-table-column title="SHA-256" data-index="sha256" :width="220" ellipsis tooltip />
+            <a-table-column title="状态" :width="110"><template #cell="{ record }"><a-tag :color="record.validationStatus === 'VALIDATED' ? 'green' : record.validationStatus === 'REJECTED' ? 'red' : 'orange'">{{ industryValidationLabel(record.validationStatus) }}</a-tag></template></a-table-column>
+            <a-table-column title="文件校验码" data-index="sha256" :width="220" ellipsis tooltip />
             <a-table-column title="导入时间" :width="160"><template #cell="{ record }">{{ formatEveTime(record.downloadedAt) }}</template></a-table-column>
           </template>
         </a-table>
         <a-empty v-if="!loading && !versions.length" description="尚未同步或导入工业配方" />
       </IndustryPanel>
 
-      <IndustryPanel title="Golden Case" description="差异只用于回归和风险展示，不阻断已采用规则的试算。" flush>
-        <a-table :data="goldenCases" :loading="loading" :pagination="false" row-key="id" :scroll="{ x: 720 }">
+      <IndustryPanel title="游戏内对照记录" description="记录估算与游戏内数值的差异；存在差异时仍可估算，不代表结果已被验证准确。" flush>
+        <a-table :data="goldenCases" :loading="loading" :pagination="false" row-key="id" :scroll="{ x: 980 }">
           <template #columns>
             <a-table-column title="样例" :width="230"><template #cell="{ record }"><strong>{{ record.name }}</strong><small class="industry-data-page__muted">{{ record.blueprintName || '蓝图' }}</small></template></a-table-column>
-            <a-table-column title="状态" :width="100"><template #cell="{ record }"><a-tag :color="record.validationStatus === 'PASSED' ? 'green' : record.validationStatus === 'FAILED' ? 'red' : 'orange'">{{ record.validationStatus }}</a-tag></template></a-table-column>
-            <a-table-column title="流程 / ME / TE" :width="140"><template #cell="{ record }">{{ record.runs }} / {{ record.materialEfficiency }} / {{ record.timeEfficiency }}</template></a-table-column>
-            <a-table-column title="差异" :width="260" ellipsis tooltip><template #cell="{ record }">{{ record.validationDetails.join('；') || '材料、时间与安装费均在容差内' }}</template></a-table-column>
+            <a-table-column title="状态" :width="110"><template #cell="{ record }"><a-tag :color="record.validationStatus === 'PASSED' ? 'green' : record.validationStatus === 'FAILED' ? 'red' : 'orange'">{{ industryValidationLabel(record.validationStatus) }}</a-tag></template></a-table-column>
+            <a-table-column title="生产次数" :width="100"><template #cell="{ record }">{{ record.runs }}</template></a-table-column>
+            <a-table-column title="材料效率" :width="120"><template #cell="{ record }">{{ record.materialEfficiency }}%</template></a-table-column>
+            <a-table-column title="时间效率" :width="120"><template #cell="{ record }">{{ record.timeEfficiency }}%</template></a-table-column>
+            <a-table-column title="差异" :width="260" ellipsis tooltip><template #cell="{ record }">{{ record.validationDetails.join('；') || (record.validationStatus === 'PASSED' ? '材料、耗时与安装费均在允许误差内' : '等待核对结果') }}</template></a-table-column>
           </template>
         </a-table>
         <a-empty v-if="!loading && !goldenCases.length" description="尚未录入国服游戏内校验样例" />
       </IndustryPanel>
     </div>
 
-    <a-modal v-model:visible="importModal" title="导入规范化工业配方" :footer="false">
+    <a-modal v-model:visible="importModal" modal-class="industry-data-modal" title="导入工业配方" :footer="false">
       <a-alert type="warning" show-icon>手工导入用于覆盖或补充公开蓝图；建议优先使用公开蓝图同步。</a-alert>
       <a-form :model="importForm" layout="vertical">
-        <a-form-item label="数据来源"><a-select v-model="importForm.source"><a-option value="SERENITY_EXPORT">国服版本对应导出</a-option><a-option value="TRANQUILITY_SDE">国际服 SDE 候选回退</a-option></a-select></a-form-item>
-        <a-form-item label="国服 server version"><a-input v-model="importForm.serverVersion" /></a-form-item>
+        <a-form-item label="数据来源"><a-select v-model="importForm.source"><a-option value="SERENITY_EXPORT">国服导出数据</a-option><a-option value="TRANQUILITY_SDE">国际服参考数据（需核对国服）</a-option></a-select></a-form-item>
+        <a-form-item label="国服游戏版本"><a-input v-model="importForm.serverVersion" /></a-form-item>
         <a-form-item label="构建号"><a-input-number v-model="importForm.buildNumber" :min="1" /></a-form-item>
-        <a-form-item label="Schema 版本"><a-input v-model="importForm.schemaVersion" /></a-form-item>
+        <a-form-item label="导入文件格式版本"><a-input v-model="importForm.schemaVersion" /></a-form-item>
       </a-form>
       <a-upload accept=".json,.jsonl" :show-file-list="false" :custom-request="importStaticData">
         <a-button long type="primary" :loading="importing"><template #icon><icon-upload /></template>选择 JSON / JSONL 并导入</a-button>
       </a-upload>
     </a-modal>
 
-    <a-modal v-model:visible="goldenModal" title="录入国服 Golden Case" :ok-loading="goldenSaving" @ok="saveGoldenCase">
-      <a-alert type="info" show-icon>录入游戏内工业窗口显示的实际材料、任务秒数和安装费，系统会保存输入快照并立即对账。</a-alert>
+    <a-modal v-model:visible="goldenModal" modal-class="industry-data-modal" title="添加游戏内对照" :ok-loading="goldenSaving" @ok="saveGoldenCase">
+      <a-alert type="info" show-icon>以国服工业窗口显示的材料数量、生产耗时和安装费为准，核对当前估算是否一致。</a-alert>
       <a-form :model="goldenForm" layout="vertical">
         <a-form-item label="样例名称"><a-input v-model="goldenForm.name" /></a-form-item>
-        <a-form-item label="蓝图"><a-select v-model="goldenForm.blueprintId" allow-search><a-option v-for="item in blueprints" :key="item.id" :value="item.id">{{ item.productName }} · {{ item.activity }} · {{ item.blueprintName }}</a-option></a-select></a-form-item>
+        <a-form-item label="蓝图"><a-select v-model="goldenForm.blueprintId" allow-search><a-option v-for="item in blueprints" :key="item.id" :value="item.id">{{ item.productName }} · {{ industryActivityLabel(item.activity) }} · {{ item.blueprintName }}</a-option></a-select></a-form-item>
         <a-form-item label="生产配置"><a-select v-model="goldenForm.configId"><a-option v-for="item in configs" :key="item.id" :value="item.id">{{ item.name }}</a-option></a-select></a-form-item>
         <a-form-item label="生产设施"><a-select v-model="goldenForm.facilityId"><a-option v-for="item in facilities" :key="item.id" :value="item.id">{{ item.name }} · {{ item.systemName || item.systemId }}</a-option></a-select></a-form-item>
-        <a-space fill><a-form-item label="流程数"><a-input-number v-model="goldenForm.runs" :min="1" /></a-form-item><a-form-item label="ME"><a-input-number v-model="goldenForm.materialEfficiency" :min="0" :max="10" /></a-form-item><a-form-item label="TE"><a-input-number v-model="goldenForm.timeEfficiency" :min="0" :max="20" /></a-form-item></a-space>
-        <a-form-item label="实际材料 JSON"><a-textarea v-model="goldenForm.expectedMaterialsJson" :auto-size="{ minRows: 3, maxRows: 6 }" /></a-form-item>
+        <a-space fill><a-form-item label="生产次数"><a-input-number v-model="goldenForm.runs" :min="1" /></a-form-item><a-form-item label="材料效率（%）"><a-input-number v-model="goldenForm.materialEfficiency" :min="0" :max="10" /></a-form-item><a-form-item label="时间效率（%）"><a-input-number v-model="goldenForm.timeEfficiency" :min="0" :max="20" /></a-form-item></a-space>
+        <a-form-item label="游戏内材料清单（JSON）"><a-textarea v-model="goldenForm.expectedMaterialsJson" :auto-size="{ minRows: 3, maxRows: 6 }" /></a-form-item>
         <a-space fill><a-form-item label="实际时间（秒）"><a-input-number v-model="goldenForm.expectedTimeSeconds" :min="0" /></a-form-item><a-form-item label="实际安装费"><a-input-number v-model="goldenForm.expectedInstallCost" :min="0" /></a-form-item></a-space>
-        <a-form-item label="材料 adjusted price JSON（可选）"><a-textarea v-model="goldenForm.adjustedPricesJson" :auto-size="{ minRows: 2, maxRows: 5 }" /></a-form-item>
+        <a-form-item label="安装费计算用官方参考价（JSON，可选）"><a-textarea v-model="goldenForm.adjustedPricesJson" :auto-size="{ minRows: 2, maxRows: 5 }" /></a-form-item>
       </a-form>
     </a-modal>
   </main>
@@ -272,5 +275,18 @@ onMounted(loadPage)
   .industry-data-page__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+</style>
+
+<style lang="scss">
+.industry-data-modal {
+  width: min(36rem, calc(100vw - 2rem));
+
+  .arco-space-item, .arco-form-item, .arco-select, .arco-input-number { min-width: 0; width: 100%; }
+  .arco-space-horizontal { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem; }
+}
+
+@media (min-width: 600px) {
+  .industry-data-modal .arco-space-horizontal { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>

@@ -43,12 +43,12 @@ defineProps<Props>()
   color: rgb(var(--arcoblue-6));
   font-family: DINPro, sans-serif;
   font-size: .6875rem;
-  letter-spacing: .14em;
+  letter-spacing: 0;
 }
 
 .industry-page-header h1 {
   margin: .25rem 0;
-  font-size: clamp(1.5rem, 5vw, 1.85rem);
+  font-size: 1.5rem;
   text-wrap: balance;
 }
 
