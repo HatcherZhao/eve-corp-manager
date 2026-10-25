@@ -90,6 +90,29 @@ class EveMarketServiceTest {
         verifyNoInteractions(esiClient);
     }
 
+    /** 报价超过三十分钟必须标记过期，页面读取仍不能绕过后台同步访问官方接口。 */
+    @Test
+    void shouldMarkQuoteOlderThanThirtyMinutesStale() {
+        SerenityEsiClient esiClient = mock(SerenityEsiClient.class);
+        EveMarketSnapshotMapper mapper = mock(EveMarketSnapshotMapper.class);
+        EveStaticReferenceService references = mock(EveStaticReferenceService.class);
+        when(references.findTypes(java.util.Set.of(34))).thenReturn(Map.of(34, type(34)));
+        EveMarketSnapshotDO snapshot = new EveMarketSnapshotDO();
+        snapshot.setTypeId(34);
+        snapshot.setHighestBuyPrice(new BigDecimal("8.52"));
+        snapshot.setLowestSellPrice(new BigDecimal("9.09"));
+        snapshot.setQuoteSynchronizedAt(LocalDateTime.now().minusMinutes(31));
+        snapshot.setDetailSynchronizedAt(snapshot.getQuoteSynchronizedAt());
+        when(mapper.selectById(34)).thenReturn(snapshot);
+
+        EveMarketDetailResp detail = service(mapper, references, esiClient).detail(34);
+
+        assertThat(detail.quote().stale()).isTrue();
+        assertThat(detail.quote().freshnessExpiresAt()).isEqualTo(snapshot.getQuoteSynchronizedAt().plusMinutes(30));
+        assertThat(detail.servedFromCache()).isTrue();
+        verifyNoInteractions(esiClient);
+    }
+
     /** 完整区域订单读取后仅保留吉他星系订单，并从订单簿计算估值报价。 */
     @Test
     void shouldSynchronizeJitaOrdersThroughOfficialEsi() {

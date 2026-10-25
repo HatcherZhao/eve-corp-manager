@@ -52,8 +52,8 @@ public class EveMarketSyncJob {
     private final RedissonClient redissonClient;
     private final EveMarketProperties properties;
 
-    /** 默认每三十分钟完整同步一次 The Forge 订单目录。 */
-    @Scheduled(initialDelayString = "${eve.market.order-sync-initial-delay:PT90S}", fixedDelayString = "${eve.market.order-sync-interval:PT30M}")
+    /** 每分钟检查共享到期门禁，真实抓取仍间隔十五分钟，并尊重官方缓存与失败退避。 */
+    @Scheduled(initialDelayString = "${eve.market.order-sync-initial-delay:PT90S}", fixedDelayString = "${eve.market.order-sync-scan-interval:PT1M}")
     public void synchronizeMarketOrders() {
         runGuarded(ORDER_SYNC_LOCK, properties.getOrderSyncInterval(), marketService::synchronizeMarketOrders);
     }
@@ -73,6 +73,10 @@ public class EveMarketSyncJob {
             if (nextAt != null && nextAt > System.currentTimeMillis()) {
                 return;
             }
+            // 先预留共享周期；写入失败则不抓取，完成写入瞬断时也不在下一分钟重复整轮工作。
+            // 更长的官方 Expires 仍由逐页响应缓存独立保护。
+            nextRun.set(System.currentTimeMillis() + interval.toMillis(), interval.plusHours(1)
+                .toMillis(), TimeUnit.MILLISECONDS);
             long dueAt;
             try {
                 LocalDateTime sourceExpiresAt = synchronize.get();

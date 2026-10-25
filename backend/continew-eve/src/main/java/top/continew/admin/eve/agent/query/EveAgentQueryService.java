@@ -605,7 +605,7 @@ public class EveAgentQueryService {
         throw new IllegalArgumentException("该数据集不支持正文读取: " + dataset.key());
     }
 
-    /** 返回分页、缓存来源和缺失原因，不把空缓存描述为实时结果。 */
+    /** 返回分页、查询时刻和缓存来源；查询时刻不是快照刷新时间。 */
     private Map<String, Object> pageResult(Dataset dataset,
                                            int page,
                                            int size,
@@ -621,6 +621,7 @@ public class EveAgentQueryService {
         result.put("hasMore", (long)page * size < total);
         result.put("source", "local_database_cache");
         result.put("cacheOnly", true);
+        result.put("queriedAt", TIME_FORMATTER.format(OffsetDateTime.now(BEIJING_ZONE)));
         result.put("cacheMissingReason", total == 0 && !constrained ? "当前授权军团尚无本地缓存记录" : null);
         return result;
     }

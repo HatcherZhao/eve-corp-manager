@@ -183,6 +183,9 @@ public class EveSyncJobService {
             nextRunAt = sourceExpiresAt;
         }
         LocalDateTime cooldownUntil = finishedAt.plus(MINIMUM_MANUAL_COOLDOWN);
+        if (sourceExpiresAt != null && sourceExpiresAt.isAfter(cooldownUntil)) {
+            cooldownUntil = sourceExpiresAt;
+        }
         ensureJobs(tenantId, targetType, targetRefId, List.of(module), nextRunAt);
         syncJobMapper
             .completeManualSuccess(tenantId, targetType, targetRefId, module, finishedAt, nextRunAt, cooldownUntil);
@@ -215,6 +218,33 @@ public class EveSyncJobService {
         LocalDateTime cooldownUntil = permanentAuthorizationFailure ? null : nextRunAt;
         return syncJobMapper.completeFailure(job.getId(), job.getTenantId(), job
             .getClaimToken(), state, finishedAt, nextRunAt, cooldownUntil, consecutiveFailures, normalizedCode) == 1;
+    }
+
+    /**
+     * 配置周期缩短后，仅提前能证明上游缓存下限的健康等待任务。
+     *
+     * <p>最终时间计算和并发状态校验由单条 SQL 完成，避免覆盖已经被其他实例领取或更新的任务。</p>
+     */
+    public boolean advanceHealthyPendingSchedule(EveSyncJobDO job, Duration interval) {
+        Objects.requireNonNull(job, "job must not be null");
+        if (interval == null || interval.isZero() || interval.isNegative()) {
+            throw new IllegalArgumentException("interval must be positive");
+        }
+        if (job.getId() == null || job.getTenantId() == null || job.getTargetType() == null || job
+            .getTargetRefId() == null || job.getModule() == null || job.getLastFinishedAt() == null || job
+                .getNextRunAt() == null || !EveSyncJobState.PENDING.equals(job.getState()) || !Integer.valueOf(0)
+                    .equals(job.getConsecutiveFailures()) || job.getLastFailureCode() != null || job
+                        .getClaimToken() != null || job.getClaimExpiresAt() != null) {
+            return false;
+        }
+        LocalDateTime intervalRunAt = job.getLastFinishedAt().plus(interval);
+        if (!intervalRunAt.isBefore(job.getNextRunAt())) {
+            return false;
+        }
+        return syncJobMapper.advanceHealthyPendingSchedule(job.getId(), job.getTenantId(), job.getTargetType(), job
+            .getTargetRefId(), job.getModule(), job.getLastFinishedAt(), job.getNextRunAt(), job.getCooldownUntil(), job
+                .getLastFinishedAt()
+                .plus(MINIMUM_MANUAL_COOLDOWN), intervalRunAt, utcNow()) == 1;
     }
 
     private EveSyncJobDO createJob(Long tenantId,

@@ -29,11 +29,15 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -72,6 +76,22 @@ class EveAgentQueryServiceTest {
 
         assertThat(catalog.toString()).contains("mail", "documentReadable")
             .doesNotContain("accessToken", "refreshToken", "ownerHash", "lastFailureMessage");
+    }
+
+    /** 返回服务端查询时刻供机器人判断缓存年龄，且不能将查询时刻写回或冒充同步时间。 */
+    @Test
+    void shouldReturnServerQueryTimeSeparatelyFromSnapshotTime() {
+        when(jdbcTemplate.queryForObject(anyString(), any(SqlParameterSource.class), eq(Long.class))).thenReturn(0L);
+        when(jdbcTemplate.queryForList(anyString(), any(SqlParameterSource.class))).thenReturn(List.of());
+        OffsetDateTime before = OffsetDateTime.now(ZoneOffset.UTC);
+
+        Map<String, Object> result = service.query(principal, Map.of("dataset", "market"));
+
+        OffsetDateTime queriedAt = OffsetDateTime.parse((String)result.get("queriedAt"));
+        assertThat(queriedAt.getOffset()).isEqualTo(ZoneOffset.ofHours(8));
+        assertThat(queriedAt.toInstant()).isBetween(before.toInstant(), OffsetDateTime.now(ZoneOffset.UTC).toInstant());
+        assertThat(result).containsEntry("cacheOnly", true)
+            .doesNotContainKeys("sourceUpdatedAt", "quoteSynchronizedAt");
     }
 
     /**
@@ -268,7 +288,7 @@ class EveAgentQueryServiceTest {
         when(jdbcTemplate.queryForObject(anyString(), any(SqlParameterSource.class), eq(Long.class))).thenReturn(1L);
         when(jdbcTemplate.queryForList(anyString(), any(SqlParameterSource.class))).thenReturn(List.of(Map
             .of("typeId", 34, "highestBuyPrice", new BigDecimal("6.120000"), "sourceUpdatedAt", LocalDateTime
-                .of(2026, 10, 25, 4, 0))));
+                .of(2026, 10, 25, 12, 0))));
 
         Map<String, Object> result = service.query(principal, Map.of("dataset", "market", "fields", List
             .of("typeId", "highestBuyPrice", "sourceUpdatedAt")));
@@ -278,6 +298,62 @@ class EveAgentQueryServiceTest {
         assertThat(item).containsEntry("typeId", "34")
             .containsEntry("highestBuyPrice", "6.120000")
             .containsEntry("sourceUpdatedAt", "2026-10-25T12:00:00+08:00");
+    }
+
+    /** 验证本站北京时间字段查询和筛选都不重复增加八小时，覆盖实际市场快照时间。 */
+    @ParameterizedTest
+    @CsvSource({"market,sourceUpdatedAt", "market,quoteSynchronizedAt", "market,detailSynchronizedAt",
+        "corporation,lastSyncedAt", "characters,joinedAt", "character_role_snapshots,capturedAt",
+        "industry_opportunities,calculatedAt", "industry_plans,confirmedAt", "industry_market_snapshots,capturedAt",
+        "industry_market_snapshots,sourceUpdatedAt", "industry_system_snapshots,capturedAt",
+        "industry_system_cost_index,fetchedAt", "static_types,sourceUpdatedAt", "static_locations,sourceUpdatedAt",
+        "news,publishedAt"})
+    void shouldPreserveBeijingStorageTime(String dataset, String field) {
+        when(jdbcTemplate.queryForObject(anyString(), any(SqlParameterSource.class), eq(Long.class))).thenReturn(1L);
+        when(jdbcTemplate.queryForList(anyString(), any(SqlParameterSource.class))).thenReturn(List.of(Map
+            .of(field, Timestamp.valueOf("2026-10-25 22:07:18"))));
+
+        Map<String, Object> result = service.query(principal, Map.of("dataset", dataset, "fields", List
+            .of(field), "filters", List.of(Map
+                .of("field", field, "operator", "gte", "value", "2026-10-25T14:07:18Z"))));
+
+        assertThat(((List<Map<String, Object>>)result.get("items")).get(0))
+            .containsEntry(field, "2026-10-25T22:07:18+08:00");
+        ArgumentCaptor<SqlParameterSource> parameters = ArgumentCaptor.forClass(SqlParameterSource.class);
+        verify(jdbcTemplate).queryForList(anyString(), parameters.capture());
+        assertThat(parameters.getValue().getValue("filter0")).isEqualTo(LocalDateTime.of(2026, 10, 25, 22, 7, 18));
+    }
+
+    /** 验证官方事件时间和显式 UTC 同步时间仍按 UTC 解释，不能全表统一改为北京时间。 */
+    @ParameterizedTest
+    @CsvSource({"mail,sentAt", "mail,bodySynchronizedAt", "mail,lastSeenAt", "notifications,sentAt",
+        "notifications,lastSeenAt", "data_freshness,lastSuccessfulAt", "data_freshness,sourceExpiresAt",
+        "data_freshness,lastFailureAt", "assets,lastSeenAt", "structures,lastSeenAt", "members,lastSeenAt",
+        "moon_extractions,chunkArrivalAt", "moon_ore_profiles,sourceSentAt", "universe_systems,synchronizedAt",
+        "industry_system_cost_index,expiresAt", "starmap_routes,validatedAt"})
+    void shouldPreserveUtcStorageTime(String dataset, String field) {
+        when(jdbcTemplate.queryForObject(anyString(), any(SqlParameterSource.class), eq(Long.class))).thenReturn(1L);
+        when(jdbcTemplate.queryForList(anyString(), any(SqlParameterSource.class))).thenReturn(List.of(Map
+            .of(field, LocalDateTime.of(2026, 10, 25, 14, 7, 18))));
+
+        Map<String, Object> result = service.query(principal, Map.of("dataset", dataset, "fields", List.of(field)));
+
+        assertThat(((List<Map<String, Object>>)result.get("items")).get(0))
+            .containsEntry(field, "2026-10-25T22:07:18+08:00");
+    }
+
+    /** 时间聚合也必须继承原字段的时区，不能通过别名丢失北京时间存储基准。 */
+    @Test
+    void shouldPreserveBeijingTimeInAggregateAlias() {
+        when(jdbcTemplate.queryForList(anyString(), any(SqlParameterSource.class))).thenReturn(List.of(Map
+            .of("latestCalculation", Timestamp.valueOf("2026-10-25 22:07:18"))));
+
+        Map<String, Object> result = service.aggregate(principal, Map
+            .of("dataset", "industry_opportunities", "metrics", List.of(Map
+                .of("function", "max", "field", "calculatedAt", "alias", "latestCalculation"))));
+
+        assertThat(((List<Map<String, Object>>)result.get("items")).get(0))
+            .containsEntry("latestCalculation", "2026-10-25T22:07:18+08:00");
     }
 
     /**

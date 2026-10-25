@@ -60,6 +60,29 @@ class EveDataFreshnessServiceTest {
             .isEqualTo(EveDataFreshnessStatus.NO_DATA);
     }
 
+    /** 即使官方缓存尚未到期，快照超过三十分钟也必须向玩家明确标记为旧数据。 */
+    @Test
+    void shouldMarkSnapshotOlderThanThirtyMinutesStaleWithoutBypassingOfficialCache() {
+        EveDataSyncStatusMapper mapper = mock(EveDataSyncStatusMapper.class);
+        EveDataFreshnessService service = new EveDataFreshnessService(mapper);
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        LocalDateTime officialExpiry = now.plusMinutes(20);
+        when(mapper.selectList(any(Wrapper.class))).thenReturn(List.of(record(EveDataFreshnessService.ASSETS, now
+            .minusMinutes(31), officialExpiry, null), record(EveDataFreshnessService.STRUCTURES, now
+                .minusMinutes(30), null, null), record(EveDataFreshnessService.MOON_EXTRACTIONS, now
+                    .minusMinutes(20), officialExpiry, null)));
+
+        Map<String, EveDataFreshnessResp> result = service.list(10L, 20L)
+            .stream()
+            .collect(Collectors.toMap(EveDataFreshnessResp::module, item -> item));
+
+        assertThat(result.get(EveDataFreshnessService.ASSETS).status()).isEqualTo(EveDataFreshnessStatus.STALE);
+        assertThat(result.get(EveDataFreshnessService.ASSETS).sourceExpiresAt()).isEqualTo(officialExpiry);
+        assertThat(result.get(EveDataFreshnessService.STRUCTURES).status()).isEqualTo(EveDataFreshnessStatus.STALE);
+        assertThat(result.get(EveDataFreshnessService.MOON_EXTRACTIONS).status())
+            .isEqualTo(EveDataFreshnessStatus.FRESH);
+    }
+
     /** 构造只包含状态判定所需时间字段的同步状态。 */
     private static EveDataSyncStatusDO record(String module,
                                               LocalDateTime successfulAt,

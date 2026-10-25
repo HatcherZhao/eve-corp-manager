@@ -25,21 +25,21 @@ import java.time.Duration;
  */
 public enum EveSyncModule {
     /** 军团成员名册。 */
-    MEMBER_ROSTER(Duration.ofHours(1)),
+    MEMBER_ROSTER(Duration.ofMinutes(30)),
     /** 军团成员追踪。 */
-    MEMBER_TRACKING(Duration.ofHours(1)),
+    MEMBER_TRACKING(Duration.ofMinutes(30)),
     /** 军团自有建筑。 */
     STRUCTURES(Duration.ofMinutes(30)),
     /** 月矿提取状态。 */
-    MOON_EXTRACTIONS(Duration.ofHours(1)),
+    MOON_EXTRACTIONS(Duration.ofMinutes(30)),
     /** 军团资产完整快照。 */
-    ASSETS(Duration.ofHours(6)),
+    ASSETS(Duration.ofMinutes(30)),
     /** 军团采矿账本。 */
-    MINING_LEDGER(Duration.ofHours(3)),
+    MINING_LEDGER(Duration.ofMinutes(30)),
     /** 当前授权角色的游戏内邮件头。 */
-    GAME_MAIL(Duration.ofMinutes(10)),
+    GAME_MAIL(Duration.ofMinutes(30)),
     /** 当前授权角色的游戏内通知。 */
-    GAME_NOTIFICATIONS(Duration.ofMinutes(10));
+    GAME_NOTIFICATIONS(Duration.ofMinutes(30));
 
     private final Duration defaultInterval;
 

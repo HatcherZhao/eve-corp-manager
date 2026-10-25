@@ -29,6 +29,7 @@ import top.continew.admin.eve.model.entity.EveDataSyncStatusDO;
 import top.continew.admin.eve.model.enums.EveDataFreshnessStatus;
 
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -51,6 +52,9 @@ public class EveDataFreshnessService {
     public static final String MINING_LEDGER = "MINING_LEDGER";
     public static final String MEMBER_ROSTER = "MEMBER_ROSTER";
     public static final String MEMBER_TRACKING = "MEMBER_TRACKING";
+
+    /** 官方缓存期限控制何时可以再抓取，本地新鲜度目标独立限制为三十分钟。 */
+    private static final Duration MAX_SNAPSHOT_AGE = Duration.ofMinutes(30);
 
     private static final List<ModuleDefinition> MODULES = List
         .of(new ModuleDefinition(ASSETS, "军团资产", "/eve/assets"), new ModuleDefinition(STRUCTURES, "军团建筑", "/eve/structures"), new ModuleDefinition(MOON_EXTRACTIONS, "月矿情报", "/eve/extractions"), new ModuleDefinition(MINING_LEDGER, "月矿开采统计", "/eve/mining"), new ModuleDefinition(MEMBER_ROSTER, "成员名册", "/eve/members"), new ModuleDefinition(MEMBER_TRACKING, "成员追踪", "/eve/members"));
@@ -146,9 +150,10 @@ public class EveDataFreshnessService {
         }
         boolean failedAfterSuccess = record.getLastFailureAt() != null && record.getLastFailureAt()
             .isAfter(record.getLastSuccessfulAt());
+        boolean ageExceeded = !record.getLastSuccessfulAt().plus(MAX_SNAPSHOT_AGE).isAfter(now);
         EveDataFreshnessStatus status = failedAfterSuccess
             ? EveDataFreshnessStatus.SYNC_FAILED
-            : record.getSourceExpiresAt() != null && !record.getSourceExpiresAt().isAfter(now)
+            : ageExceeded || (record.getSourceExpiresAt() != null && !record.getSourceExpiresAt().isAfter(now))
                 ? EveDataFreshnessStatus.STALE
                 : EveDataFreshnessStatus.FRESH;
         return new EveDataFreshnessResp(definition.code(), definition.title(), definition.route(), status, record

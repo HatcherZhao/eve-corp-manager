@@ -17,6 +17,7 @@
 package top.continew.admin.eve.service;
 
 import org.junit.jupiter.api.Test;
+import org.apache.ibatis.annotations.Update;
 import org.mockito.ArgumentCaptor;
 import top.continew.admin.eve.mapper.EveSyncJobMapper;
 import top.continew.admin.eve.model.entity.EveSyncJobDO;
@@ -26,12 +27,14 @@ import top.continew.admin.eve.model.enums.EveSyncTargetType;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /** 自动同步队列的缓存有效期与暂停恢复规则测试。 */
@@ -72,7 +75,78 @@ class EveSyncJobServiceTest {
             .ofMinutes(30), sourceExpiresAt);
 
         verify(mapper)
-            .completeManualSuccess(eq(10L), eq(EveSyncTargetType.CORPORATION), eq(20L), eq(EveSyncModule.STRUCTURES), any(), eq(sourceExpiresAt), any());
+            .completeManualSuccess(eq(10L), eq(EveSyncTargetType.CORPORATION), eq(20L), eq(EveSyncModule.STRUCTURES), any(), eq(sourceExpiresAt), eq(sourceExpiresAt));
+    }
+
+    /** 周期缩短时，健康任务交给原子 SQL 提前，并传入周期与旧版手动冷却识别下限。 */
+    @Test
+    void shouldAdvanceHealthyPendingScheduleWithCacheFloors() {
+        EveSyncJobMapper mapper = mock(EveSyncJobMapper.class);
+        EveSyncJobService service = new EveSyncJobService(mapper);
+        LocalDateTime finishedAt = LocalDateTime.of(2026, 10, 25, 10, 0);
+        EveSyncJobDO job = healthyPendingJob(finishedAt);
+        when(mapper
+            .advanceHealthyPendingSchedule(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+            .thenReturn(1);
+
+        boolean advanced = service.advanceHealthyPendingSchedule(job, Duration.ofMinutes(30));
+
+        verify(mapper).advanceHealthyPendingSchedule(eq(job.getId()), eq(job.getTenantId()), eq(job
+            .getTargetType()), eq(job.getTargetRefId()), eq(job.getModule()), eq(finishedAt), eq(job
+                .getNextRunAt()), eq(job.getCooldownUntil()), eq(finishedAt.plusMinutes(1)), eq(finishedAt
+                    .plusMinutes(30)), any());
+        assertThat(advanced).isTrue();
+    }
+
+    /** CAS 未更新表示任务已被并发领取或重排，调用方不能把它当成本次修改成功。 */
+    @Test
+    void shouldReportConcurrentScheduleChangeWithoutOverwrite() {
+        EveSyncJobMapper mapper = mock(EveSyncJobMapper.class);
+        EveSyncJobService service = new EveSyncJobService(mapper);
+        EveSyncJobDO job = healthyPendingJob(LocalDateTime.of(2026, 10, 25, 10, 0));
+        when(mapper
+            .advanceHealthyPendingSchedule(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+            .thenReturn(0);
+
+        assertThat(service.advanceHealthyPendingSchedule(job, Duration.ofMinutes(30))).isFalse();
+    }
+
+    /** 失败、暂停、运行及仍符合新周期的任务都不得进入历史排期调整。 */
+    @Test
+    void shouldNotAdvanceUnsafeOrAlreadyCompliantSchedules() {
+        EveSyncJobMapper mapper = mock(EveSyncJobMapper.class);
+        EveSyncJobService service = new EveSyncJobService(mapper);
+        LocalDateTime finishedAt = LocalDateTime.of(2026, 10, 25, 10, 0);
+        EveSyncJobDO failed = healthyPendingJob(finishedAt);
+        failed.setConsecutiveFailures(1);
+        failed.setLastFailureCode("TRANSIENT");
+        EveSyncJobDO paused = healthyPendingJob(finishedAt);
+        paused.setState(EveSyncJobState.PAUSED);
+        EveSyncJobDO running = healthyPendingJob(finishedAt);
+        running.setState(EveSyncJobState.RUNNING);
+        running.setClaimToken("claim");
+        EveSyncJobDO compliant = healthyPendingJob(finishedAt);
+        compliant.setNextRunAt(finishedAt.plusMinutes(30));
+
+        assertThat(service.advanceHealthyPendingSchedule(failed, Duration.ofMinutes(30))).isFalse();
+        assertThat(service.advanceHealthyPendingSchedule(paused, Duration.ofMinutes(30))).isFalse();
+        assertThat(service.advanceHealthyPendingSchedule(running, Duration.ofMinutes(30))).isFalse();
+        assertThat(service.advanceHealthyPendingSchedule(compliant, Duration.ofMinutes(30))).isFalse();
+        verifyNoInteractions(mapper);
+    }
+
+    /** 原子重排 SQL 必须同时保留军团新鲜度下限并校验任务完整并发状态。 */
+    @Test
+    void shouldKeepFreshnessFloorAndCompareAndSetGuardsInMapper() {
+        Update update = Arrays.stream(EveSyncJobMapper.class.getDeclaredMethods())
+            .filter(method -> "advanceHealthyPendingSchedule".equals(method.getName()))
+            .findFirst()
+            .orElseThrow()
+            .getAnnotation(Update.class);
+        String sql = String.join(" ", update.value());
+
+        assertThat(sql)
+            .contains("LEFT JOIN eve_data_sync_status", "s.source_expires_at", "j.state = 'PENDING'", "j.consecutive_failures = 0", "j.claim_token IS NULL", "j.next_run_at = #{expectedNextRunAt}", "j.cooldown_until = #{expectedCooldownUntil}", "j.cooldown_until IS NULL");
     }
 
     /** 构造具有有效数据库领取令牌的运行中任务。 */
@@ -83,6 +157,22 @@ class EveSyncJobServiceTest {
         job.setModule(EveSyncModule.STRUCTURES);
         job.setState(EveSyncJobState.RUNNING);
         job.setClaimToken("claim-token");
+        return job;
+    }
+
+    /** 构造具备旧成功排期和来源缓存冷却的健康等待任务。 */
+    private static EveSyncJobDO healthyPendingJob(LocalDateTime finishedAt) {
+        EveSyncJobDO job = new EveSyncJobDO();
+        job.setId(2L);
+        job.setTenantId(10L);
+        job.setTargetType(EveSyncTargetType.CORPORATION);
+        job.setTargetRefId(20L);
+        job.setModule(EveSyncModule.ASSETS);
+        job.setState(EveSyncJobState.PENDING);
+        job.setLastFinishedAt(finishedAt);
+        job.setNextRunAt(finishedAt.plusHours(6));
+        job.setCooldownUntil(finishedAt.plusHours(1));
+        job.setConsecutiveFailures(0);
         return job;
     }
 }

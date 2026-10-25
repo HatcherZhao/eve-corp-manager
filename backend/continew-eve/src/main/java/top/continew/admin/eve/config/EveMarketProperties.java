@@ -44,12 +44,12 @@ public class EveMarketProperties {
     private long solarSystemId = 30000142L;
     /** 可选的固定空间站 ID；为空时包含吉他星系全部公开订单。 */
     private Long stationId;
-    /** 完整订单簿同步间隔；同步过程中全部请求经全局 ESI 节流器串行执行。 */
-    private Duration orderSyncInterval = Duration.ofMinutes(30);
+    /** 完整订单簿同步间隔，预留分页耗时以争取三十分钟内更新；请求仍经全局 ESI 节流。 */
+    private Duration orderSyncInterval = Duration.ofMinutes(15);
     /** 报价在页面上的最大新鲜度，超过后仅显示本地快照的过期状态。 */
-    private Duration quoteRefreshInterval = Duration.ofMinutes(45);
+    private Duration quoteRefreshInterval = Duration.ofMinutes(30);
     /** 订单簿详情在页面上的最大新鲜度，超过后不触发按需抓取。 */
-    private Duration detailRefreshInterval = Duration.ofMinutes(45);
+    private Duration detailRefreshInterval = Duration.ofMinutes(30);
     /** 区域历史补温间隔；每轮只请求极少数物品，避免向官方 ESI 形成高频扫描。 */
     private Duration historyWarmupInterval = Duration.ofMinutes(5);
     /** 区域历史补温单轮最多处理的物品数。 */
@@ -61,10 +61,12 @@ public class EveMarketProperties {
         if (regionId <= 0 || solarSystemId <= 0 || (stationId != null && stationId <= 0)) {
             throw new IllegalStateException("EVE 市场区域、星系或空间站配置无效");
         }
-        if (orderSyncInterval == null || orderSyncInterval.isNegative() || orderSyncInterval.isZero()
-            || quoteRefreshInterval == null || quoteRefreshInterval.isNegative() || quoteRefreshInterval.isZero()
-            || detailRefreshInterval == null || detailRefreshInterval.isNegative() || detailRefreshInterval.isZero()
-            || historyWarmupInterval == null || historyWarmupInterval.isNegative() || historyWarmupInterval.isZero()) {
+        if (orderSyncInterval == null || orderSyncInterval.isNegative() || orderSyncInterval
+            .isZero() || quoteRefreshInterval == null || quoteRefreshInterval.isNegative() || quoteRefreshInterval
+                .isZero() || detailRefreshInterval == null || detailRefreshInterval
+                    .isNegative() || detailRefreshInterval
+                        .isZero() || historyWarmupInterval == null || historyWarmupInterval
+                            .isNegative() || historyWarmupInterval.isZero()) {
             throw new IllegalStateException("EVE 市场缓存间隔必须大于零");
         }
         if (historyWarmupLimit < 1 || historyWarmupLimit > 10) {

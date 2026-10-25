@@ -112,22 +112,25 @@ public class EveDataAutoSyncJob {
         }
     }
 
-    /** 为有效军团和具备读取授权的角色创建首次带随机抖动的任务。 */
+    /** 发现有效同步目标，创建带抖动的首次任务，并安全收敛健康旧任务的周期。 */
     private void discoverJobs() {
         for (EveCorporationDO corporation : corporationMapper.selectAllActiveForAutoSync()) {
             TenantUtils.execute(corporation.getTenantId(), () -> syncJobService.ensureJobs(corporation
-                .getTenantId(), EveSyncTargetType.CORPORATION, corporation.getId(), CORPORATION_MODULES, firstRunAt()));
+                .getTenantId(), EveSyncTargetType.CORPORATION, corporation.getId(), CORPORATION_MODULES, firstRunAt())
+                .forEach(job -> syncJobService.advanceHealthyPendingSchedule(job, intervalFor(job.getModule()))));
         }
         for (EveAuthorizationDO authorization : authorizationMapper.selectActiveByScopeForAutoSync(MAIL_READ_SCOPE)) {
             TenantUtils.execute(authorization.getTenantId(), () -> syncJobService.ensureJobs(authorization
                 .getTenantId(), EveSyncTargetType.CHARACTER, authorization.getCharacterRefId(), List
-                    .of(EveSyncModule.GAME_MAIL), firstRunAt()));
+                    .of(EveSyncModule.GAME_MAIL), firstRunAt())
+                .forEach(job -> syncJobService.advanceHealthyPendingSchedule(job, intervalFor(job.getModule()))));
         }
         for (EveAuthorizationDO authorization : authorizationMapper
             .selectActiveByScopeForAutoSync(NOTIFICATION_READ_SCOPE)) {
             TenantUtils.execute(authorization.getTenantId(), () -> syncJobService.ensureJobs(authorization
                 .getTenantId(), EveSyncTargetType.CHARACTER, authorization.getCharacterRefId(), List
-                    .of(EveSyncModule.GAME_NOTIFICATIONS), firstRunAt()));
+                    .of(EveSyncModule.GAME_NOTIFICATIONS), firstRunAt())
+                .forEach(job -> syncJobService.advanceHealthyPendingSchedule(job, intervalFor(job.getModule()))));
         }
     }
 

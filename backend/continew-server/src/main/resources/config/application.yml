@@ -79,6 +79,9 @@ spring.task:
   # 定时任务
   scheduling:
     thread-name-prefix: schedule-pool
+    pool:
+      # 市场全量同步耗时较长，独立调度线程避免阻塞邮件、月矿等到期任务。
+      size: ${SPRING_TASK_SCHEDULING_POOL_SIZE:4}
     # 任务拒绝策略（默认 ABORT，不执行新任务，直接抛出 RejectedExecutionException 异常）
     # CALLER_RUNS：提交的任务在执行被拒绝时，会由提交任务的线程去执行
     rejected-policy: CALLER_RUNS
@@ -107,9 +110,12 @@ eve:
     solar-system-id: ${EVE_MARKET_SOLAR_SYSTEM_ID:30000142}
     # 默认保留吉他星系内全部公开订单；可通过 EVE_MARKET_STATION_ID=60003760 固定到吉他 4-4。
     # 每轮约 132 页的区域订单读取均遵循 eve.serenity.auto-sync.upstream-request-interval。
-    order-sync-interval: "${EVE_MARKET_ORDER_SYNC_INTERVAL:PT30M}"
-    quote-refresh-interval: "${EVE_MARKET_QUOTE_REFRESH_INTERVAL:PT45M}"
-    detail-refresh-interval: "${EVE_MARKET_DETAIL_REFRESH_INTERVAL:PT45M}"
+    # 两轮之间等待十五分钟，为完整分页留出时间；超过三十分钟明确标记为过期。
+    order-sync-interval: "${EVE_MARKET_ORDER_SYNC_INTERVAL:PT15M}"
+    # 仅检查 Redis 门禁，不表示每分钟请求上游；避免短暂退避后又等待一个完整同步周期。
+    order-sync-scan-interval: "${EVE_MARKET_ORDER_SYNC_SCAN_INTERVAL:PT1M}"
+    quote-refresh-interval: "${EVE_MARKET_QUOTE_REFRESH_INTERVAL:PT30M}"
+    detail-refresh-interval: "${EVE_MARKET_DETAIL_REFRESH_INTERVAL:PT30M}"
     # 区域历史每轮最多一个物品，避免历史补温占满官方 ESI 请求配额。
     history-warmup-interval: "${EVE_MARKET_HISTORY_WARMUP_INTERVAL:PT5M}"
     history-warmup-limit: ${EVE_MARKET_HISTORY_WARMUP_LIMIT:1}

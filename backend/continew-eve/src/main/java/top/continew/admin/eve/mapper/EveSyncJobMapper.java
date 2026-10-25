@@ -101,4 +101,24 @@ public interface EveSyncJobMapper extends BaseMapper<EveSyncJobDO> {
                         @Param("consecutiveFailures") int consecutiveFailures,
                         @Param("failureCode") String failureCode);
 
+    /**
+     * 仅提前健康的等待任务，并在同一条 SQL 中保留任务冷却和军团数据源过期时间下限。
+     *
+     * <p>旧版手动同步未把来源过期时间写入任务冷却，因此只有能从军团新鲜度记录或明确长于
+     * 最小手动冷却的任务冷却中证明上游下限时，才允许调整历史排期。</p>
+     */
+    @InterceptorIgnore(tenantLine = "true")
+    @Update("UPDATE eve_sync_job j LEFT JOIN eve_data_sync_status s ON j.target_type = 'CORPORATION' " + "AND s.tenant_id = j.tenant_id AND s.corporation_ref_id = j.target_ref_id " + "AND s.module = j.module AND s.deleted = 0 " + "SET j.next_run_at = GREATEST(#{intervalRunAt}, COALESCE(j.cooldown_until, #{intervalRunAt}), " + "COALESCE(s.source_expires_at, #{intervalRunAt})), j.update_time = #{reconciledAt} " + "WHERE j.id = #{jobId} AND j.tenant_id = #{tenantId} AND j.target_type = #{targetType} " + "AND j.target_ref_id = #{targetRefId} AND j.module = #{module} AND j.deleted = 0 " + "AND j.state = 'PENDING' AND j.consecutive_failures = 0 AND j.last_failure_code IS NULL " + "AND j.claim_token IS NULL AND j.claim_expires_at IS NULL AND j.last_finished_at = #{lastFinishedAt} " + "AND j.next_run_at = #{expectedNextRunAt} AND (j.cooldown_until = #{expectedCooldownUntil} " + "OR (j.cooldown_until IS NULL AND #{expectedCooldownUntil} IS NULL)) " + "AND (s.source_expires_at IS NOT NULL OR j.cooldown_until > #{minimumKnownCooldown}) " + "AND GREATEST(#{intervalRunAt}, COALESCE(j.cooldown_until, #{intervalRunAt}), " + "COALESCE(s.source_expires_at, #{intervalRunAt})) < j.next_run_at")
+    int advanceHealthyPendingSchedule(@Param("jobId") Long jobId,
+                                      @Param("tenantId") Long tenantId,
+                                      @Param("targetType") EveSyncTargetType targetType,
+                                      @Param("targetRefId") Long targetRefId,
+                                      @Param("module") EveSyncModule module,
+                                      @Param("lastFinishedAt") LocalDateTime lastFinishedAt,
+                                      @Param("expectedNextRunAt") LocalDateTime expectedNextRunAt,
+                                      @Param("expectedCooldownUntil") LocalDateTime expectedCooldownUntil,
+                                      @Param("minimumKnownCooldown") LocalDateTime minimumKnownCooldown,
+                                      @Param("intervalRunAt") LocalDateTime intervalRunAt,
+                                      @Param("reconciledAt") LocalDateTime reconciledAt);
+
 }

@@ -195,6 +195,8 @@ public class EveAgentMcpTools {
             properties.put("hasMore", Map.of("type", "boolean"));
             properties.put("source", Map.of("type", "string"));
             properties.put("cacheOnly", Map.of("type", "boolean"));
+            properties.put("queriedAt", Map
+                .of("type", "string", "format", "date-time", "description", "服务端本次查询缓存的北京时间，不是数据同步时间；与业务更新时间比较判断新鲜度"));
             properties.put("cacheMissingReason", Map.of("type", List.of("string", "null")));
             required = List.of("items");
         }

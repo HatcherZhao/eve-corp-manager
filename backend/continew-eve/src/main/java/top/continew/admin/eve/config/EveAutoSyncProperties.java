@@ -40,23 +40,23 @@ public class EveAutoSyncProperties {
     /** 调度器扫描到期任务的周期。 */
     private Duration scanInterval = Duration.ofMinutes(1);
     /** 单轮最多领取的任务数，避免服务重启后形成请求洪峰。 */
-    private int maxJobsPerCycle = 1;
+    private int maxJobsPerCycle = 3;
     /** 全部服务实例共享的国服 ESI 请求最小间隔，默认每分钟最多约 20 次。 */
     private Duration upstreamRequestInterval = Duration.ofSeconds(3);
     /** 军团资产完整快照的默认间隔。 */
-    private Duration assetsInterval = Duration.ofHours(6);
+    private Duration assetsInterval = Duration.ofMinutes(30);
     /** 军团建筑快照的默认间隔。 */
     private Duration structuresInterval = Duration.ofMinutes(30);
     /** 月矿提取时间线的默认间隔。 */
-    private Duration moonExtractionsInterval = Duration.ofHours(1);
+    private Duration moonExtractionsInterval = Duration.ofMinutes(30);
     /** 采矿账本的默认间隔。 */
-    private Duration miningLedgerInterval = Duration.ofHours(3);
+    private Duration miningLedgerInterval = Duration.ofMinutes(30);
     /** 成员名册和追踪信息的默认间隔。 */
-    private Duration membersInterval = Duration.ofHours(1);
+    private Duration membersInterval = Duration.ofMinutes(30);
     /** 授权角色个人邮箱邮件头的默认间隔。 */
-    private Duration mailInterval = Duration.ofMinutes(10);
+    private Duration mailInterval = Duration.ofMinutes(30);
     /** 授权角色个人游戏通知的默认间隔。 */
-    private Duration notificationsInterval = Duration.ofMinutes(10);
+    private Duration notificationsInterval = Duration.ofMinutes(30);
     /** 首次建任务或服务恢复后的最大随机延迟。 */
     private Duration startupJitter = Duration.ofMinutes(10);
 }
