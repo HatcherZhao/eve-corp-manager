@@ -44,6 +44,16 @@ class EveAgentAccessMigrationTest {
             .doesNotContain("`token` varchar", "'corp_member'");
     }
 
+    /** 布局修复使用后续迁移，不改写已上线的 054，并按顺序挂载到军团布局。 */
+    @Test
+    void shouldRegisterAgentMenuLayoutFixAfterCaptchaMigration() throws IOException {
+        String master = resource("db/changelog/db.changelog-master.yaml");
+        String path = "db/changelog/mysql/eve/056_agent_menu_layout.sql";
+        assertThat(master.indexOf(path)).isGreaterThan(master.indexOf("055_disable_login_captcha.sql"));
+        assertThat(resource(path))
+            .contains("`component` = 'Layout'", "`id` = 20200", "20201, '外部 Agent', 20200", "'eve:agents:manage'", "'corp_owner', 'corp_admin'");
+    }
+
     /** 读取类路径迁移资源。 */
     private static String resource(String path) throws IOException {
         try (InputStream input = EveAgentAccessMigrationTest.class.getClassLoader().getResourceAsStream(path)) {

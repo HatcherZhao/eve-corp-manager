@@ -138,3 +138,5 @@ databaseChangeLog:
       file: db/changelog/mysql/eve/054_agent_access.sql
   - include:
       file: db/changelog/mysql/eve/055_disable_login_captcha.sql
+  - include:
+      file: db/changelog/mysql/eve/056_agent_menu_layout.sql

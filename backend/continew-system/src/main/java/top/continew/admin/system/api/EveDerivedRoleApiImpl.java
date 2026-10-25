@@ -54,7 +54,7 @@ public class EveDerivedRoleApiImpl implements EveDerivedRoleApi {
 
     private static final List<Long> IDENTITY_MENU_IDS = List.of(20000L, 20010L, 20011L);
     private static final List<Long> MANAGER_MENU_IDS = List
-        .of(20000L, 20010L, 20011L, 20020L, 20021L, 20022L, 20023L, 20024L, 20200L);
+        .of(20000L, 20010L, 20011L, 20020L, 20021L, 20022L, 20023L, 20024L, 20200L, 20201L);
 
     private final RoleMapper roleMapper;
     private final UserRoleMapper userRoleMapper;

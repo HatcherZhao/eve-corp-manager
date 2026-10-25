@@ -196,6 +196,18 @@ class EveAgentAuthorizationPersistenceIT {
             """, Long.class)).isEqualTo(1L);
     }
 
+    /** Agent 菜单必须位于已有 Layout 下，直达与侧栏进入时都保留全站导航。 */
+    @Test
+    void shouldPlaceAgentMenuInsideCorporationLayout() {
+        assertThat(jdbc.queryForMap("""
+            SELECT child.parent_id, parent.component FROM sys_menu child
+            JOIN sys_menu parent ON child.parent_id = parent.id
+            WHERE child.id = 20201 AND child.deleted = 0 AND parent.deleted = 0
+            """)).containsEntry("parent_id", 20200L).containsEntry("component", "Layout");
+        assertThat(jdbc.queryForObject("SELECT permission FROM sys_menu WHERE id = 20201", String.class))
+            .isEqualTo("eve:agents:manage");
+    }
+
     /** 使用真实 Mapper 与生产元对象处理器构造授权服务。 */
     private EveAgentApplicationService applicationService() throws Exception {
         MybatisConfiguration configuration = new MybatisConfiguration();

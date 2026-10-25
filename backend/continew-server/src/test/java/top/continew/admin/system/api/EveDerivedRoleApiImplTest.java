@@ -92,9 +92,12 @@ class EveDerivedRoleApiImplTest {
         EveDerivedRoleApiImpl spyService = spy(service);
         org.mockito.Mockito.doNothing().when(spyService).refreshUserContext(20L);
         spyService.synchronizeInTenant(20L, EveDerivedIdentity.OWNER);
-        verify(roleMenuService).add(org.mockito.ArgumentMatchers.argThat(ids -> ids.contains(20200L)), org.mockito.ArgumentMatchers.eq(1L));
-        verify(roleMenuService).add(org.mockito.ArgumentMatchers.argThat(ids -> ids.contains(20200L)), org.mockito.ArgumentMatchers.eq(2L));
-        verify(roleMenuService).add(org.mockito.ArgumentMatchers.argThat(ids -> !ids.contains(20200L)), org.mockito.ArgumentMatchers.eq(3L));
+        verify(roleMenuService).add(org.mockito.ArgumentMatchers.argThat(ids -> ids.containsAll(List
+            .of(20200L, 20201L))), org.mockito.ArgumentMatchers.eq(1L));
+        verify(roleMenuService).add(org.mockito.ArgumentMatchers.argThat(ids -> ids.containsAll(List
+            .of(20200L, 20201L))), org.mockito.ArgumentMatchers.eq(2L));
+        verify(roleMenuService).add(org.mockito.ArgumentMatchers.argThat(ids -> !ids.contains(20200L) && !ids
+            .contains(20201L)), org.mockito.ArgumentMatchers.eq(3L));
     }
 
     /** 普通成员只保留成员派生角色。 */
