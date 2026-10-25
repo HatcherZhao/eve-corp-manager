@@ -28,6 +28,17 @@
     </properties>
 
     <dependencies>
+        <!-- 官方 MCP Servlet 传输；沿用当前 Jackson 2，不引入 Spring AI 或升级 Spring。 -->
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp-core</artifactId>
+            <version>2.1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp-json-jackson2</artifactId>
+            <version>2.1.0</version>
+        </dependency>
         <dependency>
             <groupId>top.continew.admin</groupId>
             <artifactId>continew-eve</artifactId>

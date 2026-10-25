@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Agent 授权页面本地验收</title></head>
+<body style="margin:0"><div id="app" style="padding:16px;max-width:1440px;box-sizing:border-box;margin:auto"></div>
+<script type="module">
+import { createApp } from 'vue'
+import { createPinia } from 'pinia'
+import axios from 'axios'
+import ArcoVue from '@arco-design/web-vue'
+import ArcoIcon from '@arco-design/web-vue/es/icon'
+import '@arco-design/web-vue/dist/arco.css'
+
+// 验收仅使用合成数据，不登录、不访问游戏接口或真实军团资料。
+const applications = [{ id: '1', name: '合成军团 QQ 机器人', status: 'ACTIVE', tokenPrefix: 'eve_agent_TEST', createdAt: '2026-10-25T12:00:00+08:00', expiresAt: '2099-10-25T12:00:00+08:00' }]
+window.agentUiRequests = []
+axios.defaults.adapter = async config => {
+  window.agentUiRequests.push({ url: config.url, method: config.method })
+  if (window.agentUiFailAudit && config.url.endsWith('/audit')) throw new Error('合成访问记录错误')
+  let data
+  if (config.url.endsWith('/audit')) {
+    data = { list: [{ id: '1', applicationId: '1', applicationName: applications[0].name, toolName: 'eve_query', success: true, durationMs: 12, resultCount: 20, occurredAt: '2026-10-25T12:00:00+08:00' }], total: 1 }
+  } else if (config.method === 'get') {
+    data = [...applications]
+  } else if (config.url.endsWith('/revoke')) {
+    applications.find(item => config.url.includes(`/${item.id}/`)).status = 'REVOKED'
+  } else if (config.url.endsWith('/rotate')) {
+    data = { application: applications[0], token: 'SYNTHETIC_ROTATED_TOKEN_NOT_A_REAL_SECRET' }
+  } else {
+    const input = JSON.parse(config.data)
+    const application = { ...applications[0], id: String(applications.length + 1), name: input.name }
+    applications.push(application)
+    data = { application, token: 'SYNTHETIC_CREATED_TOKEN_NOT_A_REAL_SECRET' }
+  }
+  return { data: { success: true, code: '0', data }, status: 200, statusText: 'OK', headers: {}, config, request: {} }
+}
+const { default: Page } = await import('/src/views/eve/agents/index.vue')
+createApp(Page).use(createPinia()).use(ArcoVue).use(ArcoIcon).mount('#app')
+</script>
+</body></html>

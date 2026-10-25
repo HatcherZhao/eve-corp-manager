@@ -68,7 +68,7 @@ const loginConfig = useStorage('eve-login-config-v2', {
 /** 上次成功登录时填写的军团名称，与“记住我”开关无关。 */
 const lastSuccessfulTenantName = useStorage('eve-last-successful-tenant-name', '')
 // 是否启用验证码
-const isCaptchaEnabled = ref(true)
+const isCaptchaEnabled = ref(false)
 // 验证码图片
 const captchaImgBase64 = ref()
 const tenantName = ref(lastSuccessfulTenantName.value)
@@ -81,11 +81,11 @@ const form = reactive({
   expired: false,
 })
 // 校验规则部分
-const rules: FormInstance['rules'] = {
+const rules = computed<FormInstance['rules']>(() => ({
   username: [{ required: true, message: '请输入用户名' }],
   password: [{ required: true, message: '请输入密码' }],
   captcha: [{ required: isCaptchaEnabled.value, message: '请输入验证码' }],
-}
+}))
 
 // 验证码过期定时器
 let timer
@@ -114,10 +114,21 @@ const getCaptcha = () => {
   getImageCaptcha().then((res) => {
     const { uuid, img, expireTime, isEnabled } = res.data
     isCaptchaEnabled.value = isEnabled
+    if (timer) clearTimeout(timer)
+    if (!isEnabled) {
+      // 关闭时不保留旧验证码，也不为缺失的过期时间创建定时器。
+      captchaImgBase64.value = undefined
+      form.captcha = ''
+      form.uuid = ''
+      form.expired = false
+      return
+    }
     captchaImgBase64.value = img
     form.uuid = uuid
     form.expired = false
     startTimer(expireTime, Number(res.timestamp))
+  }).catch(() => {
+    // HTTP 拦截器统一提示请求错误；登录请求仍由服务端校验验证码开关。
   })
 }
 

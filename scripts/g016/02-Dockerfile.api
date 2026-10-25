@@ -1,0 +1,5 @@
+ARG BASE_IMAGE=eve-corp-manager-api:20261019-014b4fe
+FROM ${BASE_IMAGE}
+ARG REVISION
+LABEL org.opencontainers.image.revision="${REVISION}"
+COPY --chown=10001:0 app.jar /app/app.jar

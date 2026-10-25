@@ -134,3 +134,7 @@ databaseChangeLog:
       file: db/changelog/mysql/eve/052_market_esi_cache_safety.sql
   - include:
       file: db/changelog/mysql/eve/053_moon_ore_profile.sql
+  - include:
+      file: db/changelog/mysql/eve/054_agent_access.sql
+  - include:
+      file: db/changelog/mysql/eve/055_disable_login_captcha.sql

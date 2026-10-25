@@ -80,6 +80,23 @@ class EveDerivedRoleApiImplTest {
             .containsExactlyInAnyOrder(3L, 2L);
     }
 
+    /** 新军团首次创建的 CEO/总监角色具有 Agent 管理菜单，普通成员不具有。 */
+    @Test
+    void shouldGrantAgentManagementOnlyToNewManagerRoles() {
+        org.mockito.Mockito.doReturn(null).when(roleMapper).selectByCode(any());
+        doAnswer(invocation -> {
+            RoleDO created = invocation.getArgument(0);
+            created.setId(roleId(created.getCode()));
+            return 1;
+        }).when(roleMapper).insert(any(RoleDO.class));
+        EveDerivedRoleApiImpl spyService = spy(service);
+        org.mockito.Mockito.doNothing().when(spyService).refreshUserContext(20L);
+        spyService.synchronizeInTenant(20L, EveDerivedIdentity.OWNER);
+        verify(roleMenuService).add(org.mockito.ArgumentMatchers.argThat(ids -> ids.contains(20200L)), org.mockito.ArgumentMatchers.eq(1L));
+        verify(roleMenuService).add(org.mockito.ArgumentMatchers.argThat(ids -> ids.contains(20200L)), org.mockito.ArgumentMatchers.eq(2L));
+        verify(roleMenuService).add(org.mockito.ArgumentMatchers.argThat(ids -> !ids.contains(20200L)), org.mockito.ArgumentMatchers.eq(3L));
+    }
+
     /** 普通成员只保留成员派生角色。 */
     @Test
     void shouldSynchronizeMemberExactly() {

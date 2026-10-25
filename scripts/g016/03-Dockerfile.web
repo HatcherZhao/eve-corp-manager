@@ -1,0 +1,7 @@
+ARG BASE_IMAGE=eve-corp-manager-web:20261019-014b4fe
+FROM ${BASE_IMAGE}
+ARG REVISION
+LABEL org.opencontainers.image.revision="${REVISION}"
+RUN rm -rf /usr/share/nginx/html/*
+COPY dist/ /usr/share/nginx/html/
+COPY web-nginx.conf /etc/nginx/conf.d/default.conf

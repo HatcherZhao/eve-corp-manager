@@ -67,6 +67,14 @@ class EveTenantIsolationContractTest {
             .getMethod("selectStaleActive", LocalDateTime.class, LocalDateTime.class, LocalDateTime.class, int.class);
         assertTenantIgnored(staleAuthorization);
         assertSqlContains(staleAuthorization, "status = 'ACTIVE'", "deleted = 0", "expires_at IS NOT NULL", "LIMIT #{limit}");
+
+        Method agentCredentialLookup = EveAgentApplicationMapper.class.getMethod("selectByTokenHash", String.class);
+        assertTenantIgnored(agentCredentialLookup);
+        assertSqlContains(agentCredentialLookup, "token_hash = #{tokenHash}", "deleted = 0");
+
+        Method agentAuditInsert = EveAgentAuditMapper.class
+            .getMethod("insert", top.continew.admin.eve.model.entity.EveAgentAuditDO.class);
+        assertTenantIgnored(agentAuditInsert);
     }
 
     /** 价格历史首轮覆盖必须优先于已同步物品的每日重刷，避免未访问物品永久缺少曲线。 */

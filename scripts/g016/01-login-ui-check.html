@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>登录验证码本地回归验收</title></head>
+<body style="margin:0"><div id="app" style="padding:16px;width:100%;max-width:392px;box-sizing:border-box;margin:auto"></div>
+<script type="module">
+import { createApp } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
+import { createRouter, createMemoryHistory } from 'vue-router'
+import axios from 'axios'
+import ArcoVue from '@arco-design/web-vue'
+import ArcoIcon from '@arco-design/web-vue/es/icon'
+import '@arco-design/web-vue/dist/arco.css'
+
+// 使用真实登录组件及合成依赖；不请求后端，也不创建登录会话。
+window.captchaTestEnabled = false
+window.captchaTestSubmissions = []
+window.captchaTestRequests = 0
+axios.defaults.adapter = async config => {
+  window.captchaTestRequests++
+  const data = window.captchaTestEnabled
+    ? { isEnabled: true, uuid: 'synthetic-uuid', img: 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=', expireTime: Date.now() + 60000 }
+    : { isEnabled: false }
+  return { data: { success: true, code: '0', data, timestamp: Date.now() }, status: 200, statusText: 'OK', headers: {}, config, request: {} }
+}
+const pinia = createPinia()
+setActivePinia(pinia)
+const { useUserStore } = await import('/src/stores/index.ts')
+useUserStore().accountLogin = async (request) => {
+  window.captchaTestSubmissions.push({ ...request, password: '[encrypted]' })
+  throw new Error('合成登录失败，仅用于验证表单提交与开关刷新')
+}
+const { default: Login } = await import('/src/views/login/components/account/index.vue')
+const router = createRouter({ history: createMemoryHistory(), routes: [] })
+await router.push('/')
+await router.isReady()
+createApp(Login).use(pinia).use(router).use(ArcoVue).use(ArcoIcon).mount('#app')
+</script>
+</body></html>
