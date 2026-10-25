@@ -44,6 +44,33 @@
 
 参考：[AstrBot 官方 MCP 文档](https://github.com/astrbotdevs/astrbot/blob/master/docs/zh/use/mcp.md)。
 
+### 安装本站使用技能
+
+MCP 提供查询工具，技能说明如何选择工具、理解本站业务和向玩家回答。两者需要分别配置，导入技能不会自动连接 MCP 或扩大军团权限。
+
+技能源文件为 [`skills/eve-corp-manager/SKILL.md`](../../../skills/eve-corp-manager/SKILL.md)，适用于 AstrBot 及支持同类技能的外部 Agent。包含吉他行情、月矿排期与体积比例、采矿统计、工业材料效率与时间效率、成员资产和授权邮件的用法。
+
+1. 在仓库根目录运行 `python3 scripts/g017/01-package-skill.py`，生成 `output/g017/eve-corp-manager.zip`。包内只有技能说明和参考文档，不包含密钥、业务数据或可执行脚本。
+2. 当前 AstrBot WebUI 打开“扩展（Extensions）→ Skills”，点击“＋”，上传该 ZIP 并确认启用；旧版若有独立 Skills 入口，从该入口进入。若没有技能功能，先核对所安装版本是否支持。
+3. 在“配置 → AI → 能力 → Agent Computer Use”选择适当的 Local 或 Sandbox 运行环境，让 Agent 能读取技能文件。本技能只需读取说明，不需要执行命令；不要为了技能给普通群成员开放主机命令执行权限。选择 None 时不能保证加载全文。
+4. 核对当前人格允许使用 `eve-corp-manager` 技能和四个 EVE MCP 工具。模型必须支持工具调用；启用技能不意味着启用了 MCP 工具。
+5. 在受限测试会话发送“使用 eve-corp-manager 查询三钛合金的吉他收购价和卖价，注明更新时间”，再检查“明天哪些矿堡到达”“某矿堡有哪些矿、体积比例多少”“查一封已授权邮件”等任务。
+
+技能包使用单层 `eve-corp-manager/` 目录，其中直接包含 `SKILL.md`；ZIP 文件名与技能目录同名。也可由管理员解压到 AstrBot 的 `data/skills/eve-corp-manager/`。不要将整个仓库或含凭据的配置目录上传。
+
+同名技能上传不会覆盖旧文件。更新前先下载备份，再编辑已有技能，或删除旧技能后重新上传。未能自动选中时在提问中明确写出 `eve-corp-manager`，并检查技能启用状态、人格选择和文件读取权限。
+
+发布前可运行：
+
+```bash
+python3 ~/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/eve-corp-manager
+python3 scripts/g017/01-package-skill.py --catalog <本地保存的eve_catalog响应.json>
+```
+
+第二个命令额外检查示例字段和能力是否仍与目录一致；目录响应只在本地用于校验，不会进入 ZIP。没有目录文件时省略 `--catalog`，仍可检查 JSON 示例、相对引用与包完整性。生成安装包后，仍需在目标 AstrBot 中导入、启用并完成实际查询验收。
+
+参考：[AstrBot 官方 Skills 文档](https://github.com/astrbotdevs/astrbot/blob/master/docs/zh/use/skills.md)。菜单与能力以实际安装版本为准。QQ群与用户白名单、邮件披露范围仍需机器人可信代码校验，技能和人格提示词均不是安全边界。
+
 ## 工具
 
 | 工具 | 用途 |
