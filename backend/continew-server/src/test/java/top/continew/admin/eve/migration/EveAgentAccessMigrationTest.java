@@ -54,6 +54,18 @@ class EveAgentAccessMigrationTest {
             .contains("`component` = 'Layout'", "`id` = 20200", "20201, '外部 Agent', 20200", "'eve:agents:manage'", "'corp_owner', 'corp_admin'");
     }
 
+    /** 多军团授权使用独立授权表，邀请码不复用或泄露应用密钥。 */
+    @Test
+    void shouldRegisterMultiCorporationGrantMigrationAfterAgentMenuFix() throws IOException {
+        String master = resource("db/changelog/db.changelog-master.yaml");
+        String path = "db/changelog/mysql/eve/057_agent_multi_corporation_grants.sql";
+        String migration = resource(path);
+        assertThat(master.indexOf(path)).isGreaterThan(master.indexOf("056_agent_menu_layout.sql"));
+        assertThat(migration)
+            .contains("ADD COLUMN `invitation_code`", "CREATE TABLE `eve_agent_grant`", "`application_id`", "`corporation_ref_id`", "UNIQUE KEY `uk_eve_agent_grant_application_corp`", "FROM `eve_agent_application`", "WHERE `status` = 'ACTIVE'")
+            .doesNotContain("SELECT `token_hash`", "SELECT `token_prefix`");
+    }
+
     /** 读取类路径迁移资源。 */
     private static String resource(String path) throws IOException {
         try (InputStream input = EveAgentAccessMigrationTest.class.getClassLoader().getResourceAsStream(path)) {

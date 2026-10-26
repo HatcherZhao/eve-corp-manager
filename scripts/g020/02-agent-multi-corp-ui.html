@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>多军团机器人授权本地验收</title></head>
+<body style="margin:0"><div id="app" style="padding:16px;max-width:1440px;box-sizing:border-box;margin:auto"></div>
+<script type="module">
+import { createApp } from 'vue'
+import { createPinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import axios from 'axios'
+import ArcoVue from '@arco-design/web-vue'
+import ArcoIcon from '@arco-design/web-vue/es/icon'
+import '@arco-design/web-vue/dist/arco.css'
+
+// 此独立验收页只使用合成应用和军团，不登录、不访问真实后端或游戏接口。
+const application = { id: '1', name: '合成汐栗机器人', status: 'ACTIVE', invitationCode: 'synthetic-public-invitation', tokenPrefix: 'eve_agent_TEST', createdAt: '2026-10-26T12:00:00+08:00', expiresAt: '2099-10-26T12:00:00+08:00' }
+const applications = [application]
+const grant = { id: '201', applicationId: '1', applicationName: application.name, applicationStatus: application.status, applicationExpiresAt: application.expiresAt, corporationId: '98000002', corporationName: '合成乙军团', corporationTicker: 'BBB', status: 'ACTIVE', grantedAt: '2026-10-26T12:00:00+08:00' }
+const grants = [grant]
+const invitation = { applicationId: '1', applicationName: application.name, expiresAt: application.expiresAt, ownerCorporationName: '合成甲军团', corporationId: grant.corporationId, corporationName: grant.corporationName, corporationTicker: grant.corporationTicker, grantStatus: 'AVAILABLE' }
+window.agentFixture = { requests: [], applications, grants, invitation, copied: [], failInvitation: false, failGrants: false, failAudit: false }
+Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async value => { window.agentFixture.copied.push(value) } } })
+axios.defaults.adapter = async config => {
+  const fixture = window.agentFixture
+  const url = config.url
+  const input = typeof config.data === 'string' ? JSON.parse(config.data) : config.data
+  fixture.requests.push({ url, method: config.method, data: input })
+  let data
+  if (url.endsWith('/audit')) {
+    if (fixture.failAudit) throw new Error('合成访问记录错误')
+    data = { list: [{ id: '301', applicationId: '1', applicationName: application.name, toolName: 'eve_corporations', success: true, durationMs: 12, resultCount: 2, occurredAt: '2026-10-26T12:00:00+08:00' }], total: 1 }
+  } else if (url.includes('/invitations/')) {
+    if (fixture.failInvitation) throw new Error('合成邀请错误')
+    if (config.method === 'post') {
+      if (!input?.acknowledgeMailAccess) throw new Error('合成授权缺少确认')
+      invitation.grantStatus = 'ACTIVE'
+      grant.status = 'ACTIVE'
+      delete grant.revokedAt
+      data = { ...grant }
+    } else {
+      data = { ...invitation }
+    }
+  } else if (/\/grants\/\d+\/revoke$/.test(url)) {
+    grant.status = 'REVOKED'
+    grant.revokedAt = '2026-10-26T13:00:00+08:00'
+    invitation.grantStatus = 'REVOKED'
+  } else if (/\/\d+\/grants$/.test(url)) {
+    data = [{ ...grant }, { ...grant, id: '202', corporationId: '98000001', corporationName: '合成甲军团', corporationTicker: 'AAA', status: 'ACTIVE' }]
+  } else if (url.endsWith('/grants')) {
+    if (fixture.failGrants) throw new Error('合成军团授权错误')
+    data = grants.map(item => ({ ...item }))
+  } else if (url.endsWith('/rotate')) {
+    data = { application, token: 'SYNTHETIC_ROTATED_TOKEN_NOT_A_REAL_SECRET' }
+  } else if (url.endsWith('/revoke')) {
+    application.status = 'REVOKED'
+    grant.applicationStatus = 'REVOKED'
+  } else if (config.method === 'get') {
+    data = applications.map(item => ({ ...item }))
+  } else {
+    const created = { ...application, id: String(applications.length + 1), name: input.name }
+    applications.push(created)
+    data = { application: created, token: 'SYNTHETIC_CREATED_TOKEN_NOT_A_REAL_SECRET' }
+  }
+  return { data: { success: true, code: '0', data }, status: 200, statusText: 'OK', headers: {}, config, request: {} }
+}
+const { default: Page } = await import('/src/views/eve/agents/index.vue')
+const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/eve/agents', component: Page }] })
+const query = Object.fromEntries(new URLSearchParams(window.location.search))
+await router.push({ path: '/eve/agents', query })
+await router.isReady()
+window.agentFixtureRouter = router
+createApp(Page).use(createPinia()).use(router).use(ArcoVue).use(ArcoIcon).mount('#app')
+</script>
+</body></html>

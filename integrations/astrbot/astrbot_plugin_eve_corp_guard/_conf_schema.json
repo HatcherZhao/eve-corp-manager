@@ -1,0 +1,17 @@
+{
+  "mcp_server_name": {
+    "description": "EVE MCP 服务名称",
+    "type": "string",
+    "default": "eve",
+    "hint": "必须与 AstrBot 的 data/mcp_server.json 中 mcpServers 下的名称完全一致。"
+  },
+  "session_bindings_json": {
+    "description": "QQ 会话与军团白名单",
+    "type": "text",
+    "default": "{}",
+    "editor_mode": true,
+    "editor_language": "json",
+    "hint": "键为 /eve_access_origin 返回的精确会话授权键；allowedCorporationIds 是允许列表，defaultCorporationId 可选且必须位于允许列表。未配置的群和私聊一律拒绝。",
+    "obvious_hint": true
+  }
+}

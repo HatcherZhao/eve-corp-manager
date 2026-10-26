@@ -140,3 +140,5 @@ databaseChangeLog:
       file: db/changelog/mysql/eve/055_disable_login_captcha.sql
   - include:
       file: db/changelog/mysql/eve/056_agent_menu_layout.sql
+  - include:
+      file: db/changelog/mysql/eve/057_agent_multi_corporation_grants.sql

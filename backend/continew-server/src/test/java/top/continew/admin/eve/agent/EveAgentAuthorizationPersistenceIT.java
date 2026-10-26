@@ -38,6 +38,7 @@ import top.continew.admin.eve.agent.auth.EveAgentApplicationService;
 import top.continew.admin.eve.agent.model.EveAgentCredentialResp;
 import top.continew.admin.eve.mapper.EveAgentApplicationMapper;
 import top.continew.admin.eve.mapper.EveAgentAuditMapper;
+import top.continew.admin.eve.mapper.EveAgentGrantMapper;
 import top.continew.admin.eve.mapper.EveCorporationMapper;
 import top.continew.admin.eve.model.EveMeContextResp;
 import top.continew.admin.eve.service.EveContextService;
@@ -72,6 +73,8 @@ class EveAgentAuthorizationPersistenceIT {
     private static final long TENANT_ID = 992001L;
     private static final long CORPORATION_ID = 992002L;
     private static final long USER_ID = 992003L;
+    private static final long SECOND_TENANT_ID = 992011L;
+    private static final long SECOND_CORPORATION_ID = 992012L;
 
     private String host;
     private String port;
@@ -103,6 +106,7 @@ class EveAgentAuthorizationPersistenceIT {
             runLiquibase();
             jdbc = new JdbcTemplate(dataSource);
             insertCorporation();
+            insertSecondCorporation();
             service = applicationService();
             transactions = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
         } catch (Exception e) {
@@ -137,6 +141,10 @@ class EveAgentAuthorizationPersistenceIT {
         assertThat(stored.get("token_hash").toString()).matches("[0-9a-f]{64}").isNotEqualTo(originalToken);
         assertThat(stored.get("token_prefix").toString()).startsWith("eve_agent_").doesNotContain(originalToken);
         assertThat(stored.get("status")).isEqualTo("ACTIVE");
+        assertThat(created.application().invitationCode()).matches("[A-Za-z0-9_-]{32}");
+        assertThat(jdbc
+            .queryForObject("SELECT COUNT(*) FROM eve_agent_grant WHERE application_id = ? " + "AND corporation_id = ? AND status = 'ACTIVE'", Long.class, applicationId, CORPORATION_ID))
+            .isEqualTo(1L);
         assertThat(columnCount("eve_agent_application", "token")).isZero();
         assertThat(jdbc.queryForObject("""
             SELECT COUNT(*) FROM eve_agent_audit
@@ -144,8 +152,18 @@ class EveAgentAuthorizationPersistenceIT {
               AND application_name NOT LIKE ?
             """, Long.class, applicationId, "%" + originalToken + "%")).isEqualTo(1L);
 
+        Long secondGrantId = asManager(SECOND_TENANT_ID, () -> inTransaction(() -> service.approveInvitation(created
+            .application()
+            .invitationCode(), true))).id();
+
         UserContextHolder.clearContext();
-        EveAgentPrincipal principal = service.authenticate(originalToken);
+        EveAgentPrincipal unscoped = service.authenticate(originalToken);
+        assertThat(unscoped.tenantId()).isNull();
+        assertThat(service.listAuthorizedCorporations(unscoped)).extracting("corporationId")
+            .containsExactly(CORPORATION_ID, SECOND_CORPORATION_ID);
+        assertThatThrownBy(() -> service.resolveCorporation(unscoped, null))
+            .hasMessage("该应用已授权多个军团，请明确提供 corporationId");
+        EveAgentPrincipal principal = service.resolveCorporation(unscoped, CORPORATION_ID + "");
         assertThat(principal.tenantId()).isEqualTo(TENANT_ID);
         assertThat(principal.corporationId()).isEqualTo(CORPORATION_ID);
 
@@ -162,6 +180,14 @@ class EveAgentAuthorizationPersistenceIT {
         assertThat(jdbc
             .queryForObject("SELECT last_used_at FROM eve_agent_application WHERE id = ?", LocalDateTime.class, applicationId))
             .isNotNull();
+
+        asManager(SECOND_TENANT_ID, () -> inTransaction(() -> {
+            service.revokeGrant(secondGrantId);
+            return null;
+        }));
+        UserContextHolder.clearContext();
+        assertThat(service.listAuthorizedCorporations(unscoped)).extracting("corporationId")
+            .containsExactly(CORPORATION_ID);
 
         EveAgentCredentialResp rotated = asManager(() -> inTransaction(() -> service.rotateCredential(applicationId)));
         UserContextHolder.clearContext();
@@ -217,6 +243,7 @@ class EveAgentAuthorizationPersistenceIT {
         GlobalConfigUtils.setGlobalConfig(configuration, globalConfig);
         configuration.addMapper(EveAgentApplicationMapper.class);
         configuration.addMapper(EveAgentAuditMapper.class);
+        configuration.addMapper(EveAgentGrantMapper.class);
         configuration.addMapper(EveCorporationMapper.class);
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(dataSource);
@@ -224,17 +251,32 @@ class EveAgentAuthorizationPersistenceIT {
         factory.setGlobalConfig(globalConfig);
         SqlSessionTemplate session = new SqlSessionTemplate(factory.getObject());
         EveContextService contexts = mock(EveContextService.class);
-        when(contexts.getCurrentContext())
-            .thenReturn(new EveMeContextResp(TENANT_ID, null, new EveMeContextResp.CorporationInfo(CORPORATION_ID, "真实测试军团", "IT"), "corp_admin", null, null, null, null));
+        when(contexts.getCurrentContext()).thenAnswer(invocation -> {
+            UserContext current = UserContextHolder.getContext();
+            boolean second = current != null && SECOND_TENANT_ID == current.getTenantId();
+            return new EveMeContextResp(second
+                ? SECOND_TENANT_ID
+                : TENANT_ID, null, new EveMeContextResp.CorporationInfo(second
+                    ? SECOND_CORPORATION_ID
+                    : CORPORATION_ID, second ? "第二测试军团" : "真实测试军团", second
+                        ? "IT2"
+                        : "IT"), "corp_admin", null, null, null, null);
+        });
         return new EveAgentApplicationService(session.getMapper(EveAgentApplicationMapper.class), session
-            .getMapper(EveAgentAuditMapper.class), session.getMapper(EveCorporationMapper.class), contexts);
+            .getMapper(EveAgentAuditMapper.class), session.getMapper(EveAgentGrantMapper.class), session
+                .getMapper(EveCorporationMapper.class), contexts);
     }
 
     /** 仅在当前线程设置合成管理身份，避免创建 Sa-Token 登录会话。 */
     private <T> T asManager(CheckedSupplier<T> action) {
+        return asManager(TENANT_ID, action);
+    }
+
+    /** 以指定测试军团管理者身份执行动作。 */
+    private <T> T asManager(long tenantId, CheckedSupplier<T> action) {
         UserContext context = new UserContext();
         context.setId(USER_ID);
-        context.setTenantId(TENANT_ID);
+        context.setTenantId(tenantId);
         context.setRoleCodes(Set.of("corp_admin"));
         context.setPermissions(Set.of("eve:agents:manage"));
         UserContextHolder.setContext(context, false);
@@ -257,6 +299,15 @@ class EveAgentAuthorizationPersistenceIT {
                 (tenant_id, server, corporation_id, name, ticker, status, create_user, create_time, deleted)
             VALUES (?, 'serenity', ?, '真实测试军团', 'IT', 'ACTIVE', ?, NOW(), 0)
             """, TENANT_ID, CORPORATION_ID, USER_ID);
+    }
+
+    /** 写入第二个测试军团，用于验证同一密钥的跨军团授权与独立撤销。 */
+    private void insertSecondCorporation() {
+        jdbc.update("""
+            INSERT INTO eve_corporation
+                (tenant_id, server, corporation_id, name, ticker, status, create_user, create_time, deleted)
+            VALUES (?, 'serenity', ?, '第二测试军团', 'IT2', 'ACTIVE', ?, NOW(), 0)
+            """, SECOND_TENANT_ID, SECOND_CORPORATION_ID, USER_ID);
     }
 
     /** 查询测试军团绑定主键。 */

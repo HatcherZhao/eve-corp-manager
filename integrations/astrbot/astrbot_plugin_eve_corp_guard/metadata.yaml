@@ -1,0 +1,9 @@
+name: astrbot_plugin_eve_corp_guard
+display_name: EVE 多军团会话权限
+desc: 按真实 QQ 群或私聊会话强制限制同一个 EVE MCP 应用可查询的军团。
+short_desc: 防止同一机器人跨 QQ 群读取错误军团的数据。
+version: v1.0.0
+author: zhaoyuqing
+astrbot_version: ">=4.23.2,<5"
+support_platforms:
+  - aiocqhttp

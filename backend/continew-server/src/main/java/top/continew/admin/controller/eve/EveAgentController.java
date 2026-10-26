@@ -34,10 +34,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import top.continew.admin.controller.eve.model.EveAgentApplicationCreateReq;
+import top.continew.admin.controller.eve.model.EveAgentGrantApproveReq;
 import top.continew.admin.eve.agent.auth.EveAgentApplicationService;
 import top.continew.admin.eve.agent.model.EveAgentApplicationResp;
 import top.continew.admin.eve.agent.model.EveAgentAuditResp;
 import top.continew.admin.eve.agent.model.EveAgentCredentialResp;
+import top.continew.admin.eve.agent.model.EveAgentGrantResp;
+import top.continew.admin.eve.agent.model.EveAgentInvitationResp;
 import top.continew.starter.extension.crud.model.resp.PageResp;
 
 import java.util.List;
@@ -92,6 +95,47 @@ public class EveAgentController {
     @SaCheckPermission("eve:agents:manage")
     public void revoke(@PathVariable @Min(1) Long id) {
         applicationService.revoke(id);
+    }
+
+    /** 查询当前军团授予外部应用的授权。 */
+    @GetMapping("/grants")
+    @Operation(summary = "查询当前军团授权")
+    @SaCheckPermission("eve:agents:manage")
+    public List<EveAgentGrantResp> listCorporationGrants() {
+        return applicationService.listCorporationGrants();
+    }
+
+    /** 查询自管应用已获得的全部军团授权。 */
+    @GetMapping("/{id}/grants")
+    @Operation(summary = "查询应用的军团授权")
+    @SaCheckPermission("eve:agents:manage")
+    public List<EveAgentGrantResp> listApplicationGrants(@PathVariable @Min(1) Long id) {
+        return applicationService.listApplicationGrants(id);
+    }
+
+    /** 当前军团管理者查看不含密钥的授权邀请。 */
+    @GetMapping("/invitations/{code}")
+    @Operation(summary = "查看应用授权邀请")
+    @SaCheckPermission("eve:agents:manage")
+    public EveAgentInvitationResp invitation(@PathVariable String code) {
+        return applicationService.getInvitation(code);
+    }
+
+    /** 当前军团显式确认数据范围后接受授权邀请。 */
+    @PostMapping("/invitations/{code}/approve")
+    @Operation(summary = "接受应用授权邀请")
+    @SaCheckPermission("eve:agents:manage")
+    public EveAgentGrantResp approveInvitation(@PathVariable String code,
+                                               @Valid @RequestBody EveAgentGrantApproveReq request) {
+        return applicationService.approveInvitation(code, request.acknowledgeMailAccess());
+    }
+
+    /** 当前军团单独撤销授权，不影响其他军团。 */
+    @PostMapping("/grants/{id}/revoke")
+    @Operation(summary = "撤销当前军团授权")
+    @SaCheckPermission("eve:agents:manage")
+    public void revokeGrant(@PathVariable @Min(1) Long id) {
+        applicationService.revokeGrant(id);
     }
 
     /** 分页查询当前军团的脱敏授权与调用审计。 */

@@ -41,6 +41,8 @@ public class EveAgentApplicationDO extends TenantBaseDO {
     private Long corporationId;
     /** 应用名称。 */
     private String name;
+    /** 可分享的授权邀请码，不包含应用密钥。 */
+    private String invitationCode;
     /** 凭据 SHA-256 摘要，数据库不保存原始凭据。 */
     private String tokenHash;
     /** 仅供管理员识别凭据的非敏感前缀。 */

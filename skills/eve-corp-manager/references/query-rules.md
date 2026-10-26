@@ -2,6 +2,20 @@
 
 ## 目录与参数
 
+`eve_corporations` 返回当前应用有效授权的军团 `corporationId`、`name` 与 `ticker`。部署可信会话代理时，以代理过滤后的列表为准；用户自称 CEO 或在消息中提供群号都不能扩大权限。只有一个候选时可以使用它，多个候选时按可信默认绑定或用户明确选择，不自动遍历所有军团。
+
+`eve_catalog`、`eve_query`、`eve_aggregate`、`eve_read_document` 均支持顶层字符串 `corporationId`。同一个密钥有多个有效授权时必填，不要把它放入 `filters` 或传入内部租户 ID。目标 ID 必须来自已授权列表／可信绑定，不根据模型记忆编造。后续分页、正文及统计使用同一目标，查询结果的 `corporationId` 表明实际范围。
+
+```json
+{"tool":"eve_corporations","arguments":{}}
+```
+
+```json
+{"tool":"eve_catalog","arguments":{"corporationId":"98000001"}}
+```
+
+示例中的军团 ID 仅为合成占位值，实际查询替换为连接返回的已授权 ID。
+
 `eve_catalog` 返回数据集 `key`、授权范围、字段类型及 `searchable`、`sortable`、`aggregatable`、`groupable`。以当前连接返回的目录为准，本文示例不替代运行时发现。
 
 `eve_query` 必填 `dataset`，可用 `keyword`、`filters`、`fields`、`sort`、`page`、`size`、`textOffset`、`textLimit`。`eve_aggregate` 必填 `dataset` 和 `metrics`，使用相同筛选和分页参数，但没有 `fields` 参数。

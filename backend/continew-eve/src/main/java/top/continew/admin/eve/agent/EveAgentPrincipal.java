@@ -17,7 +17,9 @@
 package top.continew.admin.eve.agent;
 
 /**
- * 已通过外部 Agent 凭据认证的军团身份。
+ * 外部 Agent 应用身份及经过单团授权解析的查询范围。
+ *
+ * <p>仅通过密钥认证时军团范围为空，不能直接用于业务查询；选择有效授权军团后才填入范围。</p>
  *
  * @author zhaoyuqing
  */

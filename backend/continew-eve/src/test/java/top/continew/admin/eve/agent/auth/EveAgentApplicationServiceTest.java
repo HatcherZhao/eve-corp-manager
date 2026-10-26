@@ -25,10 +25,12 @@ import top.continew.admin.eve.agent.EveAgentPrincipal;
 import top.continew.admin.eve.agent.model.EveAgentCredentialResp;
 import top.continew.admin.eve.mapper.EveAgentApplicationMapper;
 import top.continew.admin.eve.mapper.EveAgentAuditMapper;
+import top.continew.admin.eve.mapper.EveAgentGrantMapper;
 import top.continew.admin.eve.mapper.EveCorporationMapper;
 import top.continew.admin.eve.model.EveMeContextResp;
 import top.continew.admin.eve.model.entity.EveAgentApplicationDO;
 import top.continew.admin.eve.model.entity.EveAgentAuditDO;
+import top.continew.admin.eve.model.entity.EveAgentGrantDO;
 import top.continew.admin.eve.model.entity.EveCorporationDO;
 import top.continew.admin.eve.model.enums.EveCorporationStatus;
 import top.continew.admin.eve.service.EveContextService;
@@ -37,6 +39,7 @@ import top.continew.starter.core.exception.BusinessException;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Set;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -95,7 +98,7 @@ class EveAgentApplicationServiceTest {
         verifyNoInteractions(fixture.audits);
     }
 
-    /** 有效应用必须重新核对军团绑定后才能生成可信 principal。 */
+    /** 有效应用必须重新核对所有者军团，但认证阶段不能预选数据军团。 */
     @Test
     void shouldAuthenticateActiveApplicationAgainstCorporationBinding() {
         Fixture fixture = new Fixture();
@@ -105,7 +108,7 @@ class EveAgentApplicationServiceTest {
 
         EveAgentPrincipal principal = fixture.service.authenticate(fixture.token);
 
-        assertThat(principal).isEqualTo(new EveAgentPrincipal(900L, 10L, 100L, 200L, "QQ 机器人"));
+        assertThat(principal).isEqualTo(new EveAgentPrincipal(900L, null, null, null, "QQ 机器人"));
         verify(fixture.applications).selectByTokenHash(EveAgentApplicationService.hashToken(fixture.token));
     }
 
@@ -206,6 +209,7 @@ class EveAgentApplicationServiceTest {
         Fixture fixture = new Fixture();
         ArgumentCaptor<EveAgentAuditDO> auditCaptor = ArgumentCaptor.forClass(EveAgentAuditDO.class);
         EveAgentPrincipal principal = new EveAgentPrincipal(900L, 10L, 100L, 200L, "QQ 机器人");
+        when(fixture.applications.selectAnyById(900L)).thenReturn(fixture.activeApplication());
 
         fixture.service.recordCall(principal, "mail.query?keyword=secret", true, -10L, -2);
 
@@ -218,13 +222,78 @@ class EveAgentApplicationServiceTest {
         verify(fixture.applications).touchLastUsed(10L, 100L, 900L, audit.getOccurredAt());
     }
 
+    /** 多军团应用必须显式选择目标，且只能解析当前有效授权。 */
+    @Test
+    void shouldRequireCorporationSelectionForMultipleActiveGrants() {
+        Fixture fixture = new Fixture();
+        EveAgentApplicationDO application = fixture.activeApplication();
+        when(fixture.applications.selectActiveById(900L)).thenReturn(application);
+        when(fixture.corporations.selectActiveByTenantAndRefId(10L, 100L)).thenReturn(fixture.corporation);
+        EveAgentGrantDO first = fixture.grant(10L, 100L, 200L);
+        EveAgentGrantDO second = fixture.grant(11L, 101L, 201L);
+        EveCorporationDO other = fixture.corporation();
+        other.setTenantId(11L);
+        other.setId(101L);
+        other.setCorporationId(201L);
+        other.setName("第二军团");
+        when(fixture.grants.selectActiveByApplication(900L)).thenReturn(List.of(first, second));
+        when(fixture.corporations.selectActiveByTenantAndRefId(11L, 101L)).thenReturn(other);
+        EveAgentPrincipal unscoped = new EveAgentPrincipal(900L, null, null, null, "QQ 机器人");
+
+        assertThatThrownBy(() -> fixture.service.resolveCorporation(unscoped, null))
+            .hasMessage("该应用已授权多个军团，请明确提供 corporationId");
+        assertThat(fixture.service.resolveCorporation(unscoped, "201"))
+            .isEqualTo(new EveAgentPrincipal(900L, 11L, 101L, 201L, "QQ 机器人"));
+    }
+
+    /** 目标军团管理者重新确认后可原子恢复已撤销授权。 */
+    @Test
+    void shouldReactivateRevokedGrantAfterExplicitApproval() {
+        Fixture fixture = new Fixture();
+        fixture.allowManagement();
+        EveAgentApplicationDO application = fixture.activeApplication();
+        application.setInvitationCode("A".repeat(32));
+        EveAgentGrantDO revoked = fixture.grant(10L, 100L, 200L);
+        revoked.setStatus("REVOKED");
+        when(fixture.applications.selectByInvitationCode("A".repeat(32))).thenReturn(application);
+        when(fixture.corporations.selectActiveByTenantAndRefId(10L, 100L)).thenReturn(fixture.corporation);
+        when(fixture.grants.selectByApplicationAndCorporation(900L, 10L, 100L)).thenReturn(revoked);
+        when(fixture.grants.reactivate(eq(900L), eq(10L), eq(100L), any(), eq(20L))).thenReturn(1);
+        try (MockedStatic<UserContextHolder> holder = mockStatic(UserContextHolder.class)) {
+            holder.when(UserContextHolder::getContext).thenReturn(fixture.user);
+            assertThat(fixture.service.approveInvitation("A".repeat(32), true).status()).isEqualTo("ACTIVE");
+        }
+        verify(fixture.grants).reactivate(eq(900L), eq(10L), eq(100L), any(), eq(20L));
+        verify(fixture.grants, never()).insert(any(EveAgentGrantDO.class));
+    }
+
+    /** 已有效授权重复批准保持幂等，不刷新授权时间或重复写审计。 */
+    @Test
+    void shouldKeepActiveGrantUnchangedOnRepeatedApproval() {
+        Fixture fixture = new Fixture();
+        fixture.allowManagement();
+        EveAgentApplicationDO application = fixture.activeApplication();
+        EveAgentGrantDO active = fixture.grant(10L, 100L, 200L);
+        LocalDateTime grantedAt = active.getGrantedAt();
+        when(fixture.applications.selectByInvitationCode("A".repeat(32))).thenReturn(application);
+        when(fixture.corporations.selectActiveByTenantAndRefId(10L, 100L)).thenReturn(fixture.corporation);
+        when(fixture.grants.selectByApplicationAndCorporation(900L, 10L, 100L)).thenReturn(active);
+        try (MockedStatic<UserContextHolder> holder = mockStatic(UserContextHolder.class)) {
+            holder.when(UserContextHolder::getContext).thenReturn(fixture.user);
+            assertThat(fixture.service.approveInvitation("A".repeat(32), true).grantedAt()).isEqualTo(grantedAt);
+        }
+        verify(fixture.grants, never()).reactivate(anyLong(), anyLong(), anyLong(), any(), anyLong());
+        verifyNoInteractions(fixture.audits);
+    }
+
     /** 测试所需依赖和固定军团边界。 */
     private static final class Fixture {
         private final EveAgentApplicationMapper applications = mock(EveAgentApplicationMapper.class);
         private final EveAgentAuditMapper audits = mock(EveAgentAuditMapper.class);
+        private final EveAgentGrantMapper grants = mock(EveAgentGrantMapper.class);
         private final EveCorporationMapper corporations = mock(EveCorporationMapper.class);
         private final EveContextService contexts = mock(EveContextService.class);
-        private final EveAgentApplicationService service = new EveAgentApplicationService(applications, audits, corporations, contexts);
+        private final EveAgentApplicationService service = new EveAgentApplicationService(applications, audits, grants, corporations, contexts);
         private final UserContext user = user();
         private final EveCorporationDO corporation = corporation();
         private final String token = "eve_agent_" + "A".repeat(43);
@@ -241,6 +310,11 @@ class EveAgentApplicationServiceTest {
                 audit.setId(901L);
                 return 1;
             }).when(audits).insert(any(EveAgentAuditDO.class));
+            doAnswer(invocation -> {
+                EveAgentGrantDO grant = invocation.getArgument(0);
+                grant.setId(902L);
+                return 1;
+            }).when(grants).insert(any(EveAgentGrantDO.class));
         }
 
         /** 配置当前用户、上下文和军团记录为可管理状态。 */
@@ -258,12 +332,26 @@ class EveAgentApplicationServiceTest {
             application.setCorporationRefId(100L);
             application.setCorporationId(200L);
             application.setName("QQ 机器人");
+            application.setInvitationCode("A".repeat(32));
             application.setTokenHash(EveAgentApplicationService.hashToken(token));
             application.setTokenPrefix("eve_agent_AAAAAAAA...");
             application.setStatus("ACTIVE");
             application.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).plusDays(1));
             application.setCreateTime(LocalDateTime.now());
             return application;
+        }
+
+        /** 构造有效军团授权。 */
+        private EveAgentGrantDO grant(Long tenantId, Long corporationRefId, Long corporationId) {
+            EveAgentGrantDO grant = new EveAgentGrantDO();
+            grant.setId(corporationRefId + 800L);
+            grant.setTenantId(tenantId);
+            grant.setApplicationId(900L);
+            grant.setCorporationRefId(corporationRefId);
+            grant.setCorporationId(corporationId);
+            grant.setStatus("ACTIVE");
+            grant.setGrantedAt(LocalDateTime.now(ZoneOffset.UTC));
+            return grant;
         }
 
         /** 构造管理用户。 */

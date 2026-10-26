@@ -39,6 +39,21 @@ public interface EveAgentApplicationMapper extends BaseMapper<EveAgentApplicatio
     @Select("SELECT * FROM eve_agent_application WHERE token_hash = #{tokenHash} AND deleted = 0 LIMIT 1")
     EveAgentApplicationDO selectByTokenHash(@Param("tokenHash") String tokenHash);
 
+    /** 按邀请码跨租户读取应用，授权服务仍会校验状态、有效期和所有者军团。 */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT * FROM eve_agent_application WHERE invitation_code = #{invitationCode} AND deleted = 0 LIMIT 1")
+    EveAgentApplicationDO selectByInvitationCode(@Param("invitationCode") String invitationCode);
+
+    /** MCP 选择军团时重新读取有效应用，不能信任认证阶段留下的旧状态。 */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT * FROM eve_agent_application WHERE id = #{id} AND status = 'ACTIVE' " + "AND expires_at > UTC_TIMESTAMP() AND deleted = 0 LIMIT 1")
+    EveAgentApplicationDO selectActiveById(@Param("id") Long id);
+
+    /** 授权管理页展示历史授权时读取应用名称，不据此授予数据访问能力。 */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT * FROM eve_agent_application WHERE id = #{id} AND deleted = 0 LIMIT 1")
+    EveAgentApplicationDO selectAnyById(@Param("id") Long id);
+
     /** 按当前军团读取待管理应用，避免使用外部传入的军团标识。 */
     @Select("SELECT * FROM eve_agent_application WHERE tenant_id = #{tenantId} " + "AND corporation_ref_id = #{corporationRefId} AND id = #{id} AND deleted = 0 LIMIT 1")
     EveAgentApplicationDO selectManaged(@Param("tenantId") Long tenantId,

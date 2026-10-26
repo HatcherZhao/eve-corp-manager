@@ -2,19 +2,25 @@
 
 ## 新增表
 
-迁移：`backend/continew-server/src/main/resources/db/changelog/mysql/eve/054_agent_access.sql`。
+初始迁移：`backend/continew-server/src/main/resources/db/changelog/mysql/eve/054_agent_access.sql`。
+多军团增量迁移：`backend/continew-server/src/main/resources/db/changelog/mysql/eve/057_agent_multi_corporation_grants.sql`；不修改已执行的 054。
 
 | 业务名 | 表 | 核心字段 | 来源与规则 |
 | --- | --- | --- | --- |
 | 外部应用授权 | `eve_agent_application` | `id`、`tenant_id`、`corporation_ref_id`、`corporation_id`、`name`、`status` | 军团 CEO/总监在“外部 Agent”页面创建；军团标识来自当前有效绑定，不接受客户端指定 |
 | 凭据摘要 | 同上 | `token_hash`、`token_prefix` | 密码安全随机生成 256 位原始密钥；仅 SHA-256 摘要落库；前缀仅用于辨识；`token_hash` 唯一索引 |
 | 生命周期 | 同上 | `expires_at`、`last_used_at`、`last_rotated_at`、`revoked_at` | UTC 保存，API 携带明确时区；轮换不改变到期时间；撤销后不能轮换恢复 |
+| 授权邀请 | 同上 | `invitation_code` | 唯一且不含调用密钥；新应用采用安全随机值，旧应用按不可逆摘要回填；只定位应用，访问或登录不授予权限 |
+| 军团独立授权 | `eve_agent_grant` | `application_id`、`tenant_id`、`corporation_ref_id`、`corporation_id`、`status` | 各团管理者明确批准；军团与租户来自服务端当前身份；同一应用与军团绑定只保留一项授权 |
+| 授权生命周期 | 同上 | `granted_at`、`granted_by`、`revoked_at`、`revoked_by` | 业务时间为 UTC；本团可独立撤销或重新确认，不影响其他团；登记方不能代替别团批准 |
 | 工具及管理审计 | `eve_agent_audit` | `application_id`、`application_name`、`tenant_id`、`corporation_ref_id`、`actor_type`、`actor_user_id`、`tool_name` | 应用名称保存快照；管理事件标记 SITE_USER，工具调用标记 AGENT；不保存业务请求或结果 |
 | 调用结果摘要 | 同上 | `success`、`duration_ms`、`result_count`、`occurred_at` | SDK 回调完成后记录；发生时间为 UTC，不保存原始异常 SQL、查询值或正文 |
 
 通用 `create_time/update_time` 沿用项目现有数据库及 JVM 约定，不将这些字段当作 ESI UTC 源值重复加八小时。
 
 索引按军团、应用和发生时间覆盖列表与审计分页。创建/轮换/撤销与管理审计在事务内完成；工具审计及最近成功使用时间在独立服务事务中完成。原始密钥不进入数据库、列表 DTO、日志或前端持久化存储。
+
+`eve_agent_application` 的租户与军团字段仅表示登记方，不再直接作为查询范围。057 只为未删除、未到期且 ACTIVE 的旧应用回填原军团授权，保留原 `token_hash`，不会扩大历史权限。授权表按军团及状态、应用及状态建立查询索引，唯一键为 `(application_id, corporation_ref_id)`。
 
 ## 现有数据来源映射
 
@@ -23,6 +29,7 @@ MCP 不新增一份业务镜像，也不更改现有游戏同步规则。查询�
 | 来源系统/菜单 | 来源表与字段示例 | MCP 数据集/字段 | 转换与约束 |
 | --- | --- | --- | --- |
 | 本站/军团绑定 | `eve_corporation.corporation_id/name/status` | `corporation.corporationId/name/status` | `tenant_id` 唯一军团绑定，额外核对绑定主键及游戏 ID |
+| 本站/应用军团授权 | `eve_agent_grant` 与有效 `eve_corporation` | `eve_corporations.corporationId/name/ticker` | 每次核对应用、授权及军团状态；只输出游戏军团 ID，不暴露内部租户或绑定主键 |
 | EVE ESI/军团成员 | `eve_corporation_roster_member.character_id/character_name`；追踪表地点与登录时间 | `members.characterId/characterName/locationName/lastLogonAt` | tenant + corporation_ref_id；UTC 瞬时输出北京时间偏移 |
 | 本站/角色授权 | 角色、有效授权及角色权限快照 | `characters`、`authorization_summary`、`character_role_snapshots` | 只公开安全摘要，不公开 token、owner_hash、私钥 |
 | EVE ESI/军团资产与建筑 | `eve_corporation_asset.quantity/location_name`；建筑燃料与服务 | `assets.quantity/locationName`、`structures` | 当前军团缓存记录，不现场调用 ESI |
@@ -39,6 +46,8 @@ MCP 不新增一份业务镜像，也不更改现有游戏同步规则。查询�
 ## 查询安全
 
 表名、JOIN、字段表达式、可搜索字段与排序键来自代码白名单；过滤值全部通过 JDBC 参数绑定。SQL 中的租户和军团条件不能由外部请求覆盖。统计与正文读取使用相同隔离，不存在“列表过滤但总数泄露”的旁路。
+
+MCP 认证先得到无军团范围的应用身份。各查询工具用 `corporationId` 选择有效授权，再从数据库解析真实租户和绑定主键；只有一项有效授权时才允许省略。跨团调用审计落在本次实际查询的目标军团，发现军团及选择失败等应用级事件落在登记方。QQ 会话白名单由 AstrBot 可信插件额外限制，不能以提示词替代。
 
 大文本通过 MySQL `SUBSTRING`/`CHAR_LENGTH` 分段，不先读完整 MEDIUMTEXT。片段不是完整 JSON 时必须按切片标志继续读取后再解析。专用 JDBC 模板设置查询超时，不改变站内其他模块的共享模板。
 

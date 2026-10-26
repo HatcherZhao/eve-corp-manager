@@ -45,6 +45,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import top.continew.admin.eve.agent.EveAgentPrincipal;
 import top.continew.admin.eve.agent.auth.EveAgentApplicationService;
+import top.continew.admin.eve.agent.model.EveAgentCorporationResp;
 import top.continew.admin.eve.agent.query.EveAgentQueryService;
 import top.continew.starter.core.exception.BusinessException;
 
@@ -76,7 +77,7 @@ class EveAgentMcpProtocolTest {
         }
     }
 
-    /** 从初始化到四类业务工具均走真实 HTTP，并覆盖撤销与 JSON-RPC 数字 ID。 */
+    /** 从初始化到军团发现与四类查询均走真实 HTTP，并覆盖撤销与 JSON-RPC 数字 ID。 */
     @Test
     void realClientDiscoversToolsQueriesAndCannotReuseRevokedCredentials() throws Exception {
         try (var context = new AnnotationConfigServletWebServerApplicationContext(TestConfiguration.class)) {
@@ -84,12 +85,16 @@ class EveAgentMcpProtocolTest {
             var applications = context.getBean(EveAgentApplicationService.class);
             var queries = context.getBean(EveAgentQueryService.class);
             var principal = new EveAgentPrincipal(1L, 2L, 3L, 4L, "合成军团应用");
+            var identity = new EveAgentPrincipal(1L, null, null, null, "合成军团应用");
             var revoked = new AtomicBoolean(false);
             when(applications.authenticate(anyString())).thenAnswer(invocation -> {
                 if (!"synthetic".equals(invocation.getArgument(0)) || revoked.get())
                     throw new BusinessException("无效凭据");
-                return principal;
+                return identity;
             });
+            when(applications.resolveCorporation(identity, null)).thenReturn(principal);
+            when(applications.listAuthorizedCorporations(identity)).thenReturn(List
+                .of(new EveAgentCorporationResp(4L, "合成军团", "TEST")));
             when(queries.catalog(principal)).thenReturn(Map.of("datasets", List.of(Map
                 .of("key", "mail")), "readOnly", true));
             when(queries.query(eq(principal), anyMap())).thenReturn(Map.of("items", List.of(Map
@@ -100,8 +105,11 @@ class EveAgentMcpProtocolTest {
             try (var client = client(base)) {
                 assertNotNull(client.initialize());
                 var tools = client.listTools().tools();
-                assertEquals(4, tools.size());
+                assertEquals(5, tools.size());
                 assertTrue(tools.stream().allMatch(tool -> Boolean.TRUE.equals(tool.annotations().readOnlyHint())));
+                var authorized = call(client, "eve_corporations", Map.of());
+                assertFalse(authorized.isError());
+                assertEquals(1, ((List<?>)((Map<?, ?>)authorized.structuredContent()).get("corporations")).size());
                 assertFalse(call(client, "eve_catalog", Map.of()).isError());
                 var result = call(client, "eve_query", Map.of("dataset", "mail"));
                 assertFalse(result.isError());
@@ -153,6 +161,8 @@ class EveAgentMcpProtocolTest {
             var second = new EveAgentPrincipal(11L, 12L, 13L, 14L, "军团乙");
             when(applications.authenticate("first")).thenReturn(first);
             when(applications.authenticate("second")).thenReturn(second);
+            when(applications.resolveCorporation(first, null)).thenReturn(first);
+            when(applications.resolveCorporation(second, null)).thenReturn(second);
             var entered = new CountDownLatch(2);
             when(queries.catalog(any())).thenAnswer(invocation -> {
                 EveAgentPrincipal principal = invocation.getArgument(0);
@@ -176,6 +186,136 @@ class EveAgentMcpProtocolTest {
             } finally {
                 executor.shutdownNow();
                 assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+            }
+        }
+    }
+
+    /** 同一密钥显式选择两个军团，并在单团撤销后保留另一团授权。 */
+    @Test
+    void oneApplicationSelectsCorporationsWithoutSharingQueryOrDocumentScope() throws Exception {
+        try (var context = new AnnotationConfigServletWebServerApplicationContext(TestConfiguration.class)) {
+            String base = "http://127.0.0.1:" + context.getWebServer().getPort();
+            var applications = context.getBean(EveAgentApplicationService.class);
+            var queries = context.getBean(EveAgentQueryService.class);
+            var identity = new EveAgentPrincipal(1L, null, null, null, "多军团合成应用");
+            var first = new EveAgentPrincipal(1L, 2L, 3L, 4L, identity.applicationName());
+            var second = new EveAgentPrincipal(1L, 12L, 13L, 14L, identity.applicationName());
+            var firstRevoked = new AtomicBoolean();
+            when(applications.authenticate("synthetic")).thenReturn(identity);
+            when(applications.listAuthorizedCorporations(identity)).thenReturn(List
+                .of(new EveAgentCorporationResp(4L, "军团甲", "AAA"), new EveAgentCorporationResp(14L, "军团乙", "BBB")));
+            when(applications.resolveCorporation(eq(identity), nullable(String.class))).thenAnswer(invocation -> {
+                String corporationId = invocation.getArgument(1);
+                if (corporationId == null) {
+                    throw new IllegalArgumentException("已授权多个军团，请指定 corporationId");
+                }
+                if ("4".equals(corporationId) && !firstRevoked.get())
+                    return first;
+                if ("14".equals(corporationId))
+                    return second;
+                throw new IllegalArgumentException("该军团不存在或未获有效授权");
+            });
+            when(queries.query(any(), anyMap())).thenAnswer(invocation -> {
+                EveAgentPrincipal scope = invocation.getArgument(0);
+                Map<?, ?> arguments = invocation.getArgument(1);
+                assertFalse(arguments.containsKey("corporationId"));
+                return Map.of("items", List.of(Map.of("characterId", scope.corporationRefId().toString())));
+            });
+            when(queries.readDocument(any(), anyMap())).thenAnswer(invocation -> {
+                EveAgentPrincipal scope = invocation.getArgument(0);
+                return Map.of("content", "合成正文-" + scope.corporationId(), "hasMore", false);
+            });
+            when(queries.aggregate(any(), anyMap())).thenReturn(Map.of("items", List.of()));
+            try (var client = client(base)) {
+                client.initialize();
+                assertTrue(call(client, "eve_query", Map.of("dataset", "mail")).isError());
+                assertTrue(call(client, "eve_query", Map.of("dataset", "mail", "corporationId", "99")).isError());
+                assertTrue(call(client, "eve_query", Map.of("dataset", "mail", "corporationId", 4)).isError());
+                verifyNoInteractions(queries);
+                var firstResult = call(client, "eve_query", Map.of("dataset", "mail", "corporationId", "4"));
+                var secondResult = call(client, "eve_query", Map.of("dataset", "mail", "corporationId", "14"));
+                assertEquals("4", ((Map<?, ?>)firstResult.structuredContent()).get("corporationId"));
+                assertEquals("14", ((Map<?, ?>)secondResult.structuredContent()).get("corporationId"));
+                var document = call(client, "eve_read_document", Map
+                    .of("dataset", "mail", "id", "7", "characterId", "9", "corporationId", "14"));
+                assertEquals("合成正文-14", ((Map<?, ?>)document.structuredContent()).get("content"));
+                assertFalse(call(client, "eve_aggregate", Map
+                    .of("dataset", "mail", "corporationId", "14", "metrics", List.of(Map
+                        .of("function", "count", "alias", "total")))).isError());
+                clearInvocations(queries);
+                firstRevoked.set(true);
+                assertTrue(call(client, "eve_query", Map.of("dataset", "mail", "corporationId", "4")).isError());
+                verifyNoInteractions(queries);
+                assertFalse(call(client, "eve_query", Map.of("dataset", "mail", "corporationId", "14")).isError());
+                verify(applications).recordCall(eq(second), eq("eve_read_document"), eq(true), anyLong(), eq(1));
+            }
+        }
+    }
+
+    /** 同一应用并发查两团时，军团选择保存在本次调用栈而非共享会话或线程变量。 */
+    @Test
+    void concurrentRequestsWithOneTokenKeepTheirSelectedCorporations() throws Exception {
+        try (var context = new AnnotationConfigServletWebServerApplicationContext(TestConfiguration.class)) {
+            String base = "http://127.0.0.1:" + context.getWebServer().getPort();
+            var applications = context.getBean(EveAgentApplicationService.class);
+            var queries = context.getBean(EveAgentQueryService.class);
+            var identity = new EveAgentPrincipal(1L, null, null, null, "共享应用");
+            var first = new EveAgentPrincipal(1L, 2L, 3L, 4L, identity.applicationName());
+            var second = new EveAgentPrincipal(1L, 12L, 13L, 14L, identity.applicationName());
+            when(applications.authenticate("synthetic")).thenReturn(identity);
+            when(applications.resolveCorporation(identity, "4")).thenReturn(first);
+            when(applications.resolveCorporation(identity, "14")).thenReturn(second);
+            var entered = new CountDownLatch(2);
+            when(queries.catalog(any())).thenAnswer(invocation -> {
+                EveAgentPrincipal scope = invocation.getArgument(0);
+                entered.countDown();
+                assertTrue(entered.await(5, TimeUnit.SECONDS));
+                return Map.of("datasets", List.of(), "readOnly", true, "application", scope.applicationName());
+            });
+            var executor = Executors.newFixedThreadPool(2);
+            try (var firstClient = client(base); var secondClient = client(base)) {
+                firstClient.initialize();
+                secondClient.initialize();
+                var firstResult = executor.submit(() -> call(firstClient, "eve_catalog", Map.of("corporationId", "4")));
+                var secondResult = executor.submit(() -> call(secondClient, "eve_catalog", Map
+                    .of("corporationId", "14")));
+                assertEquals("4", ((Map<?, ?>)firstResult.get(10, TimeUnit.SECONDS).structuredContent())
+                    .get("corporationId"));
+                assertEquals("14", ((Map<?, ?>)secondResult.get(10, TimeUnit.SECONDS).structuredContent())
+                    .get("corporationId"));
+            } finally {
+                executor.shutdownNow();
+                assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+            }
+        }
+    }
+
+    /** 军团发现与查询都必须先写入审计，审计不可用时不返回任何敏感结果。 */
+    @Test
+    void auditFailureBlocksBothCorporationDiscoveryAndScopedData() throws Exception {
+        try (var context = new AnnotationConfigServletWebServerApplicationContext(TestConfiguration.class)) {
+            String base = "http://127.0.0.1:" + context.getWebServer().getPort();
+            var applications = context.getBean(EveAgentApplicationService.class);
+            var queries = context.getBean(EveAgentQueryService.class);
+            var identity = new EveAgentPrincipal(1L, null, null, null, "合成应用");
+            var scope = new EveAgentPrincipal(1L, 2L, 3L, 4L, "合成应用");
+            when(applications.authenticate("synthetic")).thenReturn(identity);
+            when(applications.resolveCorporation(identity, "4")).thenReturn(scope);
+            when(applications.listAuthorizedCorporations(identity)).thenReturn(List
+                .of(new EveAgentCorporationResp(4L, "不应返回的合成军团名", "HIDDEN")));
+            when(queries.query(eq(scope), anyMap())).thenReturn(Map.of("items", List.of(Map.of("note", "不应返回的合成备注"))));
+            doThrow(new IllegalStateException("合成审计不可用")).when(applications)
+                .recordCall(any(), anyString(), anyBoolean(), anyLong(), anyInt());
+            try (var client = client(base)) {
+                client.initialize();
+                var discovery = call(client, "eve_corporations", Map.of());
+                var query = call(client, "eve_query", Map.of("dataset", "members", "corporationId", "4"));
+                for (var result : List.of(discovery, query)) {
+                    assertTrue(result.isError());
+                    assertNull(result.structuredContent());
+                    assertFalse(result.content().toString().contains("不应返回"));
+                    assertFalse(result.content().toString().contains("合成审计"));
+                }
             }
         }
     }

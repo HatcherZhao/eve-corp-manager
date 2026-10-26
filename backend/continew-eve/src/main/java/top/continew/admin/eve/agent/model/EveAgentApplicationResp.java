@@ -28,5 +28,5 @@ import java.time.LocalDateTime;
 public record EveAgentApplicationResp(Long id, String name, String status,
                                       @EveDateTime(zone = "Asia/Shanghai") LocalDateTime createdAt,
                                       @EveDateTime LocalDateTime expiresAt, @EveDateTime LocalDateTime lastUsedAt,
-                                      String tokenPrefix) {
+                                      String tokenPrefix, String invitationCode) {
 }

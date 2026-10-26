@@ -49,6 +49,12 @@ public interface EveCorporationMapper extends BaseMapper<EveCorporationDO> {
     EveCorporationDO selectActiveByTenantAndRefId(@Param("tenantId") Long tenantId,
                                                   @Param("corporationRefId") Long corporationRefId);
 
+    /** 跨租户读取授权历史关联的军团，不据此授予数据访问能力。 */
+    @InterceptorIgnore(tenantLine = "true")
+    @Select("SELECT * FROM eve_corporation WHERE tenant_id = #{tenantId} AND id = #{corporationRefId} " + "AND deleted = 0 LIMIT 1")
+    EveCorporationDO selectByTenantAndRefId(@Param("tenantId") Long tenantId,
+                                            @Param("corporationRefId") Long corporationRefId);
+
     /** 跨租户找出可自动同步的有效军团；实际授权资格由任务执行时再次校验。 */
     @InterceptorIgnore(tenantLine = "true")
     @Select("SELECT * FROM eve_corporation WHERE status = 'ACTIVE' AND deleted = 0 ORDER BY id ASC")

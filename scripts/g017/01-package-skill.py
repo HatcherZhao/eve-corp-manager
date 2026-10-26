@@ -12,7 +12,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[2]
 SKILL = ROOT / "skills/eve-corp-manager"
 FILES = ("SKILL.md", "references/query-rules.md", "references/player-workflows.md")
-TOOLS = {"eve_catalog", "eve_query", "eve_aggregate", "eve_read_document"}
+TOOLS = {"eve_corporations", "eve_catalog", "eve_query", "eve_aggregate", "eve_read_document"}
 
 
 def load_catalog(path):
@@ -33,7 +33,9 @@ def check_example(example, catalog):
     args = example["arguments"]
     if tool not in TOOLS or not isinstance(args, dict):
         raise ValueError("示例工具或参数结构不合法")
-    if catalog is None or tool == "eve_catalog":
+    if "corporationId" in args and (not isinstance(args["corporationId"], str) or not re.fullmatch(r"[1-9][0-9]{0,18}", args["corporationId"])):
+        raise ValueError("军团 ID 必须为正整数字符串")
+    if catalog is None or tool in {"eve_catalog", "eve_corporations"}:
         return
     dataset = catalog[args["dataset"]]
     fields = {field["name"]: field for field in dataset["fields"]}

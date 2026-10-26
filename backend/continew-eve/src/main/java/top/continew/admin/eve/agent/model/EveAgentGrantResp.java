@@ -1,0 +1,32 @@
+/*
+ * Copyright (c) 2022-present Charles7c Authors. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package top.continew.admin.eve.agent.model;
+
+import top.continew.admin.eve.model.EveDateTime;
+
+import java.time.LocalDateTime;
+
+/**
+ * 军团对外部 Agent 应用的授权展示模型。
+ *
+ * @author zhaoyuqing
+ */
+public record EveAgentGrantResp(Long id, Long applicationId, String applicationName, String applicationStatus,
+                                @EveDateTime LocalDateTime applicationExpiresAt, Long corporationId,
+                                String corporationName, String corporationTicker, String status,
+                                @EveDateTime LocalDateTime grantedAt, @EveDateTime LocalDateTime revokedAt) {
+}
