@@ -53,14 +53,14 @@ class EveGameNotificationPresentationServiceTest {
 
         assertThat(result.summary()).isEqualTo("建筑「奥塔列托 - 天 权」已开始提取");
         assertThat(result.details()).extracting(item -> item.label() + "=" + item.value())
-            .contains("建筑=奥塔列托 - 天 权", "所在星系=奥塔列托", "操作人=小小小果冻", "矿物=沥青 1,756,367.29 m³；柯石英 3,275,499.38 m³", "预计可开采时间=2026年9月17日 04:01");
+            .contains("建筑=奥塔列托 - 天 权", "所在星系=奥塔列托", "操作人=小小小果冻", "矿物=沥青 1,756,367.29 m³；柯石英 3,275,499.38 m³", "预计可开采时间=2026年9月17日 12:01", "自动碎裂时间=2026年9月17日 15:01");
         assertThat(result.details().toString()).doesNotContain("45492", "45493", "30001421", "2112331875");
     }
 
     /** 未知通知也只展示可解释内容，不能把 YAML 键值或内部 ID 当作用户正文。 */
     @Test
     void shouldHideInternalIdsForUnknownNotification() {
-        EveGameNotificationPresentation result = service.present("unknown notification type (6040)", """
+        EveGameNotificationPresentation result = service.present("unknown notification type (9999)", """
             solarsystemID: 30001421
             structureID: &id001 1019984659987
             structureTypeID: 35835

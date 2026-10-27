@@ -16,7 +16,13 @@
 
 package top.continew.admin.eve.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.MockedStatic;
 import org.redisson.api.RBucket;
 import org.redisson.api.RLock;
@@ -29,8 +35,13 @@ import top.continew.admin.eve.client.SerenityEsiClient;
 import top.continew.admin.eve.mapper.EveAuthorizationMapper;
 import top.continew.admin.eve.mapper.EveCharacterMapper;
 import top.continew.admin.eve.mapper.EveGameNotificationMapper;
+import top.continew.admin.eve.mapper.EveCorporationMapper;
+import top.continew.admin.eve.mapper.EveCorporationStructureMapper;
+import top.continew.admin.eve.model.EveGameNotificationPresentation;
 import top.continew.admin.eve.model.entity.EveAuthorizationDO;
 import top.continew.admin.eve.model.entity.EveCharacterDO;
+import top.continew.admin.eve.model.entity.EveCorporationDO;
+import top.continew.admin.eve.model.entity.EveCorporationStructureDO;
 import top.continew.admin.eve.model.entity.EveGameNotificationDO;
 import top.continew.admin.eve.model.enums.EveAuthorizationStatus;
 import top.continew.admin.eve.model.serenity.SerenityEsiResponse;
@@ -40,6 +51,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -64,6 +76,63 @@ class EveGameNotificationServiceTest {
         assertThat(EveGameNotificationService.categoryOf("WarDeclaredMsg")).isEqualTo("WAR_SOVEREIGNTY");
         assertThat(EveGameNotificationService.categoryOf("MoonMiningExtractionStarted")).isEqualTo("MOON_INDUSTRY");
         assertThat(EveGameNotificationService.categoryOf("FutureGameMessage")).isEqualTo("OTHER");
+        for (String type : List.of("CharAppAcceptMsg", "CharAppWithdrawMsg", "CharTerminationMsg")) {
+            assertThat(EveGameNotificationService.categoryOf(type)).isEqualTo("CORPORATION_MEMBER");
+        }
+        for (String type : List
+            .of("OwnershipTransferred", "unknown notification type (6040)", "unknown notification type (6041)")) {
+            assertThat(EveGameNotificationService.categoryOf(type)).isEqualTo("STRUCTURE_ASSET_SAFETY");
+        }
+        for (String type : List.of("EntosisCaptureStarted", "AcceptedSurrender", "WarAdopted ")) {
+            assertThat(EveGameNotificationService.categoryOf(type)).isEqualTo("WAR_SOVEREIGNTY");
+        }
+        assertThat(EveGameNotificationService.categoryOf("NPCStandingsLost")).isEqualTo("OTHER");
+    }
+
+    /** 建筑名称只允许从当前租户、当前角色军团的快照中补全。 */
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldResolveStructureNameInsideCurrentTenantAndCorporation() throws Exception {
+        TableInfoHelper
+            .initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "notification-test"), EveCorporationStructureDO.class);
+        Fixture f = new Fixture();
+        long structureId = 1_030_000_000_000L;
+        EveGameNotificationDO notification = new EveGameNotificationDO();
+        notification.setNotificationId(7001L);
+        notification.setNotificationType("StructureFuelAlert");
+        notification.setContent("structureID: &id001 " + structureId);
+        notification.setCategory("OTHER");
+        notification.setDeleted(0L);
+        when(f.notifications.selectPage(any(Page.class), any())).thenReturn(new Page<EveGameNotificationDO>(1, 20, 1)
+            .setRecords(List.of(notification)));
+        when(f.presentation.referencedEntityIds(any())).thenReturn(List.of());
+        when(f.presentation.referencedStructureIds(any())).thenReturn(List.of(structureId));
+        when(f.presentation.present(anyString(), anyString(), any()))
+            .thenReturn(new EveGameNotificationPresentation("燃料告警", "燃料不足", List.of()));
+        EveCorporationDO corporation = new EveCorporationDO();
+        corporation.setId(400L);
+        when(f.corporations.selectByTenantAndCorporationId(10L, 300L)).thenReturn(corporation);
+        EveCorporationStructureDO structure = new EveCorporationStructureDO();
+        structure.setStructureId(structureId);
+        structure.setStructureName("本军团建筑");
+        when(f.structures.selectList(any())).thenReturn(List.of(structure));
+
+        try (MockedStatic<UserContextHolder> holder = mockStatic(UserContextHolder.class)) {
+            holder.when(UserContextHolder::getContext).thenReturn(f.context);
+            f.service.page(1, 20, "ALL", null);
+        }
+
+        verify(f.corporations).selectByTenantAndCorporationId(10L, 300L);
+        ArgumentCaptor<LambdaQueryWrapper<EveCorporationStructureDO>> wrapper = ArgumentCaptor
+            .forClass(LambdaQueryWrapper.class);
+        verify(f.structures).selectList(wrapper.capture());
+        assertThat(wrapper.getValue().getSqlSegment())
+            .contains("tenant_id", "corporation_ref_id", "deleted", "structure_id");
+        assertThat(wrapper.getValue().getParamNameValuePairs().values()).contains(10L, 400L, 0L, structureId);
+        ArgumentCaptor<Map<Long, String>> names = ArgumentCaptor.forClass(Map.class);
+        verify(f.presentation).present(eq("StructureFuelAlert"), eq(notification.getContent()), names.capture());
+        assertThat(names.getValue()).containsEntry(structureId, "本军团建筑");
+        verifyNoInteractions(f.esi);
     }
 
     /** 上游缓存未过期时，重复点击刷新只使用本人缓存，不能重复请求通知接口。 */
@@ -187,8 +256,11 @@ class EveGameNotificationServiceTest {
         private final EveAuthorizationMapper authorizations = mock(EveAuthorizationMapper.class);
         private final EveGameNotificationMapper notifications = mock(EveGameNotificationMapper.class);
         private final EveAuthorizationLifecycleService lifecycle = mock(EveAuthorizationLifecycleService.class);
+        private final EveGameNotificationPresentationService presentation = mock(EveGameNotificationPresentationService.class);
         private final SerenityEsiClient esi = mock(SerenityEsiClient.class);
         private final EveMoonOreProfileService profiles = mock(EveMoonOreProfileService.class);
+        private final EveCorporationMapper corporations = mock(EveCorporationMapper.class);
+        private final EveCorporationStructureMapper structures = mock(EveCorporationStructureMapper.class);
         private final RedissonClient redis = mock(RedissonClient.class);
         private final RLock lock = mock(RLock.class);
         private final EveAuthorizationDO authorization = new EveAuthorizationDO();
@@ -215,7 +287,7 @@ class EveGameNotificationServiceTest {
             RBucket<Long> retry = bucket(new AtomicReference<>());
             doReturn(expiry).when(redis).getBucket("eve:serenity:notifications:10:20:100:expires");
             doReturn(retry).when(redis).getBucket("eve:serenity:notifications:10:20:100:retry");
-            service = new EveGameNotificationService(characters, authorizations, notifications, lifecycle, mock(EveGameNotificationPresentationService.class), esi, redis, profiles);
+            service = new EveGameNotificationService(characters, authorizations, notifications, lifecycle, presentation, esi, redis, profiles, corporations, structures);
         }
 
         /** 以原子引用模拟带有效期的缓存值，检查后续调用是否遵守缓存门槛。 */

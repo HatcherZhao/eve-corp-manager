@@ -23,5 +23,6 @@ import java.util.List;
  *
  * @author zhaoyuqing
  */
-public record EveGameNotificationPresentation(String summary, List<EveGameNotificationDetailItem> details) {
+public record EveGameNotificationPresentation(String title, String summary,
+                                              List<EveGameNotificationDetailItem> details) {
 }

@@ -34,12 +34,16 @@ import top.continew.admin.eve.client.SerenityEsiClientException;
 import top.continew.admin.eve.mapper.EveAuthorizationMapper;
 import top.continew.admin.eve.mapper.EveCharacterMapper;
 import top.continew.admin.eve.mapper.EveGameNotificationMapper;
+import top.continew.admin.eve.mapper.EveCorporationMapper;
+import top.continew.admin.eve.mapper.EveCorporationStructureMapper;
 import top.continew.admin.eve.model.EveGameNotificationPresentation;
 import top.continew.admin.eve.model.EveGameNotificationResp;
 import top.continew.admin.eve.model.EveGameNotificationSyncResp;
 import top.continew.admin.eve.model.entity.EveAuthorizationDO;
 import top.continew.admin.eve.model.entity.EveCharacterDO;
 import top.continew.admin.eve.model.entity.EveGameNotificationDO;
+import top.continew.admin.eve.model.entity.EveCorporationDO;
+import top.continew.admin.eve.model.entity.EveCorporationStructureDO;
 import top.continew.admin.eve.model.enums.EveAuthorizationStatus;
 import top.continew.admin.eve.model.serenity.SerenityEsiResponse;
 import top.continew.admin.eve.model.serenity.SerenityGameNotificationResponse;
@@ -54,6 +58,8 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
+import java.util.Set;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -80,6 +86,8 @@ public class EveGameNotificationService {
     private final SerenityEsiClient esiClient;
     private final RedissonClient redissonClient;
     private final EveMoonOreProfileService oreProfileService;
+    private final EveCorporationMapper corporationMapper;
+    private final EveCorporationStructureMapper structureMapper;
 
     /** 分页查询当前授权角色已同步的游戏通知。 */
     public PageResp<EveGameNotificationResp> page(int page, int size, String category, String keyword) {
@@ -100,7 +108,7 @@ public class EveGameNotificationService {
                 .like(EveGameNotificationDO::getContent, value));
         }
         Page<EveGameNotificationDO> result = notificationMapper.selectPage(new Page<>(page, size), query);
-        Map<Long, String> entityNames = resolveEntityNames(result.getRecords());
+        Map<Long, String> entityNames = resolveEntityNames(result.getRecords(), source);
         return new PageResp<>(result.getRecords().stream().map(item -> toResponse(item, entityNames)).toList(), result
             .getTotal());
     }
@@ -289,19 +297,24 @@ public class EveGameNotificationService {
 
     /** 依据国服稳定类型前缀归入产品分类，未覆盖的新类型始终保留并归入其他。 */
     static String categoryOf(String notificationType) {
-        String value = notificationType == null ? "" : notificationType.toUpperCase();
-        if (value.contains("WAR") || value.contains("SOVEREIGNTY") || value.contains("SOV")) {
+        String value = notificationType == null ? "" : notificationType.trim().toUpperCase(Locale.ROOT);
+        if (value.contains("WAR") || value.contains("SOVEREIGNTY") || value.contains("SOV") || Set
+            .of("ENTOSISCAPTURESTARTED", "ACCEPTEDSURRENDER")
+            .contains(value)) {
             return "WAR_SOVEREIGNTY";
         }
-        if (value.contains("STRUCTURE") || value.contains("ASSETSAFETY") || value.contains("ASSET_SAFETY")) {
+        if (value.contains("STRUCTURE") || value.contains("ASSETSAFETY") || value.contains("ASSET_SAFETY") || Set
+            .of("OWNERSHIPTRANSFERRED", "UNKNOWN NOTIFICATION TYPE (6040)", "UNKNOWN NOTIFICATION TYPE (6041)")
+            .contains(value)) {
             return "STRUCTURE_ASSET_SAFETY";
         }
         if (value.contains("MOON") || value.contains("MINING") || value.contains("INDUSTRY") || value
             .contains("MANUFACTUR") || value.contains("RESEARCH")) {
             return "MOON_INDUSTRY";
         }
-        if (value.contains("CORP") || value.contains("CORPORATION") || value.contains("ALLIANCE") || value
-            .contains("MEMBER") || value.contains("APPLICATION") || value.contains("ROLE")) {
+        if (value.startsWith("CHARAPP") || "CHARTERMINATIONMSG".equals(value) || value.contains("CORP") || value
+            .contains("CORPORATION") || value.contains("ALLIANCE") || value.contains("MEMBER") || value
+                .contains("APPLICATION") || value.contains("ROLE")) {
             return "CORPORATION_MEMBER";
         }
         return "OTHER";
@@ -317,7 +330,8 @@ public class EveGameNotificationService {
     }
 
     /** 解析通知发送方及正文引用的公开名称；名称服务不可用时不阻断通知阅读。 */
-    private Map<Long, String> resolveEntityNames(Collection<EveGameNotificationDO> notifications) {
+    private Map<Long, String> resolveEntityNames(Collection<EveGameNotificationDO> notifications,
+                                                 NotificationSource source) {
         List<Long> senderIds = notifications.stream()
             .filter(Objects::nonNull)
             .map(EveGameNotificationDO::getSenderId)
@@ -343,6 +357,24 @@ public class EveGameNotificationService {
                 log.warn("EVE 游戏通知发送方名称解析失败，failureCode={}", e.getFailureCode());
             }
         }
+        List<Long> structureIds = notificationPresentationService.referencedStructureIds(notifications.stream()
+            .map(EveGameNotificationDO::getContent)
+            .toList());
+        if (!structureIds.isEmpty()) {
+            EveCorporationDO corporation = corporationMapper.selectByTenantAndCorporationId(source.tenantId(), source
+                .character()
+                .getCorporationId());
+            if (corporation != null) {
+                structureMapper.selectList(new LambdaQueryWrapper<EveCorporationStructureDO>()
+                    .eq(EveCorporationStructureDO::getTenantId, source.tenantId())
+                    .eq(EveCorporationStructureDO::getCorporationRefId, corporation.getId())
+                    .eq(EveCorporationStructureDO::getDeleted, 0L)
+                    .in(EveCorporationStructureDO::getStructureId, structureIds))
+                    .stream()
+                    .filter(item -> item.getStructureName() != null && !item.getStructureName().isBlank())
+                    .forEach(item -> names.put(item.getStructureId(), item.getStructureName()));
+            }
+        }
         return names;
     }
 
@@ -351,10 +383,10 @@ public class EveGameNotificationService {
         String senderName = source.getSenderId() == null ? null : entityNames.get(source.getSenderId());
         EveGameNotificationPresentation presentation = notificationPresentationService.present(source
             .getNotificationType(), source.getContent(), entityNames);
-        return new EveGameNotificationResp(source.getNotificationId(), source.getIsRead(), source.getCategory(), source
-            .getNotificationType(), senderName, source.getSenderType(), source.getContent(), presentation
-                .summary(), presentation.details(), source.getSentAt(), source.getLastSeenAt(), source
-                    .getSourceExpiresAt());
+        return new EveGameNotificationResp(source.getNotificationId(), source.getIsRead(), categoryOf(source
+            .getNotificationType()), source.getNotificationType(), senderName, source.getSenderType(), source
+                .getContent(), presentation.title(), presentation.summary(), presentation.details(), source
+                    .getSentAt(), source.getLastSeenAt(), source.getSourceExpiresAt());
     }
 
     /** 个人通知同步所需的角色、授权与隔离上下文。 */

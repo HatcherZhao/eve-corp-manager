@@ -1129,6 +1129,7 @@ export interface EveGameNotification {
   read: boolean
   category: Exclude<EveGameNotificationCategory, 'ALL'>
   type?: string
+  title?: string
   senderName?: string
   senderType?: string
   content?: string

@@ -44,28 +44,54 @@ const detail = ref<EveGameNotification>()
 const query = reactive({ page: 1, size: 20, keyword: '' })
 
 const notificationTypeLabels: Record<string, string> = {
-  MoonminingExtractionStarted: '月矿开始提取',
-  MoonminingExtractionFinished: '月矿提取完成',
-  MoonminingAutomaticFracture: '月矿自然碎裂',
-  MoonminingLaserFired: '月矿激光启动',
-  MoonminingExtractionCancelled: '月矿提取已取消',
-  StructureFuelAlert: '建筑燃料预警',
-  StructureWentHighPower: '建筑进入高能状态',
-  StructureWentLowPower: '建筑进入低能状态',
-  StructureServicesOffline: '建筑服务离线',
-  StructureUnderAttack: '建筑遭受攻击',
-  StructureImpendingAbandonmentAssetsAtRisk: '建筑即将废弃，资产存在风险',
-  StructureAnchoring: '建筑开始锚定',
-  StructureOnline: '建筑已上线',
-  StructureUnanchoring: '建筑开始解除锚定',
-  StructureItemsMovedToSafety: '建筑物资已移入资产安全',
-  CorpAppNewMsg: '收到新的军团申请',
-  CorpTaxChangeMsg: '军团税率变更',
-  CharAppAcceptMsg: '军团申请已接受',
-  CharAppWithdrawMsg: '军团申请已撤回',
-  CharTerminationMsg: '角色军团关系变更',
-  WarDeclared: '战争已宣战',
-  WarRetractedByConcord: '战争已撤销',
+  'MoonminingExtractionStarted': '月矿开始提取',
+  'MoonminingExtractionFinished': '月矿提取完成',
+  'MoonminingAutomaticFracture': '月矿自然碎裂',
+  'MoonminingLaserFired': '月矿激光启动',
+  'MoonminingExtractionCancelled': '月矿提取已取消',
+  'StructureFuelAlert': '建筑燃料不足一天',
+  'StructureWentHighPower': '建筑进入高能状态',
+  'StructureWentLowPower': '建筑进入低能状态',
+  'StructureServicesOffline': '建筑燃料耗尽，服务停用',
+  'StructureUnderAttack': '建筑遭受攻击',
+  'StructureImpendingAbandonmentAssetsAtRisk': '建筑即将废弃，资产存在风险',
+  'StructureAnchoring': '建筑开始锚定',
+  'StructureOnline': '建筑已上线',
+  'StructureUnanchoring': '建筑开始解除锚定',
+  'StructureItemsMovedToSafety': '建筑物资已移入资产安全',
+  'unknown notification type (6040)': '岩浆气不足一天',
+  'unknown notification type (6041)': '岩浆气耗尽，生产停止',
+  'OwnershipTransferred': '建筑所有权转移',
+  'StructuresReinforcementChanged': '建筑增强时间调整',
+  'EntosisCaptureStarted': '主权建筑正被占领',
+  'SovCommandNodeEventStarted': '主权指挥节点开始解除隐形',
+  'SovStructureReinforced': '主权建筑进入增强模式',
+  'SovStructureDestroyed': '主权建筑被击毁',
+  'SovStructureSelfDestructRequested': '主权建筑自毁请求',
+  'SovStructureSelfDestructFinished': '主权建筑自毁完成',
+  'SovAllClaimAquiredMsg': '主权已获 DED 认可',
+  'WarInherited': '战争关系更新',
+  'WarAdopted': '联盟接管战争',
+  'WarHQRemovedFromSpace': '战争总部已移除',
+  'WarInvalid': '战争失效',
+  'WarSurrenderOfferMsg': '收到战争投降提议',
+  'AcceptedSurrender': '战争投降提议已接受',
+  'CorpWarSurrenderMsg': '战争投降通知',
+  'CorpAllBillMsg': '军团或联盟账单',
+  'CorpNewCEOMsg': '军团 CEO 更换',
+  'CorpFriendlyFireEnableTimerStarted': '军团友军误伤将变为合法行为',
+  'CorpFriendlyFireEnableTimerCompleted': '军团友军误伤现在变为合法行为',
+  'CorpFriendlyFireDisableTimerStarted': '军团友军误伤将变为非法行为',
+  'CorpFriendlyFireDisableTimerCompleted': '军团友军误伤现在变为非法行为',
+  'CorpAppAcceptMsg': '收到军团邀请',
+  'AllianceCapitalChanged': '联盟首都变更',
+  'CorpAppNewMsg': '收到新的军团申请',
+  'CorpTaxChangeMsg': '军团税率变更',
+  'CharAppAcceptMsg': '成员加入军团',
+  'CharAppWithdrawMsg': '军团申请已撤回',
+  'CharTerminationMsg': '成员退出军团',
+  'WarDeclared': '战争已宣战',
+  'WarRetractedByConcord': '战争已撤销',
 }
 
 function formatTime(value?: string) {
@@ -88,7 +114,8 @@ function senderTypeLabel(value?: string) {
 }
 
 function notificationTitle(record: EveGameNotification) {
-  return notificationTypeLabels[record.type || ''] || '其他游戏通知'
+  const type = record.type?.trim() || ''
+  return record.title || notificationTypeLabels[type] || '其他游戏通知'
 }
 
 /** 解码原始国服报文，供默认折叠的诊断区使用。 */
@@ -110,7 +137,7 @@ function notificationSummary(record: EveGameNotification) {
   if (record.summary) return record.summary
   const structureName = fieldValue(record.content, 'structureName')
   const structure = structureName ? `建筑「${structureName}」` : '该建筑'
-  switch (record.type) {
+  switch (record.type?.trim()) {
     case 'MoonminingExtractionStarted': return `${structure}已开始月矿提取。`
     case 'MoonminingExtractionFinished': return `${structure}的月矿提取已完成。`
     case 'MoonminingAutomaticFracture': return `${structure}的月矿已自然碎裂。`
@@ -122,6 +149,17 @@ function notificationSummary(record: EveGameNotification) {
     case 'StructureServicesOffline': return `${structure}存在离线服务。`
     case 'StructureUnderAttack': return `${structure}正在遭受攻击。`
     case 'StructureImpendingAbandonmentAssetsAtRisk': return `${structure}即将废弃，资产存在风险。`
+    case 'unknown notification type (6040)': return `${structure}的岩浆气已处于低位，剩余量不足一天生产所需。`
+    case 'unknown notification type (6041)': return `${structure}的岩浆气已耗尽，卫星材料生产已停止。`
+    case 'EntosisCaptureStarted': return '主权建筑正在遭受侵噬链接占领。'
+    case 'SovCommandNodeEventStarted': return '主权建筑的指挥节点已开始解除隐形。'
+    case 'SovStructureReinforced': return '主权建筑已进入增强模式。'
+    case 'SovStructureDestroyed': return '敌方占领指挥节点后，主权建筑已自毁。'
+    case 'WarInherited': return '军团离开联盟后，相关战争关系已更新。'
+    case 'AllianceCapitalChanged': return '联盟首都星系已变更。'
+    case 'CorpNewCEOMsg': return '军团已任命新的 CEO。'
+    case 'CorpFriendlyFireEnableTimerStarted': return '军团友军伤害规则将在倒计时结束后启用。'
+    case 'CharAppAcceptMsg': return '成员已接受邀请并加入军团。'
     case 'CorpTaxChangeMsg': {
       const previousRate = fieldValue(record.content, 'oldTaxRate')
       const currentRate = fieldValue(record.content, 'newTaxRate')
@@ -254,7 +292,7 @@ onMounted(loadNotifications)
       </template>
     </section>
 
-    <a-drawer v-model:visible="detailVisible" width="640px" :footer="false" unmount-on-close title="游戏通知详情">
+    <a-drawer v-model:visible="detailVisible" width="min(640px, 100vw)" :footer="false" unmount-on-close title="游戏通知详情">
       <template v-if="detail">
         <div class="eve-notifications-page__detail-heading">
           <a-tag :color="detail.read ? 'gray' : 'arcoblue'">{{ detail.read ? '已读' : '未读' }}</a-tag>
@@ -299,11 +337,12 @@ onMounted(loadNotifications)
 .eve-notifications-page__count { margin-left: auto; color: var(--color-text-3); font-size: 13px; }
 .eve-notifications-page__table-wrap { overflow: hidden; border: 1px solid var(--color-neutral-3); border-radius: 8px; background: var(--color-bg-2); }
 .eve-notifications-page__table-wrap :deep(.arco-pagination) { justify-content: flex-end; padding: 12px; }
-.eve-notifications-page__detail-heading { display: grid; gap: 8px; }
+.eve-notifications-page__detail-heading { min-width: 0; display: grid; gap: 8px; }
 .eve-notifications-page__detail-heading h2 { margin: 0; font-size: 20px; word-break: break-word; }
-.eve-notifications-page__detail-heading span, .eve-notifications-page__detail-meta { color: var(--color-text-3); font-size: 13px; }
+.eve-notifications-page__detail-heading span, .eve-notifications-page__detail-meta { overflow-wrap: anywhere; color: var(--color-text-3); font-size: 13px; }
 .eve-notifications-page__content { margin-top: 24px; }
 .eve-notifications-page__content h3 { margin-bottom: 10px; }
+.eve-notifications-page__content p, .eve-notifications-page__content :deep(.arco-descriptions-item-value) { overflow-wrap: anywhere; }
 .eve-notifications-page__raw-content { margin-top: 18px; }
 .eve-notifications-page__content pre { margin: 0; padding: 14px; overflow: auto; white-space: pre-wrap; word-break: break-word; border-radius: 6px; background: var(--color-fill-2); color: var(--color-text-1); font-family: inherit; line-height: 1.7; }
 .eve-notifications-page__detail-meta { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 20px; }

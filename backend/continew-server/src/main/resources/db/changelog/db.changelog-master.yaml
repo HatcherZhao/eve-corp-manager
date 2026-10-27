@@ -144,3 +144,5 @@ databaseChangeLog:
       file: db/changelog/mysql/eve/057_agent_multi_corporation_grants.sql
   - include:
       file: db/changelog/mysql/eve/058_derived_role_policy.sql
+  - include:
+      file: db/changelog/mysql/eve/059_notification_categories.sql
