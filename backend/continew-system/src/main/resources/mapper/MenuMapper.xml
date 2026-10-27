@@ -4,10 +4,10 @@
     <select id="selectPermissionByUserId" resultType="java.lang.String">
         SELECT DISTINCT t1.permission
         FROM sys_menu AS t1
-            LEFT JOIN sys_role_menu AS t2 ON t2.menu_id = t1.id
-            LEFT JOIN sys_role AS t3 ON t3.id = t2.role_id
-            LEFT JOIN sys_user_role AS t4 ON t4.role_id = t3.id
-            LEFT JOIN sys_user AS t5 ON t5.id = t4.user_id
+            INNER JOIN eve_effective_role_menu AS t2 ON t2.menu_id = t1.id
+            INNER JOIN sys_role AS t3 ON t3.id = t2.role_id AND t3.tenant_id = t2.tenant_id
+            INNER JOIN sys_user_role AS t4 ON t4.role_id = t3.id AND t4.tenant_id = t3.tenant_id
+            INNER JOIN sys_user AS t5 ON t5.id = t4.user_id AND t5.tenant_id = t3.tenant_id
         WHERE t1.deleted = 0
           AND t5.id = #{userId}
           AND t1.status = 1
@@ -17,8 +17,8 @@
     <select id="selectListByRoleId" resultType="top.continew.admin.system.model.entity.MenuDO">
         SELECT t1.*
         FROM sys_menu AS t1
-        LEFT JOIN sys_role_menu AS t2 ON t2.menu_id = t1.id
-        LEFT JOIN sys_role AS t3 ON t3.id = t2.role_id
+        INNER JOIN eve_effective_role_menu AS t2 ON t2.menu_id = t1.id
+        INNER JOIN sys_role AS t3 ON t3.id = t2.role_id AND t3.tenant_id = t2.tenant_id
         WHERE t1.deleted = 0
           AND t3.id = #{roleId}
           AND t1.status = 1

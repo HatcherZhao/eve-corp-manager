@@ -20,7 +20,6 @@ import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.lang.tree.Tree;
 import cn.hutool.core.util.StrUtil;
-import com.alicp.jetcache.anno.Cached;
 import jakarta.annotation.Resource;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Lazy;
@@ -118,7 +117,7 @@ public class MenuServiceImpl extends BaseServiceImpl<MenuMapper, MenuDO, MenuRes
     }
 
     @Override
-    @Cached(key = "#roleId", name = CacheConstants.ROLE_MENU_KEY_PREFIX)
+    // 菜单与接口权限读取同一有效授权，策略或套餐变化后刷新页面即可生效。
     public List<MenuResp> listByRoleId(Long roleId) {
         if (SystemConstants.SUPER_ADMIN_ROLE_ID.equals(roleId)) {
             return super.list(new MenuQuery(DisEnableStatusEnum.ENABLE), null);

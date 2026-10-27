@@ -105,17 +105,20 @@ public class SaExtensionInterceptor extends SaInterceptor {
         return UserContextHolder.getContext();
     }
 
-    /** 在 EVE 权限注解校验前更新会话，确保角色菜单迁移或总监调权立即对在线用户生效。 */
+    /** 在业务鉴权和首屏用户权限返回前更新会话，确保在线用户直接获得当前授权。 */
     void refreshEveSessionPermissions(HttpServletRequest request) {
-        if (eveSessionPermissionRefreshService != null && isLogin() && isEveRequest(request)) {
+        if (eveSessionPermissionRefreshService != null && isLogin() && shouldRefreshEvePermissions(request)) {
             eveSessionPermissionRefreshService.refreshCurrentEveUser();
         }
     }
 
-    /** 判断当前请求是否属于需要同步本站军团权限的 EVE 接口。 */
-    static boolean isEveRequest(HttpServletRequest request) {
-        return request != null && request.getRequestURI() != null && request.getRequestURI()
-            .startsWith(EVE_PATH_PREFIX);
+    /** EVE 业务请求和首屏权限、路由读取共用最新授权，避免刷新页面后仍取得旧会话权限。 */
+    static boolean shouldRefreshEvePermissions(HttpServletRequest request) {
+        if (request == null || request.getRequestURI() == null) {
+            return false;
+        }
+        String path = request.getRequestURI();
+        return path.startsWith(EVE_PATH_PREFIX) || "/auth/user/info".equals(path) || "/auth/user/route".equals(path);
     }
 
     /** 注销当前异常登录会话。 */

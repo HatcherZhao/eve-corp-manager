@@ -32,7 +32,7 @@ import java.util.List;
 public interface RoleMenuMapper extends BaseMapper<RoleMenuDO> {
 
     /**
-     * 根据角色 ID 列表查询
+     * 根据角色 ID 列表查询有效菜单，派生身份读取全局策略，业务角色读取自定义关联。
      *
      * @param roleIds 角色 ID 列表
      * @return 菜单 ID 列表

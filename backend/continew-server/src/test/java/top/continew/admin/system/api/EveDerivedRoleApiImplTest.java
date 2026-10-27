@@ -25,7 +25,6 @@ import top.continew.admin.system.mapper.RoleMapper;
 import top.continew.admin.system.mapper.UserRoleMapper;
 import top.continew.admin.system.model.entity.RoleDO;
 import top.continew.admin.system.model.entity.UserRoleDO;
-import top.continew.admin.system.service.RoleMenuService;
 import top.continew.admin.system.service.RoleService;
 
 import java.util.List;
@@ -35,9 +34,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -49,7 +48,6 @@ class EveDerivedRoleApiImplTest {
 
     private RoleMapper roleMapper;
     private UserRoleMapper userRoleMapper;
-    private RoleMenuService roleMenuService;
     private EveDerivedRoleApiImpl service;
 
     /** 初始化角色与关联持久层替身。 */
@@ -57,8 +55,7 @@ class EveDerivedRoleApiImplTest {
     void setUp() {
         roleMapper = mock(RoleMapper.class);
         userRoleMapper = mock(UserRoleMapper.class);
-        roleMenuService = mock(RoleMenuService.class);
-        service = new EveDerivedRoleApiImpl(roleMapper, userRoleMapper, roleMenuService, mock(RoleService.class));
+        service = new EveDerivedRoleApiImpl(roleMapper, userRoleMapper, mock(RoleService.class));
         when(roleMapper.selectByCode(any())).thenAnswer(invocation -> role(invocation.getArgument(0), roleId(invocation
             .getArgument(0))));
         when(roleMapper.selectByCodes(any())).thenReturn(List
@@ -80,9 +77,9 @@ class EveDerivedRoleApiImplTest {
             .containsExactlyInAnyOrder(3L, 2L);
     }
 
-    /** 新军团首次创建的 CEO/总监角色具有 Agent 管理菜单，普通成员不具有。 */
+    /** 新军团首次创建身份角色时只保存身份，菜单权限由全局策略实时派生。 */
     @Test
-    void shouldGrantAgentManagementOnlyToNewManagerRoles() {
+    void shouldCreateIdentityRolesWithoutCopyingTenantMenus() {
         org.mockito.Mockito.doReturn(null).when(roleMapper).selectByCode(any());
         doAnswer(invocation -> {
             RoleDO created = invocation.getArgument(0);
@@ -92,12 +89,11 @@ class EveDerivedRoleApiImplTest {
         EveDerivedRoleApiImpl spyService = spy(service);
         org.mockito.Mockito.doNothing().when(spyService).refreshUserContext(20L);
         spyService.synchronizeInTenant(20L, EveDerivedIdentity.OWNER);
-        verify(roleMenuService).add(org.mockito.ArgumentMatchers.argThat(ids -> ids.containsAll(List
-            .of(20200L, 20201L))), org.mockito.ArgumentMatchers.eq(1L));
-        verify(roleMenuService).add(org.mockito.ArgumentMatchers.argThat(ids -> ids.containsAll(List
-            .of(20200L, 20201L))), org.mockito.ArgumentMatchers.eq(2L));
-        verify(roleMenuService).add(org.mockito.ArgumentMatchers.argThat(ids -> !ids.contains(20200L) && !ids
-            .contains(20201L)), org.mockito.ArgumentMatchers.eq(3L));
+        org.mockito.ArgumentCaptor<RoleDO> roles = org.mockito.ArgumentCaptor.forClass(RoleDO.class);
+        verify(roleMapper, org.mockito.Mockito.times(3)).insert(roles.capture());
+        assertThat(roles.getAllValues()).extracting(RoleDO::getCode, RoleDO::getName, RoleDO::getIsSystem)
+            .containsExactlyInAnyOrder(org.assertj.core.groups.Tuple.tuple("corp_member", "军团成员", true), org.assertj.core.groups.Tuple
+                .tuple("corp_owner", "军团 CEO", true), org.assertj.core.groups.Tuple.tuple("corp_admin", "军团总监", true));
     }
 
     /** 普通成员只保留成员派生角色。 */

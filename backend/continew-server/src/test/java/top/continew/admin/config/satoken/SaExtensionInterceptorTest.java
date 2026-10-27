@@ -17,10 +17,17 @@
 package top.continew.admin.config.satoken;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import top.continew.admin.system.service.EveSessionPermissionRefreshService;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 /**
  * 登录会话租户边界拦截测试。
@@ -48,14 +55,23 @@ class SaExtensionInterceptorTest {
         assertThat(SaExtensionInterceptor.hasTenantAccess(10L, 10L)).isTrue();
     }
 
-    /** 仅 EVE 接口在注解鉴权前刷新军团角色权限，避免普通接口增加无意义查询。 */
-    @Test
-    void shouldIdentifyEveRequestForSessionPermissionRefresh() {
-        MockHttpServletRequest eveRequest = new MockHttpServletRequest("GET", "/eve/mining");
-        MockHttpServletRequest ordinaryRequest = new MockHttpServletRequest("GET", "/auth/user/info");
+    /** 业务接口和首屏权限、动态路由都应先刷新会话，保证旧登录态立即取得新授权。 */
+    @ParameterizedTest
+    @ValueSource(strings = {"/eve/mining", "/eve/me", "/auth/user/info", "/auth/user/route"})
+    void shouldRefreshPermissionsBeforeBusinessAndAuthenticationReads(String path) {
+        EveSessionPermissionRefreshService service = mock(EveSessionPermissionRefreshService.class);
+        SaExtensionInterceptor interceptor = spy(new SaExtensionInterceptor(ignored -> {}, service));
+        doReturn(true).when(interceptor).isLogin();
+        interceptor.refreshEveSessionPermissions(new MockHttpServletRequest("GET", path));
+        verify(service).refreshCurrentEveUser();
+    }
 
-        assertThat(SaExtensionInterceptor.isEveRequest(eveRequest)).isTrue();
-        assertThat(SaExtensionInterceptor.isEveRequest(ordinaryRequest)).isFalse();
+    /** 无关接口和缺失请求不触发军团权限查询。 */
+    @Test
+    void shouldIgnoreUnrelatedAndMissingRequests() {
+        assertThat(SaExtensionInterceptor
+            .shouldRefreshEvePermissions(new MockHttpServletRequest("GET", "/system/user"))).isFalse();
+        assertThat(SaExtensionInterceptor.shouldRefreshEvePermissions(null)).isFalse();
     }
 
     /** 已登录但用户上下文丢失时必须注销会话并返回未授权，不能继续进入控制器。 */

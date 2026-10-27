@@ -31,7 +31,6 @@ import top.continew.admin.system.mapper.RoleMapper;
 import top.continew.admin.system.mapper.UserRoleMapper;
 import top.continew.admin.system.model.entity.RoleDO;
 import top.continew.admin.system.model.entity.UserRoleDO;
-import top.continew.admin.system.service.RoleMenuService;
 import top.continew.admin.system.service.RoleService;
 import top.continew.starter.extension.tenant.util.TenantUtils;
 
@@ -52,13 +51,8 @@ import static top.continew.admin.common.enums.EveDerivedIdentity.OWNER_ROLE_CODE
 @RequiredArgsConstructor
 public class EveDerivedRoleApiImpl implements EveDerivedRoleApi {
 
-    private static final List<Long> IDENTITY_MENU_IDS = List.of(20000L, 20010L, 20011L);
-    private static final List<Long> MANAGER_MENU_IDS = List
-        .of(20000L, 20010L, 20011L, 20020L, 20021L, 20022L, 20023L, 20024L, 20200L, 20201L);
-
     private final RoleMapper roleMapper;
     private final UserRoleMapper userRoleMapper;
-    private final RoleMenuService roleMenuService;
     private final RoleService roleService;
 
     /** {@inheritDoc} */
@@ -71,7 +65,7 @@ public class EveDerivedRoleApiImpl implements EveDerivedRoleApi {
     /** 在租户上下文内替换派生角色并清除初始化管理员角色。 */
     void synchronizeInTenant(Long userId, EveDerivedIdentity identity) {
         Map<String, Long> roleIds = Map
-            .of(MEMBER_ROLE_CODE, getOrCreateRole(MEMBER_ROLE_CODE, "军团成员", 30, IDENTITY_MENU_IDS), OWNER_ROLE_CODE, getOrCreateRole(OWNER_ROLE_CODE, "军团 CEO", 10, MANAGER_MENU_IDS), ADMIN_ROLE_CODE, getOrCreateRole(ADMIN_ROLE_CODE, "军团总监", 20, MANAGER_MENU_IDS));
+            .of(MEMBER_ROLE_CODE, getOrCreateRole(MEMBER_ROLE_CODE, "军团成员", 30), OWNER_ROLE_CODE, getOrCreateRole(OWNER_ROLE_CODE, "军团 CEO", 10), ADMIN_ROLE_CODE, getOrCreateRole(ADMIN_ROLE_CODE, "军团总监", 20));
         List<String> removableCodes = new ArrayList<>(EveDerivedIdentity.ROLE_CODES);
         removableCodes.add(RoleCodeEnum.TENANT_ADMIN.getCode());
         List<Long> removableIds = roleMapper.selectByCodes(removableCodes).stream().map(RoleDO::getId).toList();
@@ -93,8 +87,8 @@ public class EveDerivedRoleApiImpl implements EveDerivedRoleApi {
         refreshUserContextAfterCommit(userId);
     }
 
-    /** 查询或创建指定派生角色，并校准其固定菜单模板。 */
-    private Long getOrCreateRole(String code, String name, int sort, List<Long> menuIds) {
+    /** 查询或创建身份角色，菜单由全局策略实时派生，不再复制到军团角色。 */
+    private Long getOrCreateRole(String code, String name, int sort) {
         RoleDO role = roleMapper.selectByCode(code);
         if (role == null) {
             role = new RoleDO();
@@ -109,8 +103,6 @@ public class EveDerivedRoleApiImpl implements EveDerivedRoleApi {
             role.setCreateUser(1L);
             role.setDeleted(0L);
             roleMapper.insert(role);
-            // 角色仅首次创建时写入菜单；已存在角色已由数据库迁移统一补齐，登录时不得重复改写菜单。
-            roleMenuService.add(menuIds, role.getId());
         }
         return role.getId();
     }

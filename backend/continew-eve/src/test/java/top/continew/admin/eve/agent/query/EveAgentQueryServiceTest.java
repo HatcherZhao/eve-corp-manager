@@ -124,6 +124,20 @@ class EveAgentQueryServiceTest {
             .containsEntry("lastSeenAt", "2026-10-25T20:00:00+08:00");
     }
 
+    /** Agent 权限摘要与用户鉴权共用有效授权，并始终限定当前军团租户。 */
+    @Test
+    void shouldReadEffectivePermissionsInAgentSummary() {
+        when(jdbcTemplate.queryForObject(anyString(), any(SqlParameterSource.class), eq(Long.class))).thenReturn(0L);
+        when(jdbcTemplate.queryForList(anyString(), any(SqlParameterSource.class))).thenReturn(List.of());
+        service.query(principal, Map.of("dataset", "permission_summary"));
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<SqlParameterSource> parameters = ArgumentCaptor.forClass(SqlParameterSource.class);
+        verify(jdbcTemplate).queryForList(sql.capture(), parameters.capture());
+        assertThat(sql.getValue())
+            .contains("eve_effective_role_menu", "rm.tenant_id=r.tenant_id", "r.tenant_id=:tenantId");
+        assertThat(parameters.getValue().getValue("tenantId")).isEqualTo(100L);
+    }
+
     /**
      * 验证所有可形成 SQL 结构的输入都必须命中白名单。
      */

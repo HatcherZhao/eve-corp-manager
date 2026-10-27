@@ -230,6 +230,7 @@ continew-starter.tenant:
     - gen_config # 代码生成配置表
     - gen_field_config # 代码生成字段配置表
     - sys_menu # 菜单表
+    - eve_derived_role_menu # EVE 派生角色全局授权定义
     - sys_dict # 字典表
     - sys_dict_item # 字典项表
     - sys_option # 参数表

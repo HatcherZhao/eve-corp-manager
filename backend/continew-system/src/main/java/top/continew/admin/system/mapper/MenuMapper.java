@@ -34,7 +34,7 @@ import java.util.Set;
 public interface MenuMapper extends BaseMapper<MenuDO> {
 
     /**
-     * 根据用户 ID 查询权限码
+     * 根据用户 ID 查询有效权限码，与动态菜单共用统一授权定义。
      *
      * @param userId 用户 ID
      * @return 权限码集合
@@ -42,7 +42,7 @@ public interface MenuMapper extends BaseMapper<MenuDO> {
     Set<String> selectPermissionByUserId(@Param("userId") Long userId);
 
     /**
-     * 根据角色 ID 查询
+     * 根据角色 ID 查询有效菜单，自动包含该身份的全局授权。
      *
      * @param roleId 角色 ID
      * @return 菜单列表
