@@ -6,7 +6,7 @@
       </a-alert>
       <a-divider v-if="settingOpen" orientation="center">系统布局</a-divider>
       <a-row v-if="settingOpen" :gutter="[8, 8]">
-        <a-col v-for="item in LAYOUT_OPTIONS" :key="item.value" :span="8">
+        <a-col v-for="item in LAYOUT_OPTIONS" :key="item.value" :span="12">
           <LayoutItem :mode="item.value" :name="item.label" @click="toggleLayout(item.value)" />
         </a-col>
       </a-row>
@@ -94,8 +94,6 @@ interface LayoutItemProps { label: string, value: App.AppSettings['layout'] }
 /** 布局选项 */
 const LAYOUT_OPTIONS: LayoutItemProps[] = [
   { label: '默认布局', value: 'left' },
-  { label: '混合布局', value: 'mix' },
-  { label: '顶部布局', value: 'top' },
   { label: '双列布局', value: 'columns' },
 ]
 const tabModeList: App.TabItem[] = [

@@ -143,4 +143,14 @@ const storeSetup = () => {
   }
 }
 
-export const useAppStore = defineStore('app', storeSetup, { persist: true })
+export const useAppStore = defineStore('app', storeSetup, {
+  persist: {
+    // 恢复旧配置时仅迁移不再支持的布局，保留用户已选择的双列布局及其他偏好。
+    afterRestore: ({ store }) => {
+      if (store.layout !== 'left' && store.layout !== 'columns') {
+        store.layout = 'left'
+        store.$persist()
+      }
+    },
+  },
+})

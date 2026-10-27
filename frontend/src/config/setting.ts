@@ -8,7 +8,7 @@ export const defaultSettings: App.AppSettings = {
   menuCollapse: false,
   menuAccordion: true,
   menuDark: false,
-  layout: 'mix',
+  layout: 'left',
   enableColorWeaknessMode: false,
   enableMourningMode: false,
 }

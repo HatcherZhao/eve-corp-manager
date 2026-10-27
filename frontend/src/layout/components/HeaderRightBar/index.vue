@@ -51,7 +51,7 @@
         <a-row align="center" :wrap="false" class="user">
           <!-- 管理员头像 -->
           <Avatar :src="eveCharacterAvatar || userStore.avatar" :name="userStore.nickname" :size="32" />
-          <span class="username">{{ userStore.nickname }}</span>
+          <span v-if="isDesktop" class="username">{{ userStore.nickname }}</span>
           <icon-down />
         </a-row>
         <template #content>
