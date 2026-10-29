@@ -100,6 +100,44 @@ class EveOrganizationNotificationPresentationTest {
         assertThat(details(capture)).contains("60 分钟").doesNotContain("60 分钟后占领");
     }
 
+    /** 联盟主权通知复用完整解读，不以接收角色军团猜测资产归属。 */
+    @Test
+    void shouldInterpretAllianceSovereigntyWithoutInventingOwnership() {
+        long[] systems = {30004644L, 30004647L, 30004646L};
+        String[] names = {"V6-NY1", "PXF-RF", "9DQW-W"};
+        long[] ticks = {134378305960071693L, 134378216741245653L, 134378303077355622L};
+        String[] times = {"2026-10-30T18:43:16.0071693+08:00", "2026-10-30T16:14:34.1245653+08:00",
+            "2026-10-30T18:38:27.7355622+08:00"};
+        for (int index = 0; index < systems.length; index++) {
+            String prefix = "solarSystemID: " + systems[index] + "\n";
+            var capture = service.interpret("EntosisCaptureStarted", prefix + "structureTypeID: 32458\n");
+            assertThat(capture).containsEntry("eventScope", "ALLIANCE_SOVEREIGNTY")
+                .containsEntry("solarSystemName", names[index])
+                .containsEntry("structureTypeName", "主权中心");
+            assertThat(capture.get("summary").toString()).contains("开始遭受侵噬链接占领");
+            assertThat(capture).doesNotContainKeys("ownerCorporationId", "ownerAllianceId");
+            assertThat(capture.get("details").toString()).doesNotContain("所属联盟", "相关军团");
+            var reinforced = service
+                .interpret("SovStructureReinforced", prefix + "campaignEventType: 2\ndecloakTime: " + ticks[index] + "\n");
+            assertThat(reinforced).containsEntry("structureTypeName", "主权中心")
+                .containsEntry("commandNodeDecloakAt", times[index]);
+            assertThat(reinforced.get("summary").toString()).contains("增强模式").doesNotContain("增援");
+        }
+    }
+
+    /** 普通建筑与未知通知不会被主权关键词或任意时间字段提升为联盟事件。 */
+    @Test
+    void shouldKeepUnknownAndOrdinaryStructureScopesSeparate() {
+        assertThat(service.interpret("StructureFuelAlert", "decloakTime: 134378305960071693\n"))
+            .containsEntry("eventScope", "STRUCTURE")
+            .containsEntry("commandNodeDecloakAt", null);
+        assertThat(service.interpret("UnexpectedType", "structureTypeID: 32458\n"))
+            .containsEntry("eventScope", "UNKNOWN");
+        assertThat(service.interpret("SovStructureReinforced", "decloakTime: -1\n"))
+            .containsEntry("commandNodeDecloakAt", null)
+            .containsEntry("structureTypeName", null);
+    }
+
     /** 友军规则在次日生效，开始倒计时不能提前显示为已生效。 */
     @Test
     void shouldDistinguishFriendlyFireTimerFromCompletion() {

@@ -78,13 +78,13 @@ public class EveGameNotificationPresentationService {
             case "StructureUnanchoring" -> "建筑开始解除锚定";
             case "StructuresReinforcementChanged" -> "建筑增强时间调整";
             case "OwnershipTransferred" -> "建筑所有权转移";
-            case "EntosisCaptureStarted" -> "主权建筑正被占领";
-            case "SovCommandNodeEventStarted" -> "主权指挥节点开始解除隐形";
-            case "SovStructureReinforced" -> "主权建筑进入增强模式";
-            case "SovStructureDestroyed" -> "主权建筑被击毁";
-            case "SovStructureSelfDestructRequested" -> "主权建筑自毁请求";
-            case "SovStructureSelfDestructFinished" -> "主权建筑自毁完成";
-            case "SovAllClaimAquiredMsg" -> "主权已获 DED 认可";
+            case "EntosisCaptureStarted" -> "联盟主权建筑开始遭受侵噬";
+            case "SovCommandNodeEventStarted" -> "联盟主权指挥节点开始解除隐形";
+            case "SovStructureReinforced" -> "联盟主权建筑进入增强模式";
+            case "SovStructureDestroyed" -> "联盟主权建筑被击毁";
+            case "SovStructureSelfDestructRequested" -> "联盟主权建筑自毁请求";
+            case "SovStructureSelfDestructFinished" -> "联盟主权建筑自毁完成";
+            case "SovAllClaimAquiredMsg" -> "联盟主权已获 DED 认可";
             case "AllianceCapitalChanged" -> "联盟首都变更";
             case "CorpAppNewMsg" -> "收到新的军团申请";
             case "CharAppAcceptMsg" -> "成员加入军团";
@@ -109,6 +109,66 @@ public class EveGameNotificationPresentationService {
             case "CorpWarSurrenderMsg" -> "战争投降通知";
             default -> "其他游戏通知";
         };
+    }
+
+    /** 事件范围用于区分通知语义，不代表资产所有者或通知接收军团。 */
+    public static String eventScopeOf(String type) {
+        String normalized = type == null ? "" : type.trim();
+        return switch (normalized) {
+            case "EntosisCaptureStarted", "SovCommandNodeEventStarted", "SovStructureReinforced",
+                "SovStructureDestroyed", "SovStructureSelfDestructRequested", "SovStructureSelfDestructFinished",
+                "SovAllClaimAquiredMsg" -> "ALLIANCE_SOVEREIGNTY";
+            case "AllianceCapitalChanged" -> "ALLIANCE";
+            case "OwnershipTransferred", "unknown notification type (6040)", "unknown notification type (6041)" ->
+                "STRUCTURE";
+            case "AcceptedSurrender", "CorpWarSurrenderMsg" -> "WAR";
+            case "CorpAppNewMsg", "CharAppAcceptMsg", "CorpAppAcceptMsg", "CharAppWithdrawMsg", "CharTerminationMsg",
+                "CorpTaxChangeMsg", "CorpNewCEOMsg", "CorpAllBillMsg", "CorpFriendlyFireEnableTimerStarted",
+                "CorpFriendlyFireEnableTimerCompleted", "CorpFriendlyFireDisableTimerStarted",
+                "CorpFriendlyFireDisableTimerCompleted" -> "CORPORATION";
+            default -> normalized.startsWith("Structure") || normalized.startsWith("Moonmining")
+                ? "STRUCTURE"
+                : normalized.startsWith("War") ? "WAR" : "UNKNOWN";
+        };
+    }
+
+    /** 将事件范围转换为统一中文标签，未知类型保留未知范围。 */
+    public static String eventScopeLabelOf(String type) {
+        return switch (eventScopeOf(type)) {
+            case "ALLIANCE_SOVEREIGNTY" -> "联盟主权";
+            case "ALLIANCE" -> "联盟";
+            case "STRUCTURE" -> "建筑";
+            case "CORPORATION" -> "军团";
+            case "WAR" -> "战争";
+            default -> "未知";
+        };
+    }
+
+    /** 复用页面解析结果供 MCP 使用，仅按原文及本地静态资料补充事实。 */
+    public Map<String, Object> interpret(String type, String content) {
+        NotificationData data = NotificationData.parse(decode(content));
+        EveGameNotificationPresentation presentation = present(type, content, Map.of());
+        Long systemId = firstNonNull(data.longValue("solarSystemID"), data.longValue("solarsystemID"));
+        Long typeId = data.longValue("structureTypeID");
+        String typeName = typeId == null ? null : staticNameReference.findTypeName(typeId);
+        if (typeName == null && "ALLIANCE_SOVEREIGNTY".equals(eventScopeOf(type)) && Long.valueOf(2)
+            .equals(data.longValue("campaignEventType"))) {
+            typeName = "主权中心";
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("title", presentation.title());
+        result.put("summary", presentation.summary());
+        result.put("details", presentation.details());
+        result.put("eventScope", eventScopeOf(type));
+        result.put("eventScopeLabel", eventScopeLabelOf(type));
+        result.put("solarSystemId", systemId == null ? null : systemId.toString());
+        result.put("solarSystemName", systemId == null ? null : staticNameReference.findSolarSystemName(systemId));
+        result.put("structureTypeId", typeId == null ? null : typeId.toString());
+        result.put("structureTypeName", typeName);
+        result.put("commandNodeDecloakAt", "ALLIANCE_SOVEREIGNTY".equals(eventScopeOf(type))
+            ? tickTime(data.longValue("decloakTime"), DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+            : null);
+        return result;
     }
 
     private static final Set<String> MOON_ORE_NOTIFICATION_TYPES = Set
@@ -416,6 +476,7 @@ public class EveGameNotificationPresentationService {
         if (building == null) {
             building = "主权建筑";
         }
+        details.put("事件范围", "联盟主权");
         details.put("主权建筑", building);
         putEntity(details, "所属联盟", data, names, "allianceID");
         putEntity(details, "相关军团", data, names, "corpID");
@@ -425,7 +486,7 @@ public class EveGameNotificationPresentationService {
         putTime(details, "指挥节点解除隐形时间（北京时间）", data.longValue("decloakTime"));
         putTime(details, "自毁时间（北京时间）", data.longValue("destructTime"));
         String action = switch (type) {
-            case "EntosisCaptureStarted" -> "正被占领，已有飞行员开始使用侵噬链接";
+            case "EntosisCaptureStarted" -> "开始遭受侵噬链接占领";
             case "SovCommandNodeEventStarted" -> "的指挥节点开始解除隐形，可使用侵噬链接占领";
             case "SovStructureReinforced" -> "已进入增强模式";
             case "SovStructureDestroyed" -> "被击毁，敌方占领指挥节点后建筑已自毁";
@@ -676,6 +737,11 @@ public class EveGameNotificationPresentationService {
 
     /** 国服时间使用以 1601 年为基准的 ticks，每 tick 为 100ns。 */
     private static String tickTime(Long ticks) {
+        return tickTime(ticks, TICK_TIME_FORMATTER);
+    }
+
+    /** 将合法 ticks 转为指定北京时间格式，无效值返回空。 */
+    private static String tickTime(Long ticks, DateTimeFormatter formatter) {
         if (ticks == null || ticks <= 0) {
             return null;
         }
@@ -685,7 +751,7 @@ public class EveGameNotificationPresentationService {
                 .plusNanos((ticks % 10_000_000L) * 100L)
                 .atOffset(ZoneOffset.UTC)
                 .atZoneSameInstant(DISPLAY_ZONE)
-                .format(TICK_TIME_FORMATTER);
+                .format(formatter);
         } catch (RuntimeException ignored) {
             return null;
         }

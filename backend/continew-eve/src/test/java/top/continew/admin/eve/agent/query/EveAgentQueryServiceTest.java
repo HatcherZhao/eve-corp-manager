@@ -45,6 +45,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 
 import top.continew.admin.eve.agent.EveAgentPrincipal;
+import top.continew.admin.eve.service.EveGameNotificationPresentationService;
 
 /**
  * 外部 Agent 查询服务安全边界与序列化回归测试。
@@ -54,6 +55,7 @@ import top.continew.admin.eve.agent.EveAgentPrincipal;
 class EveAgentQueryServiceTest {
 
     private NamedParameterJdbcTemplate jdbcTemplate;
+    private EveGameNotificationPresentationService notificationPresentationService;
     private EveAgentQueryService service;
     private EveAgentPrincipal principal;
 
@@ -63,7 +65,8 @@ class EveAgentQueryServiceTest {
     @BeforeEach
     void setUp() {
         jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
-        service = new EveAgentQueryService(jdbcTemplate);
+        notificationPresentationService = mock(EveGameNotificationPresentationService.class);
+        service = new EveAgentQueryService(jdbcTemplate, notificationPresentationService);
         principal = new EveAgentPrincipal(9L, 100L, 200L, 300L, "QQ 机器人");
     }
 
@@ -76,6 +79,47 @@ class EveAgentQueryServiceTest {
 
         assertThat(catalog.toString()).contains("mail", "documentReadable")
             .doesNotContain("accessToken", "refreshToken", "ownerHash", "lastFailureMessage");
+        @SuppressWarnings("unchecked") Map<String, Object> notifications = ((List<Map<String, Object>>)catalog
+            .get("datasets")).stream()
+            .filter(item -> "notifications".equals(item.get("key")))
+            .findFirst()
+            .orElseThrow();
+        @SuppressWarnings("unchecked") List<Map<String, Object>> fields = (List<Map<String, Object>>)notifications
+            .get("fields");
+        assertThat(fields).extracting(field -> field.get("name"))
+            .doesNotContain("title", "eventScope", "eventScopeLabel", "interpretation", "interpretationComplete");
+        assertThat(notifications).containsKey("computedResponseFields")
+            .containsEntry("scopeSemantics", "当前军团仅表示通知接收角色与授权来源范围，不代表事件建筑归属于该军团");
+    }
+
+    /** 联盟主权事件和普通建筑受袭事件必须返回不同业务范围。 */
+    @Test
+    void shouldDistinguishAllianceSovereigntyFromStructureEventScope() {
+        assertThat(EveGameNotificationPresentationService.eventScopeOf("EntosisCaptureStarted"))
+            .isEqualTo("ALLIANCE_SOVEREIGNTY");
+        assertThat(EveGameNotificationPresentationService.eventScopeOf("StructureUnderAttack")).isEqualTo("STRUCTURE");
+    }
+
+    /** 即使调用方只选择通知编号，也应返回计算字段且不泄漏内部类型列。 */
+    @Test
+    void shouldEnrichNotificationProjectionWithoutLeakingHiddenType() {
+        when(jdbcTemplate.queryForObject(anyString(), any(SqlParameterSource.class), eq(Long.class))).thenReturn(1L);
+        when(jdbcTemplate.queryForList(anyString(), any(SqlParameterSource.class))).thenReturn(List.of(Map
+            .of("notificationId", 88001L, "__notificationType", "EntosisCaptureStarted")));
+
+        Map<String, Object> result = service.query(principal, Map.of("dataset", "notifications", "fields", List
+            .of("notificationId")));
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbcTemplate).queryForList(sql.capture(), any(SqlParameterSource.class));
+        assertThat(sql.getValue()).contains("n.notification_type AS `__notificationType`");
+        @SuppressWarnings("unchecked") Map<String, Object> item = ((List<Map<String, Object>>)result.get("items"))
+            .get(0);
+        assertThat(item).containsEntry("notificationId", "88001")
+            .containsEntry("title", "联盟主权建筑开始遭受侵噬")
+            .containsEntry("eventScope", "ALLIANCE_SOVEREIGNTY")
+            .containsEntry("eventScopeLabel", "联盟主权")
+            .doesNotContainKey("__notificationType");
     }
 
     /** 返回服务端查询时刻供机器人判断缓存年龄，且不能将查询时刻写回或冒充同步时间。 */
@@ -294,6 +338,27 @@ class EveAgentQueryServiceTest {
             .containsEntry("id", "456");
     }
 
+    /** 通知正文切片不应影响业务解读，解读始终使用同一授权记录的完整前缀。 */
+    @Test
+    void shouldInterpretNotificationFromFullPrefixInsteadOfRequestedSlice() {
+        String fullPrefix = "structureID: 1024\nsolarSystemID: 30000142\n";
+        Map<String, Object> interpretation = Map.of("eventScope", "STRUCTURE", "solarSystemId", "30000142");
+        when(jdbcTemplate.queryForMap(anyString(), any(SqlParameterSource.class))).thenReturn(Map
+            .of("content", "solarSystemID: 30000142", "totalLength", 25001, "returnedLength", 23, "interpretationContent", fullPrefix, "notificationType", "StructureUnderAttack"));
+        when(notificationPresentationService.interpret("StructureUnderAttack", fullPrefix)).thenReturn(interpretation);
+
+        Map<String, Object> result = service.readDocument(principal, Map
+            .of("dataset", "notifications", "id", 456, "characterId", 991, "offset", 18, "limit", 100));
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbcTemplate).queryForMap(sql.capture(), any(SqlParameterSource.class));
+        assertThat(sql.getValue()).contains("LEFT(n.content,20000) AS interpretationContent");
+        verify(notificationPresentationService).interpret("StructureUnderAttack", fullPrefix);
+        assertThat(result).containsEntry("content", "solarSystemID: 30000142")
+            .containsEntry("interpretation", interpretation)
+            .containsEntry("interpretationComplete", false);
+    }
+
     /**
      * 验证精确金额以字符串返回，避免外部 Agent 的 JSON 浮点精度损失。
      */
@@ -405,6 +470,28 @@ class EveAgentQueryServiceTest {
             .containsEntry("contentAvailable", false)
             .containsEntry("missingReason", "document_not_found_or_not_authorized")
             .containsEntry("offset", 0)
-            .containsEntry("hasMore", false);
+            .containsEntry("hasMore", false)
+            .doesNotContainKeys("interpretation", "interpretationComplete");
+        verify(notificationPresentationService, never()).interpret(anyString(), anyString());
+    }
+
+    /** 通知记录存在但正文尚未缓存时，也不能凭空生成业务解读。 */
+    @Test
+    void shouldNotInterpretNotificationWhenContentIsNotCached() {
+        Map<String, Object> uncachedRow = new java.util.HashMap<>();
+        uncachedRow.put("content", null);
+        uncachedRow.put("totalLength", null);
+        uncachedRow.put("returnedLength", null);
+        uncachedRow.put("interpretationContent", null);
+        uncachedRow.put("notificationType", "StructureUnderAttack");
+        when(jdbcTemplate.queryForMap(anyString(), any(SqlParameterSource.class))).thenReturn(uncachedRow);
+
+        Map<String, Object> result = service.readDocument(principal, Map
+            .of("dataset", "notifications", "id", 1, "characterId", 99));
+
+        assertThat(result).containsEntry("contentAvailable", false)
+            .containsEntry("missingReason", "content_not_cached")
+            .doesNotContainKeys("interpretation", "interpretationComplete");
+        verify(notificationPresentationService, never()).interpret(anyString(), anyString());
     }
 }

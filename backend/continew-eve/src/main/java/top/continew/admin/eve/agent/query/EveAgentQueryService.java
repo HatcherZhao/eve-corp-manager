@@ -45,6 +45,7 @@ import top.continew.admin.eve.agent.EveAgentPrincipal;
 import top.continew.admin.eve.agent.query.EveAgentDatasetRegistry.Dataset;
 import top.continew.admin.eve.agent.query.EveAgentDatasetRegistry.Field;
 import top.continew.admin.eve.agent.query.EveAgentDatasetRegistry.Type;
+import top.continew.admin.eve.service.EveGameNotificationPresentationService;
 
 /**
  * 外部 Agent 全量只读查询入口，统一执行数据集白名单、军团隔离、分页和输出脱敏。
@@ -60,19 +61,24 @@ public class EveAgentQueryService {
     private static final int MAX_GROUP_FIELDS = 2;
     private static final int MAX_DOCUMENT_LIMIT = 20000;
     private static final int QUERY_TEXT_BUDGET = 65536;
+    private static final String HIDDEN_NOTIFICATION_TYPE = "__notificationType";
     private static final Pattern ALIAS_PATTERN = Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,63}");
     private static final ZoneId BEIJING_ZONE = ZoneId.of("Asia/Shanghai");
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
+    private final EveGameNotificationPresentationService notificationPresentationService;
 
     /**
      * 使用独立超时配置的 JDBC 模板创建查询服务。
      *
-     * @param jdbcTemplate Agent 查询专用模板
+     * @param jdbcTemplate                    Agent 查询专用模板
+     * @param notificationPresentationService 游戏通知业务解读服务
      */
-    public EveAgentQueryService(@Qualifier("eveAgentQueryJdbcTemplate") NamedParameterJdbcTemplate jdbcTemplate) {
+    public EveAgentQueryService(@Qualifier("eveAgentQueryJdbcTemplate") NamedParameterJdbcTemplate jdbcTemplate,
+                                EveGameNotificationPresentationService notificationPresentationService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.notificationPresentationService = notificationPresentationService;
     }
 
     /**
@@ -111,6 +117,15 @@ public class EveAgentQueryService {
             if (dataset.documentIdField() != null) {
                 item.put("documentIdField", dataset.documentIdField());
                 item.put("documentCharacterIdRequired", List.of("mail", "notifications").contains(dataset.key()));
+            }
+            if ("notifications".equals(dataset.key())) {
+                item.put("scopeSemantics", "当前军团仅表示通知接收角色与授权来源范围，不代表事件建筑归属于该军团");
+                item.put("computedResponseFields", List.of(Map
+                    .of("name", "title", "description", "通知类型对应的中文标题", "availableIn", "query"), Map
+                        .of("name", "eventScope", "description", "事件业务范围，不代表建筑所有者归属", "availableIn", "query"), Map
+                            .of("name", "eventScopeLabel", "description", "事件业务范围中文名称", "availableIn", "query"), Map
+                                .of("name", "interpretation", "description", "基于同一条已授权通知正文生成的结构化业务解读", "availableIn", "readDocument"), Map
+                                    .of("name", "interpretationComplete", "description", "业务解读是否覆盖完整通知正文", "availableIn", "readDocument")));
             }
             return item;
         }).toList();
@@ -151,10 +166,17 @@ public class EveAgentQueryService {
             .addValue("limit", size)
             .addValue("textStart", (long)textOffset + 1)
             .addValue("textLimit", textLimit);
-        String sql = "SELECT " + projection(parts.fields()) + " FROM " + dataset.from() + " WHERE " + parts
+        String selectedColumns = projection(parts.fields());
+        if ("notifications".equals(dataset.key()) && !parts.fields().containsKey("notificationType")) {
+            selectedColumns += ", n.notification_type AS `" + HIDDEN_NOTIFICATION_TYPE + "`";
+        }
+        String sql = "SELECT " + selectedColumns + " FROM " + dataset.from() + " WHERE " + parts
             .where() + " ORDER BY " + parts.orderBy() + " LIMIT :limit OFFSET :offset";
-        List<Map<String, Object>> items = normalizeRows(jdbcTemplate.queryForList(sql, parts.params()), parts
-            .fields(), textOffset, textLimit);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, parts.params());
+        List<Map<String, Object>> items = normalizeRows(rows, parts.fields(), textOffset, textLimit);
+        if ("notifications".equals(dataset.key())) {
+            enrichNotificationRows(rows, items);
+        }
         Map<String, Object> result = pageResult(dataset, page, size, total, items, hasConstraints(request));
         result.put("textOffset", textOffset);
         result.put("textLimit", textLimit);
@@ -244,9 +266,11 @@ public class EveAgentQueryService {
         int totalLength = 0;
         int returnedLength = 0;
         String missingReason = null;
+        Map<String, Object> documentRow = null;
         try {
             params.addValue("documentStart", (long)offset + 1).addValue("documentLimit", limit);
             Map<String, Object> row = jdbcTemplate.queryForMap(documentSql.sql(), params);
+            documentRow = row;
             content = row.get("content") == null ? null : row.get("content").toString();
             totalLength = row.get("totalLength") == null ? 0 : ((Number)row.get("totalLength")).intValue();
             returnedLength = row.get("returnedLength") == null ? 0 : ((Number)row.get("returnedLength")).intValue();
@@ -273,7 +297,26 @@ public class EveAgentQueryService {
         result.put("source", "local_cache");
         result.put("contentAvailable", missingReason == null);
         result.put("missingReason", missingReason);
+        if ("notifications".equals(datasetKey) && missingReason == null && documentRow != null) {
+            String interpretationContent = Objects.toString(documentRow.get("interpretationContent"), "");
+            String notificationType = Objects.toString(documentRow.get("notificationType"), "");
+            result.put("interpretation", notificationPresentationService
+                .interpret(notificationType, interpretationContent));
+            result.put("interpretationComplete", totalLength <= MAX_DOCUMENT_LIMIT);
+        }
         return result;
+    }
+
+    /** 为通知查询结果补充不可筛选、排序或聚合的业务展示字段。 */
+    private void enrichNotificationRows(List<Map<String, Object>> rows, List<Map<String, Object>> items) {
+        for (int index = 0; index < items.size(); index++) {
+            Map<String, Object> row = rows.get(index);
+            String type = Objects.toString(row.getOrDefault("notificationType", row.get(HIDDEN_NOTIFICATION_TYPE)), "");
+            Map<String, Object> item = items.get(index);
+            item.put("title", EveGameNotificationPresentationService.titleOf(type));
+            item.put("eventScope", EveGameNotificationPresentationService.eventScopeOf(type));
+            item.put("eventScopeLabel", EveGameNotificationPresentationService.eventScopeLabelOf(type));
+        }
     }
 
     /** 在服务端身份范围内组合参数化筛选、搜索、投影和排序。 */
@@ -595,7 +638,7 @@ public class EveAgentQueryService {
                 .from() + " WHERE " + dataset.where() + " AND m.character_id=:characterId AND m.mail_id=:documentId");
         }
         if ("notifications".equals(dataset.key())) {
-            return new DocumentSql("SELECT SUBSTRING(n.content,:documentStart,:documentLimit) AS content, CHAR_LENGTH(n.content) AS totalLength, CHAR_LENGTH(SUBSTRING(n.content,:documentStart,:documentLimit)) AS returnedLength FROM " + dataset
+            return new DocumentSql("SELECT SUBSTRING(n.content,:documentStart,:documentLimit) AS content, CHAR_LENGTH(n.content) AS totalLength, CHAR_LENGTH(SUBSTRING(n.content,:documentStart,:documentLimit)) AS returnedLength, LEFT(n.content," + MAX_DOCUMENT_LIMIT + ") AS interpretationContent, n.notification_type AS notificationType FROM " + dataset
                 .from() + " WHERE " + dataset
                     .where() + " AND n.character_id=:characterId AND n.notification_id=:documentId");
         }

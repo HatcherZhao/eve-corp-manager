@@ -17,6 +17,7 @@
 package top.continew.admin.eve.agent.query;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
@@ -38,6 +39,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 import top.continew.admin.LocalIntegrationEnvironment;
 import top.continew.admin.eve.agent.EveAgentPrincipal;
+import top.continew.admin.eve.service.EveGameNotificationPresentationService;
 
 /**
  * 外部 Agent 查询层真实 MySQL 集成测试，使用单连接同名临时表隔离全部合成数据。
@@ -76,7 +78,7 @@ class EveAgentQueryPersistenceIT {
         createTemporaryTables();
         NamedParameterJdbcTemplate namedJdbc = new NamedParameterJdbcTemplate(dataSource);
         namedJdbc.getJdbcTemplate().setQueryTimeout(10);
-        service = new EveAgentQueryService(namedJdbc);
+        service = new EveAgentQueryService(namedJdbc, mock(EveGameNotificationPresentationService.class));
         principal = new EveAgentPrincipal(992301L, TENANT_ID, CORPORATION_REF_ID, CORPORATION_ID, "集成测试 Agent");
     }
 
