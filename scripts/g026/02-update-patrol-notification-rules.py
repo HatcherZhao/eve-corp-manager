@@ -75,11 +75,11 @@ def notification_policy(corporation_name, include_moon_events):
 
 
 def upsert_policy(note, policy):
-    """幂等新增或替换规则段，并保留任务说明的其他内容。"""
+    """幂等替换规则段；与 AstrBot 一致清理首尾空白，保留说明正文。"""
     start = note.find(POLICY_MARKER)
     if start < 0:
         prefix = note.rstrip()
-        return (prefix + "\n\n" if prefix else "") + policy.strip() + "\n"
+        return ((prefix + "\n\n" if prefix else "") + policy.strip()).strip()
 
     end = note.find(POLICY_END_MARKER, start)
     if end < 0:
@@ -90,7 +90,7 @@ def upsert_policy(note, policy):
     updated = (prefix + "\n\n" if prefix else "") + policy.strip()
     if suffix:
         updated += "\n\n" + suffix
-    return updated.rstrip() + "\n"
+    return updated.strip()
 
 
 def config_snapshot(job):
@@ -317,8 +317,8 @@ def check():
             raise AssertionError("更新载荷包含 note 之外的字段")
         patched_payloads.append((job_id, deepcopy(payload)))
         job = next(item for item in jobs if item["job_id"] == job_id)
-        job["payload"]["note"] = payload["note"]
-        job["description"] = payload["note"]
+        job["payload"]["note"] = payload["note"].strip()
+        job["description"] = payload["note"].strip()
 
     def reader():
         return deepcopy(jobs)
@@ -375,8 +375,8 @@ def check():
             raise AssertionError("回滚测试出现 note 之外的更新字段")
         rollback_patches.append((job_id, deepcopy(payload)))
         job = next(item for item in rollback_jobs if item["job_id"] == job_id)
-        job["payload"]["note"] = payload["note"]
-        job["description"] = payload["note"]
+        job["payload"]["note"] = payload["note"].strip()
+        job["description"] = payload["note"].strip()
         if len(rollback_patches) == 2:
             raise RuntimeError("模拟第二个任务更新失败")
 
@@ -404,8 +404,8 @@ def check():
         if len(pre_fail_patches) == 2:
             raise RuntimeError("模拟第二个任务写入前失败")
         job = next(item for item in pre_fail_jobs if item["job_id"] == job_id)
-        job["payload"]["note"] = payload["note"]
-        job["description"] = payload["note"]
+        job["payload"]["note"] = payload["note"].strip()
+        job["description"] = payload["note"].strip()
 
     def pre_fail_reader():
         return deepcopy(pre_fail_jobs)
