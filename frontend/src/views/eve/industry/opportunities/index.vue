@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Message } from '@arco-design/web-vue'
 import { useWindowSize } from '@vueuse/core'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onDeactivated, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import IndustryPageHeader from '../components/IndustryPageHeader.vue'
 import IndustryPanel from '../components/IndustryPanel.vue'
@@ -20,12 +20,15 @@ import {
   type EveIndustryFacility,
   type EveIndustryOpportunity,
   type EveIndustryOpportunityMaterial,
+  type EveIndustryScanMarketStatus,
+  type EveIndustryScanReq,
   createEveIndustryPlan,
   getEveIndustryConfigs,
   getEveIndustryDataStatus,
   getEveIndustryFacilities,
   getEveIndustryOpportunities,
   getEveIndustryOpportunityMaterials,
+  getEveIndustryScanMarketStatus,
   scanEveIndustryOpportunities,
 } from '@/apis/eve'
 
@@ -43,6 +46,10 @@ const selected = ref<EveIndustryOpportunity>()
 const materials = ref<EveIndustryOpportunityMaterial[]>([])
 const detailVisible = ref(false)
 const scan = reactive({ configId: '', facilityId: '', activity: '', limit: 100 })
+const scanProgress = ref<EveIndustryScanMarketStatus>()
+const scanProgressError = ref(false)
+let scanPollTimer: ReturnType<typeof setTimeout> | undefined
+let scanSequence = 0
 
 const executableCount = computed(() => records.value.filter((item) => item.status === 'EXECUTABLE').length)
 const riskCount = computed(() => records.value.filter((item) => item.riskTags.length > 0).length)
@@ -71,22 +78,51 @@ async function loadPage() {
   }
 }
 
-/** 使用已保存的生产条件刷新机会快照。 */
-async function runScan() {
+/** 停止轮询和自动扫描；已提交的公共行情查询仍由后台完成。 */
+function cancelScan() {
+  scanSequence++
+  if (scanPollTimer) clearTimeout(scanPollTimer)
+  scanning.value = false
+  scanProgress.value = undefined
+  scanProgressError.value = false
+}
+
+/** 等待行情批次完成，再按启动时的生产条件计算一次机会。 */
+async function waitForMarketAndScan(request: EveIndustryScanReq, sequence: number) {
+  try {
+    const { data } = await getEveIndustryScanMarketStatus(request)
+    if (sequence !== scanSequence) return
+    scanProgress.value = data
+    scanProgressError.value = false
+    if (!data.ready) {
+      scanPollTimer = setTimeout(() => void waitForMarketAndScan(request, sequence), 10000)
+      return
+    }
+    const result = await scanEveIndustryOpportunities(request)
+    if (sequence !== scanSequence) return
+    records.value = result.data
+    scanning.value = false
+    scanProgress.value = undefined
+    Message.success('生产利润分析完成')
+  } catch {
+    if (sequence !== scanSequence) return
+    scanning.value = false
+    scanProgressError.value = true
+  }
+}
+
+/** 使用已保存的生产条件准备行情并刷新机会快照。 */
+function runScan() {
   if (!scan.configId || !scan.facilityId) {
     Message.warning('请先在工业配置中保存生产配置和生产设施')
     return
   }
+  if (scanning.value) return
   scanning.value = true
-  try {
-    records.value = (await scanEveIndustryOpportunities({
-      ...scan,
-      activity: scan.activity || undefined,
-    })).data
-    Message.success('生产利润分析完成')
-  } finally {
-    scanning.value = false
-  }
+  scanProgress.value = undefined
+  scanProgressError.value = false
+  const sequence = ++scanSequence
+  void waitForMarketAndScan({ ...scan, activity: scan.activity || undefined }, sequence)
 }
 
 /** 打开机会快照采用的材料采购明细。 */
@@ -115,6 +151,8 @@ async function addToPlan() {
 }
 
 onMounted(loadPage)
+onDeactivated(cancelScan)
+onUnmounted(cancelScan)
 </script>
 
 <template>
@@ -137,6 +175,13 @@ onMounted(loadPage)
     <a-alert class="industry-opportunities-page__notice" type="info" show-icon>
       材料全部按吉他海四采购价计算，不计库存和运输费。缺少蓝图、行情或星系成本指数时，结果仅供估算，不能加入生产计划。
     </a-alert>
+    <a-alert v-if="scanning" class="industry-opportunities-page__notice" :type="scanProgressError || scanProgress?.failedTypeCount ? 'warning' : 'info'" show-icon>
+      <span v-if="scanProgress?.ready">行情已准备完成，正在计算生产机会。</span>
+      <span v-else-if="scanProgress">行情准备中：{{ scanProgress.readyTypeCount }}/{{ scanProgress.totalTypeCount }} 种已就绪<span v-if="scanProgress.failedTypeCount">，{{ scanProgress.failedTypeCount }} 种等待重试</span>；准备完成后自动分析。</span>
+      <span v-else>正在准备本次分析所需行情。</span>
+      <a-button v-if="!scanProgress?.ready" type="text" size="small" @click="cancelScan">取消等待</a-button>
+    </a-alert>
+    <a-alert v-if="scanProgressError && !scanning" class="industry-opportunities-page__notice" type="warning" show-icon>行情准备或分析暂时失败，请检查提示后重试；已提交的行情查询会继续处理。</a-alert>
 
     <section class="industry-opportunities-page__summary" aria-label="工业机会摘要">
       <article>
@@ -163,15 +208,15 @@ onMounted(loadPage)
 
     <IndustryPanel class="industry-opportunities-page__filters" title="生产条件" description="材料用量、生产耗时和安装费随生产配置及设施而变化。">
       <div class="industry-opportunities-page__filter-grid">
-        <a-select v-model="scan.configId" placeholder="选择生产配置" allow-clear>
+        <a-select v-model="scan.configId" placeholder="选择生产配置" :disabled="scanning" allow-clear>
           <a-option v-for="item in configs" :key="item.id" :value="item.id">{{ item.name }}</a-option>
         </a-select>
-        <a-select v-model="scan.facilityId" placeholder="选择生产设施" allow-clear>
+        <a-select v-model="scan.facilityId" placeholder="选择生产设施" :disabled="scanning" allow-clear>
           <a-option v-for="item in facilities" :key="item.id" :value="item.id">
             {{ item.name }} · {{ item.systemName || item.systemId }}
           </a-option>
         </a-select>
-        <a-select v-model="scan.activity" placeholder="全部工业活动" allow-clear>
+        <a-select v-model="scan.activity" placeholder="全部工业活动" :disabled="scanning" allow-clear>
           <a-option value="MANUFACTURING">制造</a-option>
           <a-option value="REACTION">反应</a-option>
           <a-option value="INVENTION">发明</a-option>

@@ -146,3 +146,15 @@ databaseChangeLog:
       file: db/changelog/mysql/eve/058_derived_role_policy.sql
   - include:
       file: db/changelog/mysql/eve/059_notification_categories.sql
+  - include:
+      file: db/changelog/mysql/eve/060_official_type_reference.sql
+  - include:
+      file: db/changelog/mysql/eve/061_market_refresh_queue.sql
+  - include:
+      file: db/changelog/mysql/eve/062_market_failure_status.sql
+  - include:
+      file: db/changelog/mysql/eve/063_official_type_detail_cache.sql
+  - include:
+      file: db/changelog/mysql/eve/064_market_quote_expiry.sql
+  - include:
+      file: db/changelog/mysql/eve/065_market_refresh_batch.sql

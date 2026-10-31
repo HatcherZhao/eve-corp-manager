@@ -51,6 +51,10 @@ public class EveMarketSnapshotDO {
     private LocalDateTime sourceUpdatedAt;
     /** 最近一次成功更新报价的时间。 */
     private LocalDateTime quoteSynchronizedAt;
+    /** 官方订单响应的缓存截止时间；到期后必须重新校验行情。 */
+    private LocalDateTime quoteNextRequestAt;
+    /** 最近一次成功确认该报价可供当前业务批次使用的时间。 */
+    private LocalDateTime quoteValidatedAt;
     /** 最近一次成功更新订单和历史的时间。 */
     private LocalDateTime detailSynchronizedAt;
     /** 最近一次成功更新价格历史的时间。 */
@@ -67,6 +71,14 @@ public class EveMarketSnapshotDO {
     private String historyJson;
     /** 最近一次上游失败的脱敏摘要。 */
     private String lastFailureMessage;
+    /** 最近一次订单查询失败摘要。 */
+    private String orderFailureMessage;
+    /** 最近一次订单查询失败时间。 */
+    private LocalDateTime orderFailureAt;
+    /** 最近一次历史查询失败摘要。 */
+    private String historyFailureMessage;
+    /** 最近一次历史查询失败时间。 */
+    private LocalDateTime historyFailureAt;
     /** 最近一次访问该物品详情的时间，用于低频后台保温。 */
     private LocalDateTime lastAccessedAt;
     /** 创建时间。 */

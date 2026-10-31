@@ -151,7 +151,7 @@ function exportLocations() {
   )
 }
 
-/** 上传完整 evedata.xlsx，服务端校验后同时原子更新物品与位置资料。 */
+/** 上传位置资料；物品类型目录由晨曦官方 ESI 独立维护。 */
 function importWorkbook(options: RequestOption) {
   const { fileItem, name = 'file', onError, onProgress, onSuccess } = options
   importing.value = true
@@ -161,7 +161,7 @@ function importWorkbook(options: RequestOption) {
   importEveStaticReference(formData)
     .then(async (response) => {
       const result = response.data
-      Message.success(`静态资料已更新：${result.typeCount} 个物品类型、${result.locationCount} 个位置`)
+      Message.success(`位置资料已更新：${result.locationCount} 个位置`)
       await Promise.all([loadLocationTree(), loadLocations()])
       onSuccess(response)
     })
@@ -190,7 +190,7 @@ onMounted(() => Promise.all([loadLocationTree(), loadLocations()]))
           :show-file-list="false"
           :custom-request="importWorkbook"
         >
-          <a-button type="primary" :loading="importing"><template #icon><icon-upload /></template>批量更新资料</a-button>
+          <a-button type="primary" :loading="importing"><template #icon><icon-upload /></template>批量更新位置</a-button>
         </a-upload>
       </div>
     </header>

@@ -80,6 +80,14 @@ public class EveIndustryController {
         return industryService.calculate(req);
     }
 
+    /** 查询工业机会扫描所需行情进度；该接口不会写入机会快照。 */
+    @PostMapping("/opportunities/scan/status")
+    @Operation(summary = "查询工业扫描行情准备进度")
+    @SaCheckPermission("eve:industry:view")
+    public Object scanMarketStatus(@Valid @RequestBody EveIndustryScanReq req) {
+        return industryService.scanMarketStatus(req);
+    }
+
     /** 手动触发一次工业机会扫描。 */
     @PostMapping("/opportunities/scan")
     @Operation(summary = "扫描工业利润机会")

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Message } from '@arco-design/web-vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import DataFreshnessBanner from '../components/DataFreshnessBanner.vue'
-import { formatEveTime } from '@/utils/eveTime'
+import { formatEveTime, parseEveTime } from '@/utils/eveTime'
 import {
   type EveCorporationAssetTreeNode,
   type EveCorporationAssetValuation,
@@ -30,6 +30,8 @@ const valuation = ref<EveCorporationAssetValuation>({
   highestBuyPricedTypeCount: 0,
   lowestSellPricedTypeCount: 0,
   unpricedTypeCount: 0,
+  pendingTypeCount: 0,
+  failedTypeCount: 0,
   items: [],
 })
 const selectedKeys = ref<string[]>([])
@@ -37,6 +39,7 @@ const expandedKeys = ref<string[]>([])
 const selectedNode = ref<EveCorporationAssetTreeNode>()
 const inspectorMode = ref<'detail' | 'fitting'>('detail')
 const freshnessVersion = ref(0)
+let valuationPollTimer: number | undefined
 const canSync = computed(() => userStore.permissions.includes('eve:assets:manage') || userStore.permissions.includes('*:*:*'))
 const canExport = computed(() => userStore.permissions.includes('eve:assets:view') || userStore.permissions.includes('*:*:*'))
 
@@ -44,6 +47,15 @@ const treeNodes = computed(() => hideFittingGroups(filterTree(nodes.value, keywo
 const selectedFittingGroup = computed(() => findFittingGroup(selectedNode.value))
 const selectedFittingSections = computed(() => collectFittingSections(selectedFittingGroup.value))
 const selectedValuation = computed(() => valuation.value.items.find((item) => item.typeId === selectedNode.value?.typeId))
+/** 大批物品逐项查询可能跨越较长时间，展示估值中最早的报价时间。 */
+const oldestValuationPriceTime = computed(() => {
+  const times = valuation.value.items
+    .filter((item) => item.priceStatus === 'READY' && item.priceUpdatedAt)
+    .map((item) => parseEveTime(item.priceUpdatedAt))
+    .filter((time) => time.isValid())
+  if (!times.length) return undefined
+  return times.reduce((oldest, time) => time.isBefore(oldest) ? time : oldest).format('YYYY-MM-DD HH:mm:ss')
+})
 
 function formatTime(value?: string) {
   return formatEveTime(value)
@@ -172,6 +184,7 @@ async function loadTree() {
     nodes.value = treeResult.data.nodes
     assetCount.value = treeResult.data.assetCount
     valuation.value = valuationResult.data
+    scheduleValuationRefresh()
     expandedKeys.value = []
     selectedKeys.value = []
     selectedNode.value = undefined
@@ -179,6 +192,20 @@ async function loadTree() {
   } finally {
     loading.value = false
   }
+}
+
+/** 后台队列处理延期行情时只轮询估值，不重复加载体积较大的资产树。 */
+function scheduleValuationRefresh() {
+  if (valuationPollTimer !== undefined) window.clearTimeout(valuationPollTimer)
+  if (!valuation.value.pendingTypeCount) return
+  valuationPollTimer = window.setTimeout(async () => {
+    try {
+      const result = await getEveCorporationAssetValuation()
+      valuation.value = result.data
+    } finally {
+      scheduleValuationRefresh()
+    }
+  }, 8000)
 }
 
 async function sync() {
@@ -225,6 +252,9 @@ function openFittings(node: EveCorporationAssetTreeNode) {
 }
 
 onMounted(loadTree)
+onBeforeUnmount(() => {
+  if (valuationPollTimer !== undefined) window.clearTimeout(valuationPollTimer)
+})
 </script>
 
 <template>
@@ -258,7 +288,7 @@ onMounted(loadTree)
     </section>
 
     <a-alert class="eve-assets-page__guide" type="info" :show-icon="false">
-      资料分类由数据库中的 evedata.xlsx 静态资料驱动。资产树只展示物理位置、仓库和货舱；舰船装配与建筑装备请从名称旁的按钮在右侧查看。物品箱仅在该物品确有下级资产时显示。
+      资产树只展示物理位置、仓库和货舱；舰船装配与建筑装备请从名称旁的按钮在右侧查看。物品箱仅在该物品确有下级资产时显示。
     </a-alert>
     <section class="eve-assets-page__valuation" aria-label="军团资产吉他参考估值">
       <div class="eve-assets-page__valuation-heading">
@@ -270,7 +300,10 @@ onMounted(loadTree)
         <article><span>最低卖单估值</span><strong>{{ formatIsk(valuation.lowestSellEstimatedValue) }}</strong><small>{{ valuation.lowestSellPricedTypeCount }} 种已报价</small></article>
         <article><span>已纳入快照</span><strong>{{ valuation.itemCount.toLocaleString() }} 项</strong><small>{{ valuation.totalQuantity.toLocaleString() }} 件／单位</small></article>
       </div>
-      <a-alert v-if="valuation.unpricedTypeCount" type="warning" :show-icon="true">{{ valuation.unpricedTypeCount }} 种资产暂无有效吉他买卖单，未计入对应估值；市场后台会优先补齐当前军团资产的报价。</a-alert>
+      <a-alert v-if="valuation.pendingTypeCount" type="info" :show-icon="true">{{ valuation.pendingTypeCount }} 种资产行情正在按需准备，本次未使用旧报价；刷新页面会继续处理剩余物品。</a-alert>
+      <a-alert v-if="valuation.failedTypeCount" type="error" :show-icon="true">{{ valuation.failedTypeCount }} 种资产行情刷新失败，本次未计入估值，请稍后重试。</a-alert>
+      <a-alert v-if="valuation.unpricedTypeCount" type="warning" :show-icon="true">{{ valuation.unpricedTypeCount }} 种资产在最新行情中没有有效买卖单，未计入对应估值。</a-alert>
+      <a-alert v-if="oldestValuationPriceTime" type="info" :show-icon="false">物品行情按需逐项查询，估值中最早的报价时间为 {{ oldestValuationPriceTime }}。</a-alert>
     </section>
     <a-spin :loading="loading" class="eve-assets-page__loading">
       <section class="eve-assets-page__workspace">

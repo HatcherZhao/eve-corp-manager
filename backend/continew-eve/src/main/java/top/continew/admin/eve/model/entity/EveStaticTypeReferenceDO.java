@@ -25,7 +25,7 @@ import java.io.Serializable;
 import java.time.LocalDateTime;
 
 /**
- * evedata.xlsx 中的 EVE 类型静态资料。
+ * 晨曦官方目录中的 EVE 类型静态资料。
  *
  * @author zhaoyuqing
  */
@@ -59,4 +59,8 @@ public class EveStaticTypeReferenceDO implements Serializable {
     private String marketCategoryL6;
     /** 来源资料更新时间。 */
     private LocalDateTime sourceUpdatedAt;
+    /** 是否存在于最近完整晨曦官方类型目录。 */
+    private Boolean officialDirectory;
+    /** 最近一次成功读取官方类型详情的时间。 */
+    private LocalDateTime officialDetailUpdatedAt;
 }

@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.redisson.api.RBucket;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.scheduling.annotation.Scheduled;
 import top.continew.admin.eve.config.EveMarketProperties;
 import top.continew.admin.eve.service.EveMarketService;
 
@@ -77,6 +78,16 @@ class EveMarketSyncJobTest {
             }));
         first = new EveMarketSyncJob(service, redis, new EveMarketProperties());
         second = new EveMarketSyncJob(service, redis, new EveMarketProperties());
+    }
+
+    /** 只自动处理按需队列，不自动扫描整个市场或全量历史。 */
+    @Test
+    void shouldScheduleDemandQueueOnly() throws NoSuchMethodException {
+        assertThat(EveMarketSyncJob.class.getMethod("consumeDemandQueue").getAnnotation(Scheduled.class)).isNotNull();
+        assertThat(EveMarketSyncJob.class.getMethod("synchronizeMarketOrders").getAnnotation(Scheduled.class)).isNull();
+        assertThat(EveMarketSyncJob.class.getMethod("warmPriceHistories").getAnnotation(Scheduled.class)).isNull();
+        first.consumeDemandQueue();
+        verify(service).consumeMarketRefreshQueue(1);
     }
 
     /** 错峰实例即使依次拿到锁，也不能重复抓取同一轮历史。 */

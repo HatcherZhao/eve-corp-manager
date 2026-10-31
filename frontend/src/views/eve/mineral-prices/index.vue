@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, onUnmounted, reactive, ref } from 'vue'
 import MarketPriceFreshness from '../components/MarketPriceFreshness.vue'
+import { parseEveTime } from '@/utils/eveTime'
 import {
   type EveMarketItem,
   type EveMineralPriceCategory,
@@ -13,12 +14,15 @@ const loading = ref(false)
 const records = ref<EveMarketItem[]>([])
 const total = ref(0)
 const query = reactive({ page: 1, size: 20, keyword: '', category: 'CORPORATION_MOON' as EveMineralPriceCategory })
+let pollTimer: ReturnType<typeof setTimeout> | undefined
+let requestSequence = 0
+let pageActive = true
 
 const categories: Array<{ key: EveMineralPriceCategory, label: string, description: string }> = [
   { key: 'CORPORATION_MOON', label: '本军团月矿', description: '按当前军团已同步的月矿账本识别矿种，不包含开采数量。' },
-  { key: 'ORE', label: '全部普通矿物', description: 'evedata 分类为标准矿石的全部矿物。' },
-  { key: 'ICE', label: '全部冰矿', description: 'evedata 分类为冰矿的全部矿物。' },
-  { key: 'MOON', label: '全部月矿', description: 'evedata 分类为卫星矿石的全部月矿。' },
+  { key: 'ORE', label: '全部普通矿物', description: '游戏资料中归类为标准矿石的全部矿物。' },
+  { key: 'ICE', label: '全部冰矿', description: '游戏资料中归类为冰矿的全部矿物。' },
+  { key: 'MOON', label: '全部月矿', description: '游戏资料中归类为卫星矿石的全部矿物。' },
 ]
 const currentCategory = computed(() => categories.find((item) => item.key === query.category)!)
 
@@ -34,8 +38,11 @@ function changeCategory(key: string | number) {
   void loadPrices()
 }
 
-async function loadPrices() {
-  loading.value = true
+/** 跟进后台按需报价，并丢弃切换分类或离开页面前的旧响应。 */
+async function loadPrices(background = false) {
+  if (pollTimer) clearTimeout(pollTimer)
+  const sequence = ++requestSequence
+  if (!background) loading.value = true
   try {
     const { data } = await getEveMineralPrices({
       page: query.page,
@@ -43,10 +50,28 @@ async function loadPrices() {
       category: query.category,
       keyword: query.keyword || undefined,
     })
+    if (!pageActive || sequence !== requestSequence) return
     records.value = data.list
     total.value = data.total
+    if (data.list.some((item) => item.marketStatus === 'PENDING' || item.marketStatus === 'FAILED')) {
+      pollTimer = setTimeout(() => void loadPrices(true), 8000)
+    } else {
+      const deadlines = data.list.map((item) => parseEveTime(item.quote?.freshnessExpiresAt))
+        .filter((time) => time.isValid())
+        .map((time) => time.valueOf())
+      if (deadlines.length) {
+        const delay = Math.max(2000, Math.min(...deadlines) - Date.now() + 250)
+        pollTimer = setTimeout(() => void loadPrices(true), delay)
+      }
+    }
+  } catch (error) {
+    if (!background) throw error
+    if (pageActive && sequence === requestSequence) {
+      records.value = records.value.map((item) => ({ ...item, marketStatus: 'FAILED' }))
+      pollTimer = setTimeout(() => void loadPrices(true), 8000)
+    }
   } finally {
-    loading.value = false
+    if (sequence === requestSequence) loading.value = false
   }
 }
 
@@ -61,7 +86,22 @@ function reset() {
   void loadPrices()
 }
 
-onMounted(loadPrices)
+/** 暂停隐藏页面的轮询，并在重新打开时恢复当前分类。 */
+function stopPolling() {
+  pageActive = false
+  requestSequence++
+  if (pollTimer) clearTimeout(pollTimer)
+}
+
+onMounted(() => void loadPrices())
+onActivated(() => {
+  if (!pageActive) {
+    pageActive = true
+    void loadPrices()
+  }
+})
+onDeactivated(stopPolling)
+onUnmounted(stopPolling)
 </script>
 
 <template>
@@ -91,7 +131,7 @@ onMounted(loadPrices)
 
     <section class="eve-mineral-prices__table-wrap">
       <div class="eve-mineral-prices__caption">
-        <div><span>{{ currentCategory.label }}</span><small>共 {{ total.toLocaleString() }} 种矿物 · 价格按后台缓存自动刷新</small></div>
+        <div><span>{{ currentCategory.label }}</span><small>共 {{ total.toLocaleString() }} 种矿物 · 按需查询官方行情</small></div>
         <span>吉他贸易中心</span>
       </div>
       <a-table :data="records" :loading="loading" :pagination="false" row-key="type.typeId" :scroll="{ x: 660 }">
@@ -99,13 +139,13 @@ onMounted(loadPrices)
           <a-table-column title="矿物" :width="230" ellipsis tooltip>
             <template #cell="{ record }"><div class="eve-mineral-prices__identity"><EveTypeIcon :type-id="record.type.typeId" :size="30" :alt="`${record.type.typeName}图标`" /><strong>{{ record.type.typeName }}</strong></div></template>
           </a-table-column>
-          <a-table-column title="最高收购价" :width="145" align="right" nowrap><template #cell="{ record }"><strong class="eve-mineral-prices__buy">{{ formatIsk(record.quote?.highestBuyPrice) }}</strong></template></a-table-column>
-          <a-table-column title="最低卖出价" :width="145" align="right" nowrap><template #cell="{ record }"><strong>{{ formatIsk(record.quote?.lowestSellPrice) }}</strong></template></a-table-column>
-          <a-table-column title="价格新鲜度" :width="132" align="right"><template #cell="{ record }"><MarketPriceFreshness :synchronized-at="record.quote?.synchronizedAt" :freshness-expires-at="record.quote?.freshnessExpiresAt" /></template></a-table-column>
+          <a-table-column title="最高收购价" :width="145" align="right" nowrap><template #cell="{ record }"><strong class="eve-mineral-prices__buy">{{ !record.marketStatus || record.marketStatus === 'READY' ? formatIsk(record.quote?.highestBuyPrice) : '—' }}</strong></template></a-table-column>
+          <a-table-column title="最低卖出价" :width="145" align="right" nowrap><template #cell="{ record }"><strong>{{ !record.marketStatus || record.marketStatus === 'READY' ? formatIsk(record.quote?.lowestSellPrice) : '—' }}</strong></template></a-table-column>
+          <a-table-column title="行情状态" :width="132" align="right"><template #cell="{ record }"><span v-if="record.marketStatus === 'PENDING'">正在查询</span><span v-else-if="record.marketStatus === 'FAILED'">查询失败，等待重试</span><MarketPriceFreshness v-else :has-quote="Boolean(record.quote)" :synchronized-at="record.quote?.synchronizedAt" :freshness-expires-at="record.quote?.freshnessExpiresAt" /></template></a-table-column>
         </template>
       </a-table>
       <a-empty v-if="!loading && !records.length" description="暂无符合条件的矿物；本军团月矿需先同步月矿开采统计" />
-      <a-pagination v-if="total" v-model:current="query.page" v-model:page-size="query.size" :total="total" show-total show-page-size @change="loadPrices" @page-size-change="search" />
+      <a-pagination v-if="total" v-model:current="query.page" v-model:page-size="query.size" :total="total" show-total show-page-size @change="loadPrices()" @page-size-change="search" />
     </section>
   </main>
 </template>

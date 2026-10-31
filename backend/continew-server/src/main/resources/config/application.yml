@@ -80,7 +80,7 @@ spring.task:
   scheduling:
     thread-name-prefix: schedule-pool
     pool:
-      # 市场全量同步耗时较长，独立调度线程避免阻塞邮件、月矿等到期任务。
+      # 官方资料与市场按需任务共用调度线程，避免阻塞邮件、月矿等到期任务。
       size: ${SPRING_TASK_SCHEDULING_POOL_SIZE:4}
     # 任务拒绝策略（默认 ABORT，不执行新任务，直接抛出 RejectedExecutionException 异常）
     # CALLER_RUNS：提交的任务在执行被拒绝时，会由提交任务的线程去执行
@@ -99,24 +99,30 @@ spring.servlet.multipart:
   # 单次总上传文件大小限制
   max-request-size: 60MB
 eve:
+  reference:
+    # 类型目录由晨曦官方 ESI 分阶段构建；位置资料暂继续使用随应用交付的静态文件。
+    official-type-sync-enabled: ${EVE_REFERENCE_OFFICIAL_TYPE_SYNC_ENABLED:true}
+    official-type-sync-initial-delay: "${EVE_REFERENCE_OFFICIAL_TYPE_SYNC_INITIAL_DELAY:PT2M}"
+    official-type-sync-interval: "${EVE_REFERENCE_OFFICIAL_TYPE_SYNC_INTERVAL:PT1M}"
+    # 单物品名称和说明成功取得后长期复用，避免浏览行为挤占市场行情请求额度。
+    official-type-detail-ttl: "${EVE_REFERENCE_OFFICIAL_TYPE_DETAIL_TTL:P30D}"
   industry:
     ceve:
       base-url: "${EVE_CEVE_INDUSTRY_BASE_URL:http://8.210.18.81:8080}"
       timeout: "${EVE_CEVE_INDUSTRY_TIMEOUT:PT30S}"
   market:
-    # 市场页面只读本地快照；后台经官方 ESI 受控同步，禁止用户访问触发上游抓取。
+    # 晨曦官方行情按实际使用的物品查询，队列中无任务时不会抓取市场订单。
     enabled: ${EVE_MARKET_ENABLED:true}
     region-id: ${EVE_MARKET_REGION_ID:10000002}
     solar-system-id: ${EVE_MARKET_SOLAR_SYSTEM_ID:30000142}
     # 默认保留吉他星系内全部公开订单；可通过 EVE_MARKET_STATION_ID=60003760 固定到吉他 4-4。
-    # 每轮约 132 页的区域订单读取均遵循 eve.serenity.auto-sync.upstream-request-interval。
-    # 两轮之间等待十五分钟，为完整分页留出时间；超过三十分钟明确标记为过期。
+    # 以下间隔保留给手动维护入口及新鲜度标记，不会自动扫描整个市场。
     order-sync-interval: "${EVE_MARKET_ORDER_SYNC_INTERVAL:PT15M}"
-    # 仅检查 Redis 门禁，不表示每分钟请求上游；避免短暂退避后又等待一个完整同步周期。
+    # 兼容旧配置；自动按需队列不使用全市场扫描间隔。
     order-sync-scan-interval: "${EVE_MARKET_ORDER_SYNC_SCAN_INTERVAL:PT1M}"
     quote-refresh-interval: "${EVE_MARKET_QUOTE_REFRESH_INTERVAL:PT30M}"
     detail-refresh-interval: "${EVE_MARKET_DETAIL_REFRESH_INTERVAL:PT30M}"
-    # 区域历史每轮最多一个物品，避免历史补温占满官方 ESI 请求配额。
+    # 保留给手动历史维护入口；页面直接按物品查询官方历史。
     history-warmup-interval: "${EVE_MARKET_HISTORY_WARMUP_INTERVAL:PT5M}"
     history-warmup-limit: ${EVE_MARKET_HISTORY_WARMUP_LIMIT:1}
   image-cache:

@@ -164,6 +164,22 @@ class SerenityEsiClientTest {
         server.verify();
     }
 
+    /** 单物品订单必须把 type_id 放入官方查询串，避免读取整个区域订单目录。 */
+    @Test
+    void shouldRequestOneMarketTypeWithPageMetadata() {
+        server
+            .expect(once(), requestTo("https://esi.example.test/latest/markets/10000002/orders/?datasource=serenity&order_type=all&type_id=34&page=2"))
+            .andExpect(method(HttpMethod.GET))
+            .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON).header("X-Pages", "3"));
+
+        SerenityEsiPagedResponse<SerenityMarketOrderResponse> response = client
+            .getMarketOrdersWithMetadata(10000002L, 34, 2);
+
+        assertThat(response.pageCount()).isEqualTo(3);
+        assertThat(response.body()).isEmpty();
+        server.verify();
+    }
+
     /** 市场历史是区域级数据，客户端必须请求明确区域而非伪造吉他单站端点。 */
     @Test
     void shouldRequestRegionalMarketHistory() {

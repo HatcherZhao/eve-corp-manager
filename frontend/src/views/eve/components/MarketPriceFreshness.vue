@@ -7,6 +7,8 @@ const props = defineProps<{
   synchronizedAt?: string
   /** 服务端按当前报价刷新周期计算的失效时间。 */
   freshnessExpiresAt?: string
+  /** 已有报价但旧缓存未记录来源时间时，不误报为尚未取得报价。 */
+  hasQuote?: boolean
 }>()
 
 const currentTime = ref(Date.now())
@@ -26,6 +28,7 @@ onUnmounted(() => {
 const freshness = computed(() => {
   const synchronizedAt = props.synchronizedAt ? parseEveTime(props.synchronizedAt) : undefined
   if (!synchronizedAt?.isValid()) {
+    if (props.hasQuote) return { level: 0, state: 'empty', label: '来源时间未知', detail: '已取得报价，但官方数据取得时间未知' }
     return { level: 0, state: 'empty', label: '等待首次报价', detail: '尚未取得吉他市场报价' }
   }
   const expiresAt = props.freshnessExpiresAt ? parseEveTime(props.freshnessExpiresAt) : synchronizedAt.add(15, 'minute')
@@ -38,7 +41,7 @@ const freshness = computed(() => {
   }
   const remainingMinutes = Math.max(1, Math.ceil(remaining / 60_000))
   if (ratio <= 0.5) {
-    return { level, state: 'aging', label: '即将更新', detail: `约 ${remainingMinutes} 分钟后刷新` }
+    return { level, state: 'aging', label: '即将过期', detail: `约 ${remainingMinutes} 分钟内有效` }
   }
   return { level, state: 'fresh', label: '报价新鲜', detail: `约 ${remainingMinutes} 分钟内有效` }
 })

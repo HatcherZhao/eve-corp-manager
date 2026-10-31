@@ -163,7 +163,7 @@ public class SerenityEsiClient {
     /**
      * 读取国服指定区域的一页公开市场订单。
      *
-     * <p>调用方必须复用响应的分页信息并在本地统一聚合，禁止由页面或单物品操作直接触发请求。</p>
+     * <p>调用方必须复用响应的分页信息并在本地统一聚合。</p>
      *
      * @param regionId EVE 区域 ID
      * @param page     从 1 开始的页码
@@ -178,7 +178,33 @@ public class SerenityEsiClient {
             return new SerenityEsiPagedResponse<>(List
                 .of(marketBody(response, SerenityMarketOrderResponse[].class)), expiresAt(response), response
                     .getHeaders()
-                    .getETag(), pageCount(response));
+                    .getETag(), pageCount(response), fetchedAt(response));
+        } catch (RestClientException e) {
+            throw classify(e);
+        }
+    }
+
+    /**
+     * 按物品读取国服指定区域的一页公开市场订单。
+     *
+     * @param regionId 区域 ID
+     * @param typeId   物品类型 ID
+     * @param page     从 1 开始的页码
+     * @return 含订单、缓存元数据和总页数的响应
+     */
+    public SerenityEsiPagedResponse<SerenityMarketOrderResponse> getMarketOrdersWithMetadata(Long regionId,
+                                                                                              Integer typeId,
+                                                                                              int page) {
+        if (regionId == null || regionId <= 0 || typeId == null || typeId <= 0 || page < 1) {
+            throw new IllegalArgumentException("国服单物品市场订单查询参数无效");
+        }
+        try {
+            ResponseEntity<String> response = marketResponse(baseEndpoint("/markets/" + regionId + "/orders/")
+                + "&order_type=all&type_id=" + typeId + "&page=" + page);
+            return new SerenityEsiPagedResponse<>(List
+                .of(marketBody(response, SerenityMarketOrderResponse[].class)), expiresAt(response), response
+                    .getHeaders()
+                    .getETag(), pageCount(response), fetchedAt(response));
         } catch (RestClientException e) {
             throw classify(e);
         }
@@ -692,6 +718,19 @@ public class SerenityEsiClient {
     private static LocalDateTime expiresAt(ResponseEntity<?> response) {
         long expires = response.getHeaders().getExpires();
         return expires < 0 ? null : LocalDateTime.ofInstant(Instant.ofEpochMilli(expires), ZoneOffset.UTC);
+    }
+
+    /** 读取市场缓存层保留的官方正文获取或确认时间。 */
+    private static LocalDateTime fetchedAt(ResponseEntity<?> response) {
+        String value = response.getHeaders().getFirst(EveMarketEsiCache.FETCHED_AT_HEADER);
+        if (value == null) {
+            return null;
+        }
+        try {
+            return LocalDateTime.ofInstant(Instant.ofEpochMilli(Long.parseLong(value)), ZoneOffset.UTC);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /** 校验角色私有接口的共同参数。 */

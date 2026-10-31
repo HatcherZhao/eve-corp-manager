@@ -30,11 +30,15 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import top.continew.admin.eve.model.EveStaticLocationReferenceResp;
 import top.continew.admin.eve.model.EveStaticLocationTreeNodeResp;
 import top.continew.admin.eve.model.EveStaticReferenceImportResp;
 import top.continew.admin.eve.model.EveStaticTypeCategoryNodeResp;
 import top.continew.admin.eve.model.EveStaticTypeReferenceResp;
+import top.continew.admin.eve.model.EveOfficialTypeSyncStatusResp;
+import top.continew.admin.eve.service.EveOfficialTypeReferenceService;
 import top.continew.admin.eve.service.EveStaticReferenceService;
 import top.continew.starter.core.exception.BusinessException;
 import top.continew.starter.extension.crud.model.resp.PageResp;
@@ -56,9 +60,13 @@ import java.util.List;
 @RequestMapping("/eve/reference")
 public class EveStaticReferenceController {
 
-    private final EveStaticReferenceService staticReferenceService;
+    private static final String OFFICIAL_TYPE_SYNC_LOCK = "eve:reference:official-types";
 
-    /** 分页查询 evedata.xlsx 中的物品类型资料。 */
+    private final EveStaticReferenceService staticReferenceService;
+    private final EveOfficialTypeReferenceService officialTypeReferenceService;
+    private final RedissonClient redissonClient;
+
+    /** 分页查询最近完整发布的晨曦官方物品类型资料。 */
     @GetMapping("/types")
     @Operation(summary = "查询 EVE 静态物品资料")
     @SaCheckPermission("eve:reference:view")
@@ -85,7 +93,41 @@ public class EveStaticReferenceController {
         return staticReferenceService.listTypeCategories();
     }
 
-    /** 分页查询 evedata.xlsx 中的星域、星座、星系和建筑位置资料。 */
+    /** 查询晨曦官方物品目录后台构建进度。 */
+    @GetMapping("/types/sync/status")
+    @Operation(summary = "查询官方物品目录同步进度")
+    @SaCheckPermission("eve:reference:view")
+    public EveOfficialTypeSyncStatusResp getOfficialTypeSyncStatus() {
+        return officialTypeReferenceService.status();
+    }
+
+    /** 清空未发布的暂存结果并重新构建晨曦官方物品目录。 */
+    @PostMapping("/types/sync/restart")
+    @Operation(summary = "重新同步官方物品目录")
+    @SaCheckPermission("eve:reference:manage")
+    public EveOfficialTypeSyncStatusResp restartOfficialTypeSync() {
+        RLock lock = redissonClient.getLock(OFFICIAL_TYPE_SYNC_LOCK);
+        if (!lock.tryLock()) {
+            throw new BusinessException("官方物品目录正在同步，请稍后重试");
+        }
+        try {
+            return officialTypeReferenceService.restart();
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+
+    /** 按需读取官方单物品详情，补齐不适合全量逐项请求的中文说明。 */
+    @GetMapping("/types/{typeId}")
+    @Operation(summary = "查询官方单物品详情")
+    @SaCheckPermission("eve:reference:view")
+    public EveStaticTypeReferenceResp getOfficialType(@org.springframework.web.bind.annotation.PathVariable @Min(1) int typeId) {
+        return officialTypeReferenceService.refreshTypeDetail(typeId);
+    }
+
+    /** 分页查询静态文件中的星域、星座、星系和建筑位置资料。 */
     @GetMapping("/locations")
     @Operation(summary = "查询 EVE 静态位置资料")
     @SaCheckPermission("eve:reference:view")
@@ -187,9 +229,9 @@ public class EveStaticReferenceController {
         response.getOutputStream().write(csv.toString().getBytes(StandardCharsets.UTF_8));
     }
 
-    /** 上传完整 evedata.xlsx 并原子替换物品与位置资料快照。 */
+    /** 上传位置资料；官方类型目录发布后不再允许 Excel 覆盖类型资料。 */
     @PostMapping(value = "/import", consumes = "multipart/form-data")
-    @Operation(summary = "批量更新 EVE 静态资料")
+    @Operation(summary = "批量更新 EVE 位置资料")
     @SaCheckPermission("eve:reference:manage")
     public EveStaticReferenceImportResp importReference(@RequestParam("file") MultipartFile file) {
         if (file.isEmpty() || file.getOriginalFilename() == null || !file.getOriginalFilename()

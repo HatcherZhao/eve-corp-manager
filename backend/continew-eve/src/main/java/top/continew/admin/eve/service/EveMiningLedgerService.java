@@ -37,6 +37,7 @@ import top.continew.admin.eve.mapper.EveMiningLedgerMapper;
 import top.continew.admin.eve.mapper.EveMiningObserverMapper;
 import top.continew.admin.eve.mapper.EveMiningSyncRunMapper;
 import top.continew.admin.eve.model.EveMeContextResp;
+import top.continew.admin.eve.model.EveMarketRefreshResult;
 import top.continew.admin.eve.model.EveMiningAnalyticsResp;
 import top.continew.admin.eve.model.EveMiningCompressionValuationResp;
 import top.continew.admin.eve.model.EveMiningLedgerResp;
@@ -171,12 +172,12 @@ public class EveMiningLedgerService {
         String normalizedKeyword = normalizeKeyword(keyword);
         List<Map<String, Object>> initial = compressionMapper.summarizeCompressionValuation(context
             .getTenantId(), corporation.getId(), observerId, characterId, typeId, fromDate, toDate, normalizedKeyword);
-        marketService.refreshQuotesForValuation(initial.stream()
+        EveMarketRefreshResult refresh = marketService.queueMarketTypes(initial.stream()
             .map(item -> number(item.get("compressedTypeId")).intValue())
-            .toList());
+            .toList(), false);
         List<Map<String, Object>> rows = compressionMapper.summarizeCompressionValuation(context
             .getTenantId(), corporation.getId(), observerId, characterId, typeId, fromDate, toDate, normalizedKeyword);
-        return toCompressionValuation(rows);
+        return toCompressionValuation(rows, refresh);
     }
 
     /** 聚合当前军团的日期趋势、建筑排名、玩家排名和军团概览。 */
@@ -616,7 +617,10 @@ public class EveMiningLedgerService {
     }
 
     /** 将 JDBC 聚合行转换为对页面友好的压缩矿估值，并保留报价缺失状态。 */
-    private static EveMiningCompressionValuationResp toCompressionValuation(List<Map<String, Object>> rows) {
+    private static EveMiningCompressionValuationResp toCompressionValuation(List<Map<String, Object>> rows,
+                                                                             EveMarketRefreshResult refresh) {
+        Set<Integer> failed = Set.copyOf(refresh.failedTypeIds());
+        Set<Integer> pending = Set.copyOf(refresh.deferredTypeIds());
         long rawQuantity = 0L;
         long compressedQuantity = 0L;
         long remainderQuantity = 0L;
@@ -625,10 +629,14 @@ public class EveMiningLedgerService {
         BigDecimal estimatedValue = BigDecimal.ZERO;
         List<EveMiningCompressionValuationResp.Item> items = new ArrayList<>();
         for (Map<String, Object> row : rows) {
+            int compressedTypeId = number(row.get("compressedTypeId")).intValue();
             long itemRawQuantity = number(row.get("rawQuantity")).longValue();
             long itemCompressedQuantity = number(row.get("compressedQuantity")).longValue();
             long itemRemainderQuantity = number(row.get("remainderQuantity")).longValue();
-            BigDecimal lowestSellPrice = decimal(row.get("lowestSellPrice"));
+            String priceStatus = failed.contains(compressedTypeId)
+                ? "FAILED"
+                : pending.contains(compressedTypeId) ? "PENDING" : "READY";
+            BigDecimal lowestSellPrice = "READY".equals(priceStatus) ? decimal(row.get("lowestSellPrice")) : null;
             BigDecimal itemValue = lowestSellPrice == null
                 ? null
                 : lowestSellPrice.multiply(BigDecimal.valueOf(itemCompressedQuantity));
@@ -636,17 +644,21 @@ public class EveMiningLedgerService {
             compressedQuantity += itemCompressedQuantity;
             remainderQuantity += itemRemainderQuantity;
             if (itemValue == null) {
-                unpricedTypeCount++;
+                if ("READY".equals(priceStatus)) {
+                    unpricedTypeCount++;
+                    priceStatus = "UNPRICED";
+                }
             } else {
                 pricedTypeCount++;
                 estimatedValue = estimatedValue.add(itemValue);
             }
             items.add(new EveMiningCompressionValuationResp.Item(number(row.get("rawTypeId")).intValue(), text(row
-                .get("rawTypeName")), number(row.get("compressedTypeId")).intValue(), text(row
+                .get("rawTypeName")), compressedTypeId, text(row
                     .get("compressedTypeName")), itemRawQuantity, itemCompressedQuantity, itemRemainderQuantity, lowestSellPrice, itemValue, toLocalDateTime(row
-                        .get("priceUpdatedAt"))));
+                        .get("priceUpdatedAt")), priceStatus));
         }
-        return new EveMiningCompressionValuationResp(rawQuantity, compressedQuantity, remainderQuantity, estimatedValue, pricedTypeCount, unpricedTypeCount, List
+        return new EveMiningCompressionValuationResp(rawQuantity, compressedQuantity, remainderQuantity, estimatedValue, pricedTypeCount, unpricedTypeCount, pending
+            .size(), failed.size(), List
             .copyOf(items));
     }
 

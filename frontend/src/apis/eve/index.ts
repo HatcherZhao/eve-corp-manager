@@ -338,6 +338,8 @@ export interface EveCorporationAssetValuation {
   highestBuyPricedTypeCount: number
   lowestSellPricedTypeCount: number
   unpricedTypeCount: number
+  pendingTypeCount: number
+  failedTypeCount: number
   items: Array<{
     typeId: number
     typeName: string
@@ -348,6 +350,7 @@ export interface EveCorporationAssetValuation {
     highestBuyEstimatedValue?: number
     lowestSellEstimatedValue?: number
     priceUpdatedAt?: string
+    priceStatus: 'READY' | 'UNPRICED' | 'PENDING' | 'FAILED'
   }>
 }
 
@@ -441,6 +444,8 @@ export interface EveMiningCompressionValuation {
   estimatedValue: number
   pricedTypeCount: number
   unpricedTypeCount: number
+  pendingTypeCount: number
+  failedTypeCount: number
   items: Array<{
     rawTypeId: number
     rawTypeName: string
@@ -452,6 +457,7 @@ export interface EveMiningCompressionValuation {
     lowestSellPrice?: number
     estimatedValue?: number
     priceUpdatedAt?: string
+    priceStatus: 'READY' | 'UNPRICED' | 'PENDING' | 'FAILED'
   }>
 }
 
@@ -617,6 +623,7 @@ export interface EveMarketQuote {
 export interface EveMarketItem {
   type: EveStaticTypeReference
   quote?: EveMarketQuote
+  marketStatus?: 'READY' | 'PENDING' | 'FAILED'
 }
 
 export interface EveMarketQuery extends PageQuery {
@@ -925,6 +932,15 @@ export interface EveIndustryScanReq {
   facilityId: string
   activity?: string
   limit?: number
+}
+
+/** 工业扫描所需行情的准备进度。 */
+export interface EveIndustryScanMarketStatus {
+  totalTypeCount: number
+  readyTypeCount: number
+  pendingTypeCount: number
+  failedTypeCount: number
+  ready: boolean
 }
 
 export interface EveIndustryConfigReq {
@@ -1299,6 +1315,11 @@ export function calculateEveIndustryBlueprint(data: { blueprintId: string, confi
   return http.post<EveIndustryCalculation>('/eve/industry/calculate', data)
 }
 
+/** 查询工业机会扫描所需行情的准备进度。 */
+export function getEveIndustryScanMarketStatus(data: EveIndustryScanReq) {
+  return http.post<EveIndustryScanMarketStatus>('/eve/industry/opportunities/scan/status', data)
+}
+
 /** 手工触发工业机会扫描。 */
 export function scanEveIndustryOpportunities(data: EveIndustryScanReq) {
   return http.post<EveIndustryOpportunity[]>('/eve/industry/opportunities/scan', data)
@@ -1541,19 +1562,24 @@ export function refreshEveMoonOreProfile(extractionId: string) {
   return http.post<EveMoonExtraction>(`/eve/extractions/${extractionId}/ore-profile/refresh`)
 }
 
-/** 用新的 evedata.xlsx 原子更新数据库中的 EVE 静态资料。 */
+/** 用新的 evedata.xlsx 更新位置资料；官方物品类型不会被覆盖。 */
 export function importEveStaticReference(file: FormData) {
   return http.post<EveStaticReferenceImportResult>('/eve/reference/import', file)
 }
 
-/** 分页查询 evedata.xlsx 中的物品类型资料。 */
+/** 分页查询最近完整发布的晨曦官方物品类型资料。 */
 export function getEveStaticTypes(query: EveStaticTypeReferenceQuery) {
   return http.get<PageRes<EveStaticTypeReference[]>>('/eve/reference/types', query)
 }
 
-/** 查询由 evedata.xlsx 生成的完整游戏市场分类树。 */
+/** 查询由晨曦官方市场组生成的完整游戏市场分类树。 */
 export function getEveStaticTypeCategories() {
   return http.get<EveStaticTypeCategoryNode[]>('/eve/reference/types/categories')
+}
+
+/** 按需读取官方单物品详情并补齐中文说明。 */
+export function getEveStaticTypeDetail(typeId: number) {
+  return http.get<EveStaticTypeReference>(`/eve/reference/types/${typeId}`)
 }
 
 /** 按本系统的物品资料分类读取吉他贸易中心的参考报价。 */

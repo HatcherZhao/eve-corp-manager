@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import { Message, type RequestOption } from '@arco-design/web-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
   type EveStaticTypeCategoryNode,
   type EveStaticTypeReference,
   exportEveStaticTypes,
   getEveStaticTypeCategories,
+  getEveStaticTypeDetail,
   getEveStaticTypes,
-  importEveStaticReference,
 } from '@/apis/eve'
 import { useDownload } from '@/hooks'
 import { useUserStore } from '@/stores'
@@ -17,7 +16,6 @@ defineOptions({ name: 'EveStaticTypes' })
 const userStore = useUserStore()
 const loading = ref(false)
 const categoryLoading = ref(false)
-const importing = ref(false)
 const records = ref<EveStaticTypeReference[]>([])
 const total = ref(0)
 const selectedType = ref<EveStaticTypeReference>()
@@ -27,7 +25,6 @@ const selectedCategoryKeys = ref<string[]>([])
 const expandedCategoryKeys = ref<string[]>([])
 const query = reactive({ page: 1, size: 20, keyword: '' })
 const canExport = computed(() => userStore.permissions.includes('eve:reference:export') || userStore.permissions.includes('*:*:*'))
-const canManage = computed(() => userStore.permissions.includes('eve:reference:manage') || userStore.permissions.includes('*:*:*'))
 const activeCategoryLabel = computed(() => selectedCategory.value?.name || '物品列表')
 
 interface MarketCategoryTreeNode extends EveStaticTypeCategoryNode {
@@ -77,9 +74,14 @@ function selectedCategoryQuery() {
   }
 }
 
-/** 打开物品资料详情，展示不适合在表格中完整展开的说明和分类。 */
-function openDetail(record: EveStaticTypeReference) {
+/** 打开物品时按需读取官方详情，补齐不适合全量逐项请求的中文说明。 */
+async function openDetail(record: EveStaticTypeReference) {
   selectedType.value = record
+  try {
+    selectedType.value = (await getEveStaticTypeDetail(record.typeId)).data
+  } catch {
+    // 保留列表中的官方名称与分类，统一请求拦截器会展示失败原因。
+  }
 }
 
 async function loadTypes() {
@@ -148,27 +150,6 @@ function exportTypes() {
   )
 }
 
-/** 上传完整 evedata.xlsx，服务端校验后同时原子更新物品与位置资料。 */
-function importWorkbook(options: RequestOption) {
-  const { fileItem, name = 'file', onError, onProgress, onSuccess } = options
-  importing.value = true
-  onProgress(20)
-  const formData = new FormData()
-  formData.append(name as string, fileItem.file as Blob)
-  importEveStaticReference(formData)
-    .then(async (response) => {
-      const result = response.data
-      Message.success(`静态资料已更新：${result.typeCount} 个物品类型、${result.locationCount} 个位置`)
-      await Promise.all([loadCategories(), loadTypes()])
-      onSuccess(response)
-    })
-    .catch(onError)
-    .finally(() => {
-      importing.value = false
-    })
-  return { abort: () => undefined }
-}
-
 onMounted(() => Promise.all([loadCategories(), loadTypes()]))
 </script>
 
@@ -177,18 +158,10 @@ onMounted(() => Promise.all([loadCategories(), loadTypes()]))
     <header class="eve-static-types-page__header">
       <div>
         <h1>物品资料</h1>
-        <p>按游戏市场分类查找物品，查看图标和说明。</p>
+        <p>物品清单与市场分类由晨曦官方 ESI 自动同步，物品说明在查看时按需更新。</p>
       </div>
       <div class="eve-static-types-page__action-bar">
         <a-button v-if="canExport" @click="exportTypes"><template #icon><icon-download /></template>导出</a-button>
-        <a-upload
-          v-if="canManage"
-          accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx"
-          :show-file-list="false"
-          :custom-request="importWorkbook"
-        >
-          <a-button type="primary" :loading="importing"><template #icon><icon-upload /></template>批量更新资料</a-button>
-        </a-upload>
       </div>
     </header>
 

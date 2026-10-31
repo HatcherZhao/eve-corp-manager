@@ -75,11 +75,15 @@ class EveMarketEsiCacheTest {
             requests.incrementAndGet();
             return success("[]", Instant.now().plusSeconds(600));
         };
-        cache.get("orders/region-1/page-1", fetch);
-        new EveMarketEsiCache(redis, objectMapper).get("orders/region-1/page-1", fetch);
+        ResponseEntity<String> initial = cache.get("orders/region-1/page-1", fetch);
+        ResponseEntity<String> reused = new EveMarketEsiCache(redis, objectMapper)
+            .get("orders/region-1/page-1", fetch);
         cache.get("orders/region-1/page-2", fetch);
 
         assertThat(requests.get()).isEqualTo(2);
+        assertThat(reused.getHeaders().getFirst(EveMarketEsiCache.FETCHED_AT_HEADER)).isEqualTo(initial
+            .getHeaders()
+            .getFirst(EveMarketEsiCache.FETCHED_AT_HEADER));
     }
 
     /** 到期后传递 ETag，304 不能丢失已缓存正文及 X-Pages。 */
@@ -109,6 +113,28 @@ class EveMarketEsiCacheTest {
             assertThat(etag).isNull();
             return success("[]", Instant.now().plusSeconds(600));
         }).getBody()).isEqualTo("[]");
+    }
+
+    /** 升级前缓存没有来源时间时继续复用正文，但不得伪造为本次请求刚从官方取得。 */
+    @Test
+    void shouldReuseLegacyCacheWithoutInventingFetchedAt() {
+        cache.get("orders/region-1/type-34", etag -> success("[]", Instant.now().plusSeconds(600)));
+        values.values().forEach(value -> {
+            try {
+                ObjectNode json = (ObjectNode)objectMapper.readTree(value.get());
+                json.remove("fetchedAt");
+                value.set(objectMapper.writeValueAsString(json));
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        });
+
+        ResponseEntity<String> result = cache.get("orders/region-1/type-34", etag -> {
+            throw new AssertionError("未过期的旧版缓存不应请求官方接口");
+        });
+
+        assertThat(result.getBody()).isEqualTo("[]");
+        assertThat(result.getHeaders().getFirst(EveMarketEsiCache.FETCHED_AT_HEADER)).isNull();
     }
 
     /** 模拟时间推进而不在测试中等待真实缓存期限。 */

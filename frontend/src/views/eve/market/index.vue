@@ -4,9 +4,9 @@ import { BarChart, LineChart } from 'echarts/charts'
 import { DataZoomComponent, GridComponent, TooltipComponent } from 'echarts/components'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import MarketPriceFreshness from '../components/MarketPriceFreshness.vue'
-import { formatEveDate, formatEveTime } from '@/utils/eveTime'
+import { formatEveDate, formatEveTime, parseEveTime } from '@/utils/eveTime'
 import {
   type EveMarketDetail,
   type EveMarketItem,
@@ -15,6 +15,7 @@ import {
   getEveMarket,
   getEveMarketDetail,
   getEveStaticTypeCategories,
+  getEveStaticTypeDetail,
 } from '@/apis/eve'
 import { useChart } from '@/hooks'
 
@@ -34,6 +35,9 @@ const selectedCategoryKeys = ref<string[]>([])
 const expandedCategoryKeys = ref<string[]>([])
 const detail = ref<EveMarketDetail>()
 const query = reactive({ page: 1, size: 20, keyword: '' })
+let marketPollTimer: ReturnType<typeof setTimeout> | undefined
+let marketRequestSequence = 0
+let marketPageActive = true
 const activeCategoryLabel = computed(() => selectedCategory.value?.name || '吉他行情')
 const detailHistory = computed(() => detail.value?.history.slice(-120) || [])
 const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
@@ -99,9 +103,11 @@ function findCategory(nodes: MarketCategoryTreeNode[], key: string): MarketCateg
   }
 }
 
-/** 吉他行情列表只读取服务端已同步的本地快照。 */
-async function loadMarket() {
-  loading.value = true
+/** 加载当前分类或搜索结果的吉他行情。 */
+async function loadMarket(background = false) {
+  if (marketPollTimer) clearTimeout(marketPollTimer)
+  const sequence = ++marketRequestSequence
+  if (!background) loading.value = true
   try {
     const { data } = await getEveMarket({
       page: query.page,
@@ -109,10 +115,22 @@ async function loadMarket() {
       keyword: query.keyword || undefined,
       ...selectedCategoryQuery(),
     })
+    if (!marketPageActive || sequence !== marketRequestSequence) return
     records.value = data.list
     total.value = data.total
+    if (data.list.some((item) => item.marketStatus === 'PENDING' || item.marketStatus === 'FAILED')) {
+      marketPollTimer = setTimeout(() => void loadMarket(true), 8000)
+    } else {
+      const deadlines = data.list.map((item) => parseEveTime(item.quote?.freshnessExpiresAt))
+        .filter((time) => time.isValid())
+        .map((time) => time.valueOf())
+      if (deadlines.length) {
+        const delay = Math.max(2000, Math.min(...deadlines) - Date.now() + 250)
+        marketPollTimer = setTimeout(() => void loadMarket(true), delay)
+      }
+    }
   } finally {
-    loading.value = false
+    if (sequence === marketRequestSequence) loading.value = false
   }
 }
 
@@ -151,14 +169,25 @@ function reset() {
   loadMarket()
 }
 
-/** 打开物品详情，只读取服务端后台同步的订单簿和历史快照。 */
+/** 打开物品行情，并同步列表中该物品的报价。 */
 async function openDetail(record: EveMarketItem) {
   detailLoading.value = true
   try {
     detail.value = (await getEveMarketDetail(record.type.typeId)).data
+    const index = records.value.findIndex((item) => item.type.typeId === record.type.typeId)
+    if (index >= 0) records.value[index] = { ...records.value[index], quote: detail.value.quote }
+    // 类型说明由官方接口按需补齐，失败时保留市场详情中已有的资料。
+    void getEveStaticTypeDetail(record.type.typeId).then(({ data }) => {
+      if (detail.value?.type.typeId === record.type.typeId) detail.value.type = data
+    }).catch(() => {})
   } finally {
     detailLoading.value = false
   }
+}
+
+/** 重新查询当前物品的行情和成交历史。 */
+function refreshDetail() {
+  if (detail.value) void openDetail({ type: detail.value.type, quote: detail.value.quote })
 }
 
 /** 整行点击只负责打开行情，避免表格事件对象被误作强制刷新参数。 */
@@ -250,6 +279,11 @@ const { chartOption: historyChartOption } = useChart((isDark): EChartsOption => 
 }))
 
 onMounted(() => Promise.all([loadCategories(), loadMarket()]))
+onUnmounted(() => {
+  marketPageActive = false
+  marketRequestSequence++
+  if (marketPollTimer) clearTimeout(marketPollTimer)
+})
 </script>
 
 <template>
@@ -287,10 +321,10 @@ onMounted(() => Promise.all([loadCategories(), loadMarket()]))
             <a-table-column title="最高求购" :width="175" align="right"><template #cell="{ record }"><strong class="eve-market-page__price eve-market-page__buy">{{ formatPrice(record.quote?.highestBuyPrice) }}</strong></template></a-table-column>
             <a-table-column title="最低卖出" :width="175" align="right"><template #cell="{ record }"><strong class="eve-market-page__price eve-market-page__sell">{{ formatPrice(record.quote?.lowestSellPrice) }}</strong></template></a-table-column>
             <a-table-column title="买卖价差" :width="175" align="right"><template #cell="{ record }"><span class="eve-market-page__price">{{ spread(record) === undefined ? '—' : formatPrice(spread(record)) }}</span></template></a-table-column>
-            <a-table-column title="价格新鲜度" :width="128"><template #cell="{ record }"><MarketPriceFreshness :synchronized-at="record.quote?.synchronizedAt" :freshness-expires-at="record.quote?.freshnessExpiresAt" /></template></a-table-column>
+            <a-table-column title="行情状态" :width="128"><template #cell="{ record }"><span v-if="record.marketStatus === 'PENDING'">正在查询</span><span v-else-if="record.marketStatus === 'FAILED'">查询失败，等待重试</span><MarketPriceFreshness v-else :has-quote="Boolean(record.quote)" :synchronized-at="record.quote?.synchronizedAt" :freshness-expires-at="record.quote?.freshnessExpiresAt" /></template></a-table-column>
           </template>
         </a-table>
-        <a-pagination v-if="total" v-model:current="query.page" v-model:page-size="query.size" :total="total" show-total @change="loadMarket" />
+        <a-pagination v-if="total" v-model:current="query.page" v-model:page-size="query.size" :total="total" show-total @change="loadMarket()" />
       </section>
     </section>
 
@@ -300,18 +334,19 @@ onMounted(() => Promise.all([loadCategories(), loadMarket()]))
         <template v-if="detail">
           <section class="eve-market-page__detail-header">
             <div class="eve-market-page__detail-identity"><EveTypeIcon :type-id="detail.type.typeId" :size="56" :alt="`${detail.type.typeName}图标`" /><div><h2>{{ detail.type.typeName }}</h2><p>{{ categoryPath(detail.type) }}</p></div></div>
+            <a-button :loading="detailLoading" @click="refreshDetail">刷新行情</a-button>
           </section>
           <a-alert v-if="detail.upstreamMessage" type="warning" :show-icon="true" class="eve-market-page__cache-warning">{{ detail.upstreamMessage }}</a-alert>
           <section class="eve-market-page__quote-grid">
             <article><span>最高求购</span><strong class="eve-market-page__buy">{{ formatPrice(detail.quote?.highestBuyPrice) }}</strong><small>总量 {{ formatVolume(detail.quote?.buyVolume) }}</small></article>
             <article><span>最低卖出</span><strong class="eve-market-page__sell">{{ formatPrice(detail.quote?.lowestSellPrice) }}</strong><small>总量 {{ formatVolume(detail.quote?.sellVolume) }}</small></article>
-            <article><span>行情时间</span><strong>{{ formatTime(detail.quote?.synchronizedAt) }}</strong><MarketPriceFreshness :synchronized-at="detail.quote?.synchronizedAt" :freshness-expires-at="detail.quote?.freshnessExpiresAt" /><small>{{ !detail.quote ? '等待首轮同步' : detail.servedFromCache ? '展示最近缓存' : '已读取服务器缓存' }}</small></article>
+            <article><span>行情时间</span><strong>{{ detail.quote && !detail.quote.synchronizedAt ? '来源时间未知' : formatTime(detail.quote?.synchronizedAt) }}</strong><MarketPriceFreshness :has-quote="Boolean(detail.quote)" :synchronized-at="detail.quote?.synchronizedAt" :freshness-expires-at="detail.quote?.freshnessExpiresAt" /><small>{{ !detail.quote ? '暂无行情' : detail.servedFromCache ? '展示最近缓存' : '已取得官方行情' }}</small></article>
           </section>
           <a-tabs default-active-key="orders" class="eve-market-page__tabs">
             <a-tab-pane key="orders" title="市场订单">
               <section class="eve-market-page__order-grid">
-                <article><h3>买单 <small>高价优先</small></h3><a-table :data="detail.buyOrders" :pagination="false" size="small" :scroll="{ x: 520, y: 360 }"><template #columns><a-table-column title="价格" :width="190" align="right"><template #cell="{ record }"><strong class="eve-market-page__price eve-market-page__buy">{{ formatPrice(record.price) }}</strong></template></a-table-column><a-table-column title="数量" :width="112" align="right"><template #cell="{ record }"><span class="eve-market-page__price">{{ formatVolume(record.volume) }}</span></template></a-table-column><a-table-column title="空间站" :min-width="190" ellipsis tooltip><template #cell="{ record }">{{ stationLabel(record) }}</template></a-table-column></template></a-table><a-empty v-if="!detail.buyOrders.length" description="暂无可用买单" /></article>
-                <article><h3>卖单 <small>低价优先</small></h3><a-table :data="detail.sellOrders" :pagination="false" size="small" :scroll="{ x: 520, y: 360 }"><template #columns><a-table-column title="价格" :width="190" align="right"><template #cell="{ record }"><strong class="eve-market-page__price eve-market-page__sell">{{ formatPrice(record.price) }}</strong></template></a-table-column><a-table-column title="数量" :width="112" align="right"><template #cell="{ record }"><span class="eve-market-page__price">{{ formatVolume(record.volume) }}</span></template></a-table-column><a-table-column title="空间站" :min-width="190" ellipsis tooltip><template #cell="{ record }">{{ stationLabel(record) }}</template></a-table-column></template></a-table><a-empty v-if="!detail.sellOrders.length" description="暂无可用卖单" /></article>
+                <article><h3>买单 <small>高价优先</small></h3><a-table :data="detail.buyOrders" :pagination="{ pageSize: 50, showTotal: true }" size="small" :scroll="{ x: 520, y: 360 }"><template #columns><a-table-column title="价格" :width="190" align="right"><template #cell="{ record }"><strong class="eve-market-page__price eve-market-page__buy">{{ formatPrice(record.price) }}</strong></template></a-table-column><a-table-column title="数量" :width="112" align="right"><template #cell="{ record }"><span class="eve-market-page__price">{{ formatVolume(record.volume) }}</span></template></a-table-column><a-table-column title="空间站" :min-width="190" ellipsis tooltip><template #cell="{ record }">{{ stationLabel(record) }}</template></a-table-column></template></a-table><a-empty v-if="!detail.buyOrders.length" description="暂无可用买单" /></article>
+                <article><h3>卖单 <small>低价优先</small></h3><a-table :data="detail.sellOrders" :pagination="{ pageSize: 50, showTotal: true }" size="small" :scroll="{ x: 520, y: 360 }"><template #columns><a-table-column title="价格" :width="190" align="right"><template #cell="{ record }"><strong class="eve-market-page__price eve-market-page__sell">{{ formatPrice(record.price) }}</strong></template></a-table-column><a-table-column title="数量" :width="112" align="right"><template #cell="{ record }"><span class="eve-market-page__price">{{ formatVolume(record.volume) }}</span></template></a-table-column><a-table-column title="空间站" :min-width="190" ellipsis tooltip><template #cell="{ record }">{{ stationLabel(record) }}</template></a-table-column></template></a-table><a-empty v-if="!detail.sellOrders.length" description="暂无可用卖单" /></article>
               </section>
             </a-tab-pane>
             <a-tab-pane key="history" title="价格历史">

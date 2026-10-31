@@ -32,6 +32,7 @@ import top.continew.admin.eve.mapper.EveMiningSyncRunMapper;
 import top.continew.admin.eve.model.EveMeContextResp;
 import top.continew.admin.eve.model.EveMiningAnalyticsResp;
 import top.continew.admin.eve.model.EveMiningCompressionValuationResp;
+import top.continew.admin.eve.model.EveMarketRefreshResult;
 import top.continew.admin.eve.model.entity.EveAuthorizationDO;
 import top.continew.admin.eve.model.entity.EveCharacterRoleSnapshotDO;
 import top.continew.admin.eve.model.entity.EveCorporationDO;
@@ -147,6 +148,8 @@ class EveMiningLedgerServiceTest {
                 .valueOf(LocalDateTime.of(2026, 9, 12, 10, 0)));
         when(compressionMapper.summarizeCompressionValuation(10L, 20L, null, null, null, fromDate, toDate, "沸"))
             .thenReturn(List.of(beforeQuote), List.of(priced));
+        when(marketService.queueMarketTypes(List.of(62463), false))
+            .thenReturn(new EveMarketRefreshResult(List.of(62463), List.of(), List.of()));
 
         UserContextHolder.setContext(userContext, false);
         try {
@@ -163,7 +166,7 @@ class EveMiningLedgerServiceTest {
                 assertThat(item.compressedTypeName()).isEqualTo("高密度沸石");
                 assertThat(item.lowestSellPrice()).isEqualByComparingTo("1234.50");
             });
-            verify(marketService).refreshQuotesForValuation(List.of(62463));
+            verify(marketService).queueMarketTypes(List.of(62463), false);
         } finally {
             UserContextHolder.clearContext();
         }

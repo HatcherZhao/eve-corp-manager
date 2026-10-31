@@ -33,10 +33,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 /**
- * 以保守节流同步国服 ESI 吉他市场缓存。
+ * 保留供维护操作使用的国服市场同步入口。
  *
- * <p>订单簿同步按区域分页执行，具体请求由 ESI 客户端全局节流；此任务再以 Redis 锁保证多实例
- * 不会并发抓取同一市场。任何用户请求都只读取本地快照。</p>
+ * <p>日常行情由实际业务按需查询；维护入口不再自动扫描市场或补齐全部物品历史。</p>
  *
  * @author zhaoyuqing
  */
@@ -52,8 +51,17 @@ public class EveMarketSyncJob {
     private final RedissonClient redissonClient;
     private final EveMarketProperties properties;
 
-    /** 每分钟检查共享到期门禁，真实抓取仍间隔十五分钟，并尊重官方缓存与失败退避。 */
-    @Scheduled(initialDelayString = "${eve.market.order-sync-initial-delay:PT90S}", fixedDelayString = "${eve.market.order-sync-scan-interval:PT1M}")
+    /** 持续处理实际业务提交的物品，空队列不会向官方发出请求。 */
+    @Scheduled(initialDelayString = "${eve.market.demand-sync-initial-delay:PT5S}", fixedDelayString = "${eve.market.demand-sync-interval:PT2S}")
+    public void consumeDemandQueue() {
+        try {
+            marketService.consumeMarketRefreshQueue(1);
+        } catch (RuntimeException e) {
+            log.warn("按需市场行情队列处理失败，errorType={}", e.getClass().getSimpleName());
+        }
+    }
+
+    /** 按需调用时同步完整区域订单。 */
     public void synchronizeMarketOrders() {
         runGuarded(ORDER_SYNC_LOCK, properties.getOrderSyncInterval(), marketService::synchronizeMarketOrders);
     }
@@ -100,8 +108,7 @@ public class EveMarketSyncJob {
         }
     }
 
-    /** 低频补齐官方区域历史；每轮限量请求，不能因补温产生高频扫描。 */
-    @Scheduled(initialDelayString = "${eve.market.history-warmup-initial-delay:PT5M}", fixedDelayString = "${eve.market.history-warmup-interval:PT5M}")
+    /** 按需调用时补齐少量官方区域历史。 */
     public void warmPriceHistories() {
         runGuarded(HISTORY_SYNC_LOCK, properties.getHistoryWarmupInterval(), () -> {
             marketService.warmPriceHistories();

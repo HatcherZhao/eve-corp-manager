@@ -27,12 +27,13 @@ import java.util.List;
  */
 public record EveCorporationAssetValuationResp(long itemCount, long totalQuantity, BigDecimal highestBuyEstimatedValue,
                                                BigDecimal lowestSellEstimatedValue, int highestBuyPricedTypeCount,
-                                               int lowestSellPricedTypeCount, int unpricedTypeCount, List<Item> items) {
+                                               int lowestSellPricedTypeCount, int unpricedTypeCount,
+                                               int pendingTypeCount, int failedTypeCount, List<Item> items) {
 
     /** 单个物品类型在当前资产快照中的数量、价格和两种估值口径。 */
     public record Item(int typeId, String typeName, long quantity, long itemCount, BigDecimal highestBuyPrice,
                        BigDecimal lowestSellPrice, BigDecimal highestBuyEstimatedValue,
                        BigDecimal lowestSellEstimatedValue,
-                       @EveDateTime(zone = "Asia/Shanghai") LocalDateTime priceUpdatedAt) {
+                       @EveDateTime(zone = "Asia/Shanghai") LocalDateTime priceUpdatedAt, String priceStatus) {
     }
 }

@@ -16,6 +16,6 @@
 
 package top.continew.admin.eve.model;
 
-/** 静态物品资料叠加吉他市场报价后的列表项目。 */
-public record EveMarketItemResp(EveStaticTypeReferenceResp type, EveMarketQuoteResp quote) {
+/** 静态物品资料叠加吉他市场报价及本轮刷新状态后的列表项目。 */
+public record EveMarketItemResp(EveStaticTypeReferenceResp type, EveMarketQuoteResp quote, String marketStatus) {
 }

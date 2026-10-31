@@ -84,6 +84,7 @@ import java.util.zip.ZipFile;
 public class EveStaticReferenceService {
 
     private static final String REFERENCE_NAME = "EVEDATA";
+    private static final String OFFICIAL_TYPE_REFERENCE_NAME = "SERENITY_ESI_TYPES";
     private static final int BATCH_SIZE = 500;
     private static final XMLInputFactory XML_INPUT_FACTORY = XMLInputFactory.newFactory();
 
@@ -97,6 +98,12 @@ public class EveStaticReferenceService {
     /** 星域导航树只会在资料导入后发生变化，缓存避免逐页重复聚合位置资料。 */
     private volatile List<EveStaticLocationTreeNodeResp> locationTreeCache;
 
+    /** 官方类型快照发布后清理分类缓存并重建依赖类型名称的月矿压缩映射。 */
+    public void afterOfficialTypeSnapshotPublished() {
+        typeCategoryTreeCache = null;
+        refreshMoonCompressionMappings();
+    }
+
     @Value("${eve.reference.workbook-path:docs/evedata.xlsx}")
     private String workbookPath;
 
@@ -104,7 +111,7 @@ public class EveStaticReferenceService {
     @EventListener(ApplicationReadyEvent.class)
     public void importConfiguredWorkbook() {
         Path source = resolveConfiguredWorkbook();
-        if (typeReferenceMapper.selectCount(null) > 0) {
+        if (typeReferenceMapper.selectCount(null) > 0 && locationReferenceMapper.selectCount(null) > 0) {
             return;
         }
         if (!Files.isRegularFile(source)) {
@@ -145,15 +152,19 @@ public class EveStaticReferenceService {
     public EveStaticReferenceImportResp importWorkbook(Path source, String sourceFileName, boolean force) {
         ParsedWorkbook workbook = parseWorkbook(source, sourceFileName);
         EveStaticReferenceImportDO previous = importMapper.selectById(REFERENCE_NAME);
-        if (!force && previous != null && workbook.sha256().equals(previous.getSourceSha256())) {
+        boolean officialTypesPublished = importMapper.selectById(OFFICIAL_TYPE_REFERENCE_NAME) != null;
+        if (!force && previous != null && workbook.sha256().equals(previous.getSourceSha256()) && locationReferenceMapper
+            .selectCount(null) > 0 && (officialTypesPublished || typeReferenceMapper.selectCount(null) > 0)) {
             return new EveStaticReferenceImportResp(workbook.sourceFileName(), workbook.sourceUpdatedAt(), workbook
                 .types()
                 .size(), workbook.locations().size(), false);
         }
         // 资料快照在完整解析后才替换；JdbcTemplate 避开通用 Mapper 的全表删除保护，仍受本事务回滚保护。
-        jdbcTemplate.update("DELETE FROM eve_static_type_reference");
+        if (!officialTypesPublished) {
+            jdbcTemplate.update("DELETE FROM eve_static_type_reference");
+            batchInsertTypes(workbook.types());
+        }
         jdbcTemplate.update("DELETE FROM eve_static_location_reference");
-        batchInsertTypes(workbook.types());
         batchInsertLocations(workbook.locations());
         refreshMoonCompressionMappings();
         EveStaticReferenceImportDO imported = new EveStaticReferenceImportDO();
@@ -162,7 +173,7 @@ public class EveStaticReferenceService {
         imported.setSourceSha256(workbook.sha256());
         imported.setSourceUpdatedAt(workbook.sourceUpdatedAt());
         imported.setImportedAt(LocalDateTime.now());
-        imported.setRecordCount(workbook.types().size() + workbook.locations().size());
+        imported.setRecordCount((officialTypesPublished ? 0 : workbook.types().size()) + workbook.locations().size());
         if (previous == null) {
             importMapper.insert(imported);
         } else {
@@ -170,8 +181,9 @@ public class EveStaticReferenceService {
         }
         typeCategoryTreeCache = null;
         locationTreeCache = null;
-        return new EveStaticReferenceImportResp(workbook.sourceFileName(), workbook.sourceUpdatedAt(), workbook.types()
-            .size(), workbook.locations().size(), true);
+        return new EveStaticReferenceImportResp(workbook.sourceFileName(), workbook.sourceUpdatedAt(), officialTypesPublished
+            ? Math.toIntExact(typeReferenceMapper.selectCount(null))
+            : workbook.types().size(), workbook.locations().size(), true);
     }
 
     /** 批量查询类型资料，调用方据此识别舰船、建筑等游戏对象。 */
@@ -316,6 +328,7 @@ public class EveStaticReferenceService {
                                                                                List<String> marketCategoryPath,
                                                                                boolean unclassified) {
         LambdaQueryWrapper<EveStaticTypeReferenceDO> query = new LambdaQueryWrapper<EveStaticTypeReferenceDO>()
+            .eq(EveStaticTypeReferenceDO::getOfficialDirectory, true)
             .orderByAsc(EveStaticTypeReferenceDO::getMarketCategoryL1, EveStaticTypeReferenceDO::getMarketCategoryL2, EveStaticTypeReferenceDO::getTypeName, EveStaticTypeReferenceDO::getTypeId);
         if (keyword != null && !keyword.isBlank()) {
             String value = keyword.trim();
@@ -367,6 +380,7 @@ public class EveStaticReferenceService {
     private List<EveStaticTypeCategoryNodeResp> buildTypeCategoryTree() {
         QueryWrapper<EveStaticTypeReferenceDO> query = new QueryWrapper<EveStaticTypeReferenceDO>()
             .select("market_category_l1", "market_category_l2", "market_category_l3", "market_category_l4", "market_category_l5", "market_category_l6")
+            .eq("official_directory", true)
             .orderByAsc("market_category_l1", "market_category_l2", "market_category_l3", "market_category_l4", "market_category_l5", "market_category_l6");
         List<EveStaticTypeReferenceDO> references = typeReferenceMapper.selectList(query);
         Map<String, MutableTypeCategoryNode> roots = new LinkedHashMap<>();

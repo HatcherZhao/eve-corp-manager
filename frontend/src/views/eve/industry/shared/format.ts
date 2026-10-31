@@ -25,6 +25,8 @@ export function industryStatusColor(value: EveIndustryOpportunity['status']) {
 const riskLabels: Record<string, string> = {
   DEMAND_UNAVAILABLE: '市场需求不足，无法推荐产量',
   ORDER_DEPTH_INSUFFICIENT: '市场挂单数量不足',
+  MARKET_PRICE_PENDING: '相关物品行情正在后台按需准备，请稍后重新扫描',
+  MARKET_PRICE_REFRESH_FAILED: '相关物品行情刷新失败，本次未使用旧报价',
   NO_HISTORY_VOLUME: '缺少历史成交量',
   ADJUSTED_PRICE_MISSING: '缺少计算安装费所需的官方参考价',
   SCI_MISSING: '缺少星系成本指数',

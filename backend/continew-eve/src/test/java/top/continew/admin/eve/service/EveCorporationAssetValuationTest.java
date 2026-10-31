@@ -18,6 +18,7 @@ package top.continew.admin.eve.service;
 
 import org.junit.jupiter.api.Test;
 import top.continew.admin.eve.model.EveCorporationAssetValuationResp;
+import top.continew.admin.eve.model.EveMarketRefreshResult;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -55,5 +56,23 @@ class EveCorporationAssetValuationTest {
             assertThat(item.highestBuyPrice()).isNull();
             assertThat(item.lowestSellEstimatedValue()).isNull();
         });
+    }
+
+    /** 延期和失败的行情不得沿用旧价格进入资产估值。 */
+    @Test
+    void shouldExcludePendingAndFailedMarketPricesFromValuation() {
+        List<Map<String, Object>> rows = List.of(Map
+            .of("typeId", 34, "typeName", "三钛合金", "quantity", 3L, "itemCount", 1L, "highestBuyPrice", new BigDecimal("90"), "lowestSellPrice", new BigDecimal("110")), Map
+                .of("typeId", 35, "typeName", "类晶体胶矿", "quantity", 4L, "itemCount", 1L, "highestBuyPrice", new BigDecimal("80"), "lowestSellPrice", new BigDecimal("100")));
+
+        EveCorporationAssetValuationResp result = EveCorporationAssetService.toValuation(rows, new EveMarketRefreshResult(List
+            .of(), List.of(35), List.of(34)));
+
+        assertThat(result.highestBuyEstimatedValue()).isZero();
+        assertThat(result.lowestSellEstimatedValue()).isZero();
+        assertThat(result.pendingTypeCount()).isEqualTo(1);
+        assertThat(result.failedTypeCount()).isEqualTo(1);
+        assertThat(result.items()).extracting(EveCorporationAssetValuationResp.Item::priceStatus)
+            .containsExactly("PENDING", "FAILED");
     }
 }

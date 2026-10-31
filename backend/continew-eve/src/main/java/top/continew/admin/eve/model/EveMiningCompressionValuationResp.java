@@ -27,11 +27,12 @@ import java.util.List;
  */
 public record EveMiningCompressionValuationResp(long rawQuantity, long compressedQuantity, long remainderQuantity,
                                                 BigDecimal estimatedValue, int pricedTypeCount, int unpricedTypeCount,
-                                                List<Item> items) {
+                                                int pendingTypeCount, int failedTypeCount, List<Item> items) {
 
     /** 单种月矿原矿按完整压缩批次折算出的估值。 */
     public record Item(int rawTypeId, String rawTypeName, int compressedTypeId, String compressedTypeName,
                        long rawQuantity, long compressedQuantity, long remainderQuantity, BigDecimal lowestSellPrice,
-                       BigDecimal estimatedValue, @EveDateTime(zone = "Asia/Shanghai") LocalDateTime priceUpdatedAt) {
+                       BigDecimal estimatedValue, @EveDateTime(zone = "Asia/Shanghai") LocalDateTime priceUpdatedAt,
+                       String priceStatus) {
     }
 }

@@ -26,7 +26,17 @@ import java.util.List;
  * @param expiresAt 上游缓存过期时间
  * @param etag      上游实体标签
  * @param pageCount 上游声明的总页数
+ * @param fetchedAt 当前正文最近一次由官方返回或确认的时间
  * @author zhaoyuqing
  */
-public record SerenityEsiPagedResponse<T>(List<T> body, LocalDateTime expiresAt, String etag, int pageCount) {
+public record SerenityEsiPagedResponse<T>(List<T> body,
+                                          LocalDateTime expiresAt,
+                                          String etag,
+                                          int pageCount,
+                                          LocalDateTime fetchedAt) {
+
+    /** 兼容不需要来源时间的普通分页响应。 */
+    public SerenityEsiPagedResponse(List<T> body, LocalDateTime expiresAt, String etag, int pageCount) {
+        this(body, expiresAt, etag, pageCount, null);
+    }
 }

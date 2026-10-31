@@ -66,6 +66,8 @@ class EveMarketSnapshotPersistenceIT {
         jdbc.execute(ddl.substring(0, ddl.indexOf(';')).replace("CREATE TABLE", "CREATE TEMPORARY TABLE"));
         jdbc.execute(resource("040_market_history_warmup.sql"));
         jdbc.execute(resource("052_market_esi_cache_safety.sql"));
+        jdbc.execute(resource("062_market_failure_status.sql"));
+        jdbc.execute(resource("064_market_quote_expiry.sql"));
         jdbc.execute("CREATE TEMPORARY TABLE eve_static_type_reference (type_id INT PRIMARY KEY, market_category_l1 VARCHAR(50))");
 
         MybatisConfiguration configuration = new MybatisConfiguration();
@@ -108,6 +110,8 @@ class EveMarketSnapshotPersistenceIT {
         assertThat(present.getHighestBuyPrice()).isNull();
         assertThat(present.getLowestSellPrice()).isEqualByComparingTo("9.10");
         assertThat(present.getQuoteSynchronizedAt()).isEqualTo(now);
+        assertThat(present.getQuoteNextRequestAt()).isEqualTo(now.plusMinutes(5));
+        assertThat(present.getQuoteValidatedAt()).isEqualTo(now);
         assertThat(present.getHistorySynchronizedAt()).isEqualTo(before);
         EveMarketSnapshotDO missing = mapper.selectById(35);
         assertThat(missing.getHighestBuyPrice()).isNull();
@@ -162,6 +166,35 @@ class EveMarketSnapshotPersistenceIT {
         assertThat(mapper.selectById(34).getHistorySource()).isNull();
     }
 
+    /** 成功复用官方订单缓存必须清除旧订单失败，同时保留独立的历史失败。 */
+    @Test
+    void shouldClearOnlyOrderFailureWhenCachedQuoteIsValidated() {
+        LocalDateTime now = LocalDateTime.now().withNano(0);
+        store.replaceOrders(List.of(snapshot(34, "8.70", "9.30", now)), now);
+        mapper.recordMarketFailure(34, "订单暂时不可用", now);
+        mapper.recordHistoryFailure(34, "历史暂时不可用", "SERENITY_ESI_REGION_V1:10000002", now, now
+            .plusHours(1));
+
+        LocalDateTime validatedAt = now.plusMinutes(1);
+        assertThat(mapper.markQuoteValidated(34, validatedAt)).isEqualTo(1);
+
+        EveMarketSnapshotDO snapshot = mapper.selectById(34);
+        assertThat(snapshot.getQuoteValidatedAt()).isEqualTo(validatedAt);
+        assertThat(snapshot.getOrderFailureMessage()).isNull();
+        assertThat(snapshot.getOrderFailureAt()).isNull();
+        assertThat(snapshot.getHistoryFailureMessage()).isEqualTo("历史暂时不可用");
+        assertThat(snapshot.getHistoryFailureAt()).isEqualTo(now);
+
+        // 历史成功也只能清理历史失败，不能反向掩盖新的订单失败。
+        mapper.recordMarketFailure(34, "订单暂时不可用", validatedAt);
+        mapper.upsertHistory(34, "[]", "SERENITY_ESI_REGION_V1:10000002", validatedAt, validatedAt.plusDays(1));
+        snapshot = mapper.selectById(34);
+        assertThat(snapshot.getOrderFailureMessage()).isEqualTo("订单暂时不可用");
+        assertThat(snapshot.getOrderFailureAt()).isEqualTo(validatedAt);
+        assertThat(snapshot.getHistoryFailureMessage()).isNull();
+        assertThat(snapshot.getHistoryFailureAt()).isNull();
+    }
+
     /** 构造独立的订单字段更新，历史不应出现在此写入集合中。 */
     private static EveMarketSnapshotDO snapshot(int typeId, String buy, String sell, LocalDateTime now) {
         EveMarketSnapshotDO snapshot = new EveMarketSnapshotDO();
@@ -174,6 +207,8 @@ class EveMarketSnapshotPersistenceIT {
         snapshot.setSellOrdersJson(sell == null ? "[]" : "[{\"price\":" + sell + "}]");
         snapshot.setSourceUpdatedAt(now);
         snapshot.setQuoteSynchronizedAt(now);
+        snapshot.setQuoteNextRequestAt(now.plusMinutes(5));
+        snapshot.setQuoteValidatedAt(now);
         snapshot.setDetailSynchronizedAt(now);
         snapshot.setCreateTime(now);
         snapshot.setUpdateTime(now);

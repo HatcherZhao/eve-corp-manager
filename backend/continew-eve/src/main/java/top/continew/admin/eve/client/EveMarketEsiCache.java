@@ -37,6 +37,9 @@ import java.util.function.Function;
 @RequiredArgsConstructor
 public class EveMarketEsiCache {
 
+    /** 缓存正文最近一次由官方成功返回或 304 确认的时间。 */
+    public static final String FETCHED_AT_HEADER = "X-Eve-Market-Fetched-At";
+
     private final RedissonClient redis;
     private final ObjectMapper objectMapper;
 
@@ -66,7 +69,7 @@ public class EveMarketEsiCache {
         String pages = result.getHeaders().getFirst("X-Pages");
         CachedResponse refreshed = new CachedResponse(body, etag == null && notModified
             ? cached.etag()
-            : etag, expiresAt, pages == null && notModified ? cached.pages() : pages);
+            : etag, expiresAt, pages == null && notModified ? cached.pages() : pages, now);
         try {
             // 过期后仅额外保留一小时供 ETag 重验证，避免无限积累大型订单响应。
             bucket.set(objectMapper.writeValueAsString(refreshed), Duration.ofMillis(Math.max(0, expiresAt - now))
@@ -100,10 +103,13 @@ public class EveMarketEsiCache {
         if (cached.pages() != null) {
             headers.set("X-Pages", cached.pages());
         }
+        if (cached.fetchedAt() > 0) {
+            headers.set(FETCHED_AT_HEADER, Long.toString(cached.fetchedAt()));
+        }
         return new ResponseEntity<>(cached.body(), headers, HttpStatus.OK);
     }
 
     /** Redis 中的可重验证市场实体；键仅来自固定的公开市场 URL。 */
-    private record CachedResponse(String body, String etag, long expiresAt, String pages) {
+    private record CachedResponse(String body, String etag, long expiresAt, String pages, long fetchedAt) {
     }
 }

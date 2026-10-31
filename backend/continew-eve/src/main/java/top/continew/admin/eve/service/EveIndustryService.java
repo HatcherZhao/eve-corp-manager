@@ -23,6 +23,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import top.continew.admin.common.context.UserContextHolder;
 import top.continew.admin.eve.mapper.EveIndustryBlueprintMapper;
 import top.continew.admin.eve.mapper.EveIndustryBlueprintOverrideMapper;
@@ -42,6 +43,7 @@ import top.continew.admin.eve.mapper.EveMarketSnapshotMapper;
 import top.continew.admin.eve.mapper.EveStaticTypeReferenceMapper;
 import top.continew.admin.eve.client.SerenityEsiClient;
 import top.continew.admin.eve.client.CeveIndustryClient;
+import top.continew.admin.eve.config.EveMarketProperties;
 import top.continew.admin.eve.model.EveIndustryBlueprintOverrideReq;
 import top.continew.admin.eve.model.EveIndustryBlueprintBatchReq;
 import top.continew.admin.eve.model.EveIndustryBlueprintReq;
@@ -57,6 +59,7 @@ import top.continew.admin.eve.model.EveIndustryGoldenMaterial;
 import top.continew.admin.eve.model.EveIndustryMaterial;
 import top.continew.admin.eve.model.EveIndustryOpportunityResp;
 import top.continew.admin.eve.model.EveIndustryScanReq;
+import top.continew.admin.eve.model.EveIndustryScanMarketStatusResp;
 import top.continew.admin.eve.model.EveIndustryPlanCreateReq;
 import top.continew.admin.eve.model.EveIndustryPlanResp;
 import top.continew.admin.eve.model.EveIndustryPlanStatusReq;
@@ -65,6 +68,7 @@ import top.continew.admin.eve.model.EveIndustryStaticImportError;
 import top.continew.admin.eve.model.EveIndustryStaticImportResp;
 import top.continew.admin.eve.model.EveMarketHistoryResp;
 import top.continew.admin.eve.model.EveMarketOrderResp;
+import top.continew.admin.eve.model.EveMarketRefreshResult;
 import top.continew.admin.eve.model.entity.EveIndustryBlueprintDO;
 import top.continew.admin.eve.model.entity.EveIndustryBlueprintOverrideDO;
 import top.continew.admin.eve.model.entity.EveIndustryConfigDO;
@@ -137,6 +141,8 @@ public class EveIndustryService {
     private final SerenityEsiClient esiClient;
     private final CeveIndustryClient ceveIndustryClient;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactionTemplate;
+    private final EveMarketProperties marketProperties;
 
     /** 查询当前租户已启用的生产配置。 */
     public List<EveIndustryConfigDO> configs() {
@@ -621,7 +627,10 @@ public class EveIndustryService {
         Set<Integer> marketIds = new HashSet<>();
         marketIds.add(blueprint.getProductTypeId());
         materials.forEach(item -> marketIds.add(item.typeId()));
-        marketService.prepareIndustrySnapshots(marketIds, 120);
+        EveMarketRefreshResult marketRefresh = marketService.queueMarketTypes(marketIds, true);
+        Set<Integer> readyMarketTypes = Set.copyOf(marketRefresh.refreshedTypeIds());
+        Set<Integer> failedMarketTypes = Set.copyOf(marketRefresh.failedTypeIds());
+        Set<Integer> pendingMarketTypes = Set.copyOf(marketRefresh.deferredTypeIds());
         Map<Integer, BigDecimal> adjustedPrices = currentAdjustedPrices();
         BigDecimal skillTimeMultiplier = jsonDecimal(config
             .getProductionSkillJson(), "timeMultiplier", DEFAULT_SKILL_MULTIPLIER);
@@ -634,7 +643,9 @@ public class EveIndustryService {
         for (EveIndustryMaterial material : materials) {
             long quantity = EveIndustryCalculator.materialQuantity(material.quantity(), req.runs(), blueprint
                 .getProductQuantity(), req.materialEfficiency(), facility.getMaterialMultiplier());
-            EveMarketSnapshotDO snapshot = marketSnapshotMapper.selectById(material.typeId());
+            EveMarketSnapshotDO snapshot = readyMarketTypes.contains(material.typeId())
+                ? marketSnapshotMapper.selectById(material.typeId())
+                : null;
             EveIndustryCalculator.OrderFill fill = EveIndustryCalculator.fill(readOrders(snapshot, false).stream()
                 .map(item -> new EveIndustryCalculator.OrderLevel(item.price(), item.volume() == null
                     ? 0
@@ -643,6 +654,11 @@ public class EveIndustryService {
             boolean complete = fill.filledQuantity() >= quantity;
             if (!complete) {
                 warnings.add("市场上可购买的材料数量不足：" + material.name());
+            }
+            if (pendingMarketTypes.contains(material.typeId())) {
+                warnings.add("材料行情正在准备中，本次未使用旧报价：" + material.name());
+            } else if (failedMarketTypes.contains(material.typeId())) {
+                warnings.add("材料行情刷新失败，本次未使用旧报价：" + material.name());
             }
             materialCost = materialCost.add(fill.total());
             BigDecimal adjustedPrice = adjustedPrices.get(material.typeId());
@@ -663,7 +679,9 @@ public class EveIndustryService {
         }
         BigDecimal install = EveIndustryCalculator.installationCost(eiv, sci, facility.getCostMultiplier(), facility
             .getFacilityTax(), facility.getVersionedSurcharge());
-        EveMarketSnapshotDO productMarket = marketSnapshotMapper.selectById(blueprint.getProductTypeId());
+        EveMarketSnapshotDO productMarket = readyMarketTypes.contains(blueprint.getProductTypeId())
+            ? marketSnapshotMapper.selectById(blueprint.getProductTypeId())
+            : null;
         long productQuantity = blueprint.getProductQuantity().multiply(BigDecimal.valueOf(req.runs())).longValue();
         EveIndustryCalculator.OrderFill immediate = EveIndustryCalculator.fill(readOrders(productMarket, true).stream()
             .map(item -> new EveIndustryCalculator.OrderLevel(item.price(), item.volume() == null ? 0 : item.volume()))
@@ -677,6 +695,11 @@ public class EveIndustryService {
         BigDecimal sellRevenue = sellOrder.total().multiply(BigDecimal.ONE.subtract(salesTax).subtract(brokerFee));
         if (immediate.filledQuantity() < productQuantity || sellOrder.filledQuantity() < productQuantity) {
             warnings.add("产品的市场挂单数量不足，收入与利润估算可能不完整");
+        }
+        if (pendingMarketTypes.contains(blueprint.getProductTypeId())) {
+            warnings.add("产品行情正在准备中，本次未使用旧报价");
+        } else if (failedMarketTypes.contains(blueprint.getProductTypeId())) {
+            warnings.add("产品行情刷新失败，本次未使用旧报价");
         }
         BigDecimal totalCost = materialCost.add(install);
         return new EveIndustryCalculationResp(blueprint.getId(), blueprint.getBlueprintName(), blueprint
@@ -805,7 +828,7 @@ public class EveIndustryService {
         inputSnapshot.put("facilityId", facility.getId());
         inputSnapshot.put("facilitySource", facility.getSource());
         inputSnapshot.put("systemId", facility.getSystemId());
-        inputSnapshot.put("market", "JITA_4_4");
+        inputSnapshot.put("market", marketSource());
         inputSnapshot.put("inventoryMode", "MARKET_ONLY");
         inputSnapshot.put("assumptions", opportunity.getAssumptionsJson());
         inputSnapshot.put("sourceOpportunityInputSnapshot", opportunity.getInputSnapshotJson());
@@ -869,7 +892,7 @@ public class EveIndustryService {
         sales.setTypeId(opportunity.getProductTypeId());
         sales.setQuantity(plan.getTargetQuantity());
         sales.setTotalCost(BigDecimal.ZERO);
-        sales.setPayloadJson(writeJson(Map.of("expectedRevenue", plan.getExpectedRevenue(), "market", "JITA_4_4")));
+        sales.setPayloadJson(writeJson(Map.of("expectedRevenue", plan.getExpectedRevenue(), "market", marketSource())));
         planStepMapper.insert(sales);
         return plan(plan.getId());
     }
@@ -941,8 +964,57 @@ public class EveIndustryService {
     }
 
     /** 按一套生产配置和设施扫描已导入的蓝图活动。 */
-    @Transactional(rollbackFor = Exception.class)
     public List<EveIndustryOpportunityResp> scan(EveIndustryScanReq req) {
+        IndustryScanContext scanContext = resolveScanContext(req);
+        EveIndustryConfigDO config = scanContext.config();
+        EveIndustryFacilityProfileDO facility = scanContext.facility();
+        String scanId = UUID.randomUUID().toString();
+        List<EveIndustryBlueprintDO> blueprints = scanContext.blueprints();
+        int limit = scanContext.limit();
+        Set<Integer> marketTypeIds = scanContext.marketTypeIds();
+        EveMarketRefreshResult marketRefresh = marketService.queueMarketTypes(marketTypeIds, true);
+        requireScanMarketReady(marketRefresh, marketTypeIds.size());
+        Map<Integer, BigDecimal> adjustedPrices = new HashMap<>();
+        try {
+            for (SerenityMarketPriceResponse item : esiClient.getMarketPricesWithMetadata().body()) {
+                if (item.adjustedPrice() != null) {
+                    adjustedPrices.put(item.typeId(), item.adjustedPrice());
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // 缺少国服 adjusted price 时机会会降级为可试算，不能改用国际服价格。
+        }
+        List<EveIndustryBlueprintDO> selectedBlueprints = List.copyOf(blueprints);
+        return transactionTemplate.execute(status -> {
+            List<EveIndustryOpportunityDO> results = new ArrayList<>();
+            for (EveIndustryBlueprintDO blueprint : selectedBlueprints) {
+                if (results.size() >= limit) {
+                    break;
+                }
+                EveIndustryOpportunityDO result = calculate(scanId, blueprint, config, facility, adjustedPrices, marketRefresh);
+                if (result != null) {
+                    opportunityMapper.insert(result);
+                    persistMaterials(result, blueprint, config, facility);
+                    results.add(result);
+                }
+            }
+            results.sort(Comparator.comparing(EveIndustryOpportunityDO::getDailyProfit).reversed());
+            return toResponses(results);
+        });
+    }
+
+    /** 提交并查询工业扫描所需行情，不写入机会快照。 */
+    public EveIndustryScanMarketStatusResp scanMarketStatus(EveIndustryScanReq req) {
+        IndustryScanContext context = resolveScanContext(req);
+        EveMarketRefreshResult refresh = marketService.queueMarketTypes(context.marketTypeIds(), true);
+        int total = context.marketTypeIds().size();
+        return new EveIndustryScanMarketStatusResp(total, refresh.refreshedTypeIds()
+            .size(), refresh.deferredTypeIds().size(), refresh.failedTypeIds().size(), refresh.deferredTypeIds()
+                .isEmpty() && refresh.failedTypeIds().isEmpty());
+    }
+
+    /** 解析并校验扫描上下文，保证状态查询与正式扫描使用完全相同的物品集合。 */
+    private IndustryScanContext resolveScanContext(EveIndustryScanReq req) {
         EveIndustryConfigDO config = configMapper.selectById(req.configId());
         EveIndustryFacilityProfileDO facility = facilityMapper.selectById(req.facilityId());
         if (config == null || facility == null) {
@@ -954,7 +1026,6 @@ public class EveIndustryService {
         if (!Boolean.TRUE.equals(config.getEnabled()) || !Boolean.TRUE.equals(facility.getEnabled())) {
             throw new BusinessException("生产配置或设施未启用");
         }
-        String scanId = UUID.randomUUID().toString();
         LambdaQueryWrapper<EveIndustryBlueprintDO> wrapper = new LambdaQueryWrapper<EveIndustryBlueprintDO>()
             .eq(EveIndustryBlueprintDO::getSupported, true)
             .eq(EveIndustryBlueprintDO::getValidationStatus, "VALIDATED")
@@ -972,31 +1043,19 @@ public class EveIndustryService {
             marketTypeIds.add(blueprint.getProductTypeId());
             readMaterials(blueprint.getMaterialsJson()).forEach(item -> marketTypeIds.add(item.typeId()));
         }
-        marketService.prepareIndustrySnapshots(marketTypeIds, 120);
-        Map<Integer, BigDecimal> adjustedPrices = new HashMap<>();
-        try {
-            for (SerenityMarketPriceResponse item : esiClient.getMarketPricesWithMetadata().body()) {
-                if (item.adjustedPrice() != null) {
-                    adjustedPrices.put(item.typeId(), item.adjustedPrice());
-                }
-            }
-        } catch (RuntimeException ignored) {
-            // 缺少国服 adjusted price 时机会会降级为可试算，不能改用国际服价格。
+        return new IndustryScanContext(config, facility, List.copyOf(blueprints), Set.copyOf(marketTypeIds), limit);
+    }
+
+    /** 行情尚未完成时停止扫描，避免每次轮询都写入不完整机会快照。 */
+    private static void requireScanMarketReady(EveMarketRefreshResult marketRefresh, int totalTypeCount) {
+        if (!marketRefresh.failedTypeIds().isEmpty()) {
+            throw new BusinessException("工业行情刷新失败 " + marketRefresh.failedTypeIds()
+                .size() + " 项，后台将自动重试，请稍后重新分析");
         }
-        List<EveIndustryOpportunityDO> results = new ArrayList<>();
-        for (EveIndustryBlueprintDO blueprint : blueprints) {
-            if (results.size() >= limit) {
-                break;
-            }
-            EveIndustryOpportunityDO result = calculate(scanId, blueprint, config, facility, adjustedPrices);
-            if (result != null) {
-                opportunityMapper.insert(result);
-                persistMaterials(result, blueprint, config, facility);
-                results.add(result);
-            }
+        if (!marketRefresh.deferredTypeIds().isEmpty()) {
+            int ready = marketRefresh.refreshedTypeIds().size();
+            throw new BusinessException("工业行情正在准备，已完成 " + ready + "/" + totalTypeCount + " 项，请稍后重新分析");
         }
-        results.sort(Comparator.comparing(EveIndustryOpportunityDO::getDailyProfit).reversed());
-        return toResponses(results);
     }
 
     /** 返回当前工业数据覆盖状态。 */
@@ -1020,7 +1079,8 @@ public class EveIndustryService {
                                                EveIndustryBlueprintDO blueprint,
                                                EveIndustryConfigDO config,
                                                EveIndustryFacilityProfileDO facility,
-                                               Map<Integer, BigDecimal> adjustedPrices) {
+                                               Map<Integer, BigDecimal> adjustedPrices,
+                                               EveMarketRefreshResult marketRefresh) {
         Set<String> supportedActivities = readStringSet(facility.getSupportedActivitiesJson());
         if (!supportedActivities.isEmpty() && !supportedActivities.contains(blueprint.getActivity())) {
             return null;
@@ -1029,6 +1089,14 @@ public class EveIndustryService {
         if (materials.isEmpty()) {
             return null;
         }
+        Set<Integer> readyMarketTypes = Set.copyOf(marketRefresh.refreshedTypeIds());
+        Set<Integer> failedMarketTypes = Set.copyOf(marketRefresh.failedTypeIds());
+        Set<Integer> pendingMarketTypes = Set.copyOf(marketRefresh.deferredTypeIds());
+        boolean productMarketReady = readyMarketTypes.contains(blueprint.getProductTypeId());
+        boolean blueprintMarketFailed = failedMarketTypes.contains(blueprint.getProductTypeId()) || materials.stream()
+            .anyMatch(item -> failedMarketTypes.contains(item.typeId()));
+        boolean blueprintMarketPending = pendingMarketTypes.contains(blueprint.getProductTypeId()) || materials.stream()
+            .anyMatch(item -> pendingMarketTypes.contains(item.typeId()));
         EveIndustryBlueprintOverrideDO override = overrideMapper
             .selectOne(new LambdaQueryWrapper<EveIndustryBlueprintOverrideDO>()
                 .eq(EveIndustryBlueprintOverrideDO::getBlueprintTypeId, blueprint.getBlueprintTypeId())
@@ -1041,8 +1109,8 @@ public class EveIndustryService {
             .getProductionSkillJson(), "timeMultiplier", DEFAULT_SKILL_MULTIPLIER);
         BigDecimal salesTax = jsonDecimal(config.getMarketFeeJson(), "salesTax", DEFAULT_FEE);
         BigDecimal brokerFee = jsonDecimal(config.getMarketFeeJson(), "brokerFee", DEFAULT_FEE);
-        long orderDepth = marketDepth(blueprint.getProductTypeId(), true);
-        long averageDailyVolume = averageDailyVolume(blueprint.getProductTypeId());
+        long orderDepth = productMarketReady ? marketDepth(blueprint.getProductTypeId(), true) : 0L;
+        long averageDailyVolume = productMarketReady ? averageDailyVolume(blueprint.getProductTypeId()) : 0L;
         long demand = EveIndustryCalculator.safeDemand(averageDailyVolume, config.getTargetDays(), config
             .getMarketShareLimit(), orderDepth);
         BigDecimal secondsPerRun = EveIndustryCalculator.activitySeconds(blueprint
@@ -1063,11 +1131,13 @@ public class EveIndustryService {
         }
         targetQuantity = Math.max(0, blueprint.getProductQuantity().multiply(BigDecimal.valueOf(runs)).longValue());
         BigDecimal materialCost = BigDecimal.ZERO;
-        boolean marketComplete = true;
+        boolean marketComplete = productMarketReady;
         for (EveIndustryMaterial material : materials) {
             long required = EveIndustryCalculator.materialQuantity(material.quantity(), runs, blueprint
                 .getProductQuantity(), me, facility.getMaterialMultiplier());
-            EveMarketSnapshotDO market = marketSnapshotMapper.selectById(material.typeId());
+            EveMarketSnapshotDO market = readyMarketTypes.contains(material.typeId())
+                ? marketSnapshotMapper.selectById(material.typeId())
+                : null;
             List<EveMarketOrderResp> sellOrders = readOrders(market, false);
             EveIndustryCalculator.OrderFill fill = EveIndustryCalculator.fill(sellOrders.stream()
                 .map(item -> new EveIndustryCalculator.OrderLevel(item.price(), item.volume() == null
@@ -1077,7 +1147,9 @@ public class EveIndustryService {
             materialCost = materialCost.add(fill.total());
             marketComplete &= fill.filledQuantity() >= required;
         }
-        EveMarketSnapshotDO productMarket = marketSnapshotMapper.selectById(blueprint.getProductTypeId());
+        EveMarketSnapshotDO productMarket = productMarketReady
+            ? marketSnapshotMapper.selectById(blueprint.getProductTypeId())
+            : null;
         EveIndustryCalculator.OrderFill immediate = EveIndustryCalculator.fill(readOrders(productMarket, true).stream()
             .map(item -> new EveIndustryCalculator.OrderLevel(item.price(), item.volume() == null ? 0 : item.volume()))
             .toList(), targetQuantity);
@@ -1115,6 +1187,12 @@ public class EveIndustryService {
         if (!marketComplete || immediate.filledQuantity() < targetQuantity) {
             tags.add("ORDER_DEPTH_INSUFFICIENT");
         }
+        if (blueprintMarketPending) {
+            tags.add("MARKET_PRICE_PENDING");
+        }
+        if (blueprintMarketFailed) {
+            tags.add("MARKET_PRICE_REFRESH_FAILED");
+        }
         if (averageDailyVolume <= 0) {
             tags.add("NO_HISTORY_VOLUME");
         }
@@ -1141,11 +1219,15 @@ public class EveIndustryService {
         EveIndustryMarketInputSnapshotDO inputSnapshot = new EveIndustryMarketInputSnapshotDO();
         inputSnapshot.setTenantId(currentTenantId());
         inputSnapshot.setSnapshotKey(scanId + "-" + blueprint.getId());
-        inputSnapshot.setMarketRegionId(10000002L);
-        inputSnapshot.setMarketStationId(60003760L);
+        inputSnapshot.setMarketRegionId(marketProperties.getRegionId());
+        inputSnapshot.setMarketStationId(marketProperties.getStationId());
         inputSnapshot.setCapturedAt(LocalDateTime.now());
-        inputSnapshot.setSource("JITA_4_4");
-        inputSnapshot.setFreshnessStatus(marketComplete ? "FRESH" : "STALE");
+        inputSnapshot.setSource(marketProperties.getStationId() == null
+            ? "JITA_SYSTEM:" + marketProperties.getSolarSystemId()
+            : "JITA_STATION:" + marketProperties.getStationId());
+        inputSnapshot.setFreshnessStatus(blueprintMarketFailed
+            ? "FAILED"
+            : blueprintMarketPending ? "PENDING" : marketComplete ? "FRESH" : "STALE");
         inputSnapshot.setRuleVersion(INDUSTRY_RULE_VERSION);
         inputSnapshot.setQuoteJson(writeJson(Map.of("productTypeId", blueprint
             .getProductTypeId(), "targetQuantity", targetQuantity, "materialCost", materialCost, "immediateRevenue", immediateRevenue, "sellOrderRevenue", sellRevenue)));
@@ -1213,7 +1295,7 @@ public class EveIndustryService {
         result.setRiskScore(BigDecimal.valueOf(Math.min(100, tags.size() * 20L)).setScale(4, RoundingMode.HALF_UP));
         result.setRiskTagsJson(writeJson(tags));
         result.setAssumptionsJson(writeJson(Map
-            .of("market", "JITA_4_4", "transportCost", 0, "eiv", "SERENITY_ADJUSTED_PRICE")));
+            .of("market", marketSource(), "transportCost", 0, "eiv", "SERENITY_ADJUSTED_PRICE")));
         Map<String, Object> calculationInput = new LinkedHashMap<>();
         calculationInput.put("configVersion", config.getVersion());
         calculationInput.put("facilityId", facility.getId());
@@ -1722,6 +1804,13 @@ public class EveIndustryService {
         return value == null || value.isBlank() ? fallback : value;
     }
 
+    /** 返回与市场服务实际筛选范围一致的行情来源标识，避免把吉他星系行情误标为海四。 */
+    private String marketSource() {
+        return marketProperties.getStationId() == null
+            ? "JITA_SYSTEM:" + marketProperties.getSolarSystemId()
+            : "JITA_STATION:" + marketProperties.getStationId();
+    }
+
     private Long currentTenantId() {
         return UserContextHolder.getContext().getTenantId();
     }
@@ -1730,5 +1819,13 @@ public class EveIndustryService {
     }
 
     private record ParsedStaticActivities(List<IndexedActivity> activities, List<EveIndustryStaticImportError> errors) {
+    }
+
+    /** 工业机会扫描经过统一校验后的稳定输入。 */
+    private record IndustryScanContext(EveIndustryConfigDO config,
+                                       EveIndustryFacilityProfileDO facility,
+                                       List<EveIndustryBlueprintDO> blueprints,
+                                       Set<Integer> marketTypeIds,
+                                       int limit) {
     }
 }

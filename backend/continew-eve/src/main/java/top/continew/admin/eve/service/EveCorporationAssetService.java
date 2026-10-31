@@ -40,6 +40,7 @@ import top.continew.admin.eve.model.EveCorporationAssetTreeNodeResp;
 import top.continew.admin.eve.model.EveCorporationAssetTreeResp;
 import top.continew.admin.eve.model.EveCorporationAssetValuationResp;
 import top.continew.admin.eve.model.EveMeContextResp;
+import top.continew.admin.eve.model.EveMarketRefreshResult;
 import top.continew.admin.eve.model.entity.EveAuthorizationDO;
 import top.continew.admin.eve.model.entity.EveCharacterRoleSnapshotDO;
 import top.continew.admin.eve.model.entity.EveCorporationAssetDO;
@@ -111,6 +112,7 @@ public class EveCorporationAssetService {
     private final EveStaticNameReference staticNameReference;
     private final EveStaticReferenceService staticReferenceService;
     private final EveDataFreshnessService dataFreshnessService;
+    private final EveMarketService marketService;
 
     /** 分页查询当前军团最近完整快照中仍存在的资产。 */
     public PageResp<EveCorporationAssetResp> page(int page, int size, String keyword, String locationType) {
@@ -162,7 +164,12 @@ public class EveCorporationAssetService {
     public EveCorporationAssetValuationResp valuation() {
         UserContext context = UserContextHolder.getContext();
         EveCorporationDO corporation = requireCurrentCorporation(context.getTenantId());
-        return toValuation(assetValuationMapper.summarizeValuation(context.getTenantId(), corporation.getId()));
+        List<Map<String, Object>> initial = assetValuationMapper
+            .summarizeValuation(context.getTenantId(), corporation.getId());
+        EveMarketRefreshResult refresh = marketService.queueMarketTypes(initial.stream()
+            .map(item -> (int)number(item.get("typeId")))
+            .toList(), false);
+        return toValuation(assetValuationMapper.summarizeValuation(context.getTenantId(), corporation.getId()), refresh);
     }
 
     /**
@@ -625,6 +632,16 @@ public class EveCorporationAssetService {
 
     /** 将资产类型聚合行转换为两种不混淆的吉他市场估值口径。 */
     static EveCorporationAssetValuationResp toValuation(List<Map<String, Object>> rows) {
+        return toValuation(rows, new EveMarketRefreshResult(rows.stream()
+            .map(item -> (int)number(item.get("typeId")))
+            .toList(), List.of(), List.of()));
+    }
+
+    /** 将未完成按需刷新的类型从估值中排除，避免旧价格静默进入资产合计。 */
+    static EveCorporationAssetValuationResp toValuation(List<Map<String, Object>> rows,
+                                                         EveMarketRefreshResult refresh) {
+        Set<Integer> failed = Set.copyOf(refresh.failedTypeIds());
+        Set<Integer> pending = Set.copyOf(refresh.deferredTypeIds());
         long itemCount = 0L;
         long totalQuantity = 0L;
         int highestBuyPricedTypeCount = 0;
@@ -634,10 +651,14 @@ public class EveCorporationAssetService {
         BigDecimal lowestSellEstimatedValue = BigDecimal.ZERO;
         List<EveCorporationAssetValuationResp.Item> items = new ArrayList<>();
         for (Map<String, Object> row : rows) {
+            int typeId = (int)number(row.get("typeId"));
             long quantity = number(row.get("quantity"));
             long currentItemCount = number(row.get("itemCount"));
-            BigDecimal highestBuyPrice = price(row.get("highestBuyPrice"));
-            BigDecimal lowestSellPrice = price(row.get("lowestSellPrice"));
+            String priceStatus = failed.contains(typeId)
+                ? "FAILED"
+                : pending.contains(typeId) ? "PENDING" : "READY";
+            BigDecimal highestBuyPrice = "READY".equals(priceStatus) ? price(row.get("highestBuyPrice")) : null;
+            BigDecimal lowestSellPrice = "READY".equals(priceStatus) ? price(row.get("lowestSellPrice")) : null;
             BigDecimal highestBuyValue = highestBuyPrice == null
                 ? null
                 : highestBuyPrice.multiply(BigDecimal.valueOf(quantity));
@@ -654,14 +675,16 @@ public class EveCorporationAssetService {
                 lowestSellPricedTypeCount++;
                 lowestSellEstimatedValue = lowestSellEstimatedValue.add(lowestSellValue);
             }
-            if (highestBuyValue == null && lowestSellValue == null) {
+            if ("READY".equals(priceStatus) && highestBuyValue == null && lowestSellValue == null) {
                 unpricedTypeCount++;
+                priceStatus = "UNPRICED";
             }
-            items.add(new EveCorporationAssetValuationResp.Item((int)number(row.get("typeId")), text(row
+            items.add(new EveCorporationAssetValuationResp.Item(typeId, text(row
                 .get("typeName")), quantity, currentItemCount, highestBuyPrice, lowestSellPrice, highestBuyValue, lowestSellValue, toLocalDateTime(row
-                    .get("priceUpdatedAt"))));
+                    .get("priceUpdatedAt")), priceStatus));
         }
-        return new EveCorporationAssetValuationResp(itemCount, totalQuantity, highestBuyEstimatedValue, lowestSellEstimatedValue, highestBuyPricedTypeCount, lowestSellPricedTypeCount, unpricedTypeCount, List
+        return new EveCorporationAssetValuationResp(itemCount, totalQuantity, highestBuyEstimatedValue, lowestSellEstimatedValue, highestBuyPricedTypeCount, lowestSellPricedTypeCount, unpricedTypeCount, pending
+            .size(), failed.size(), List
             .copyOf(items));
     }
 
